@@ -1,0 +1,400 @@
+# 03. 系统架构设计
+
+> 文档版本：0.2  
+> 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
+> 架构原则：先完成单体纵向闭环，再按真实变化点提取模块。
+
+## 1. 架构结论
+
+MVP 采用一个 Next.js App Router 单体：
+
+- React Client Components 负责交互、进度展示、课堂渲染和播放；
+- Next.js Route Handlers 与应用服务负责课程用例、模型调用和事务边界；
+- MySQL 通过服务端 CourseRepository 保存课程，是唯一课程事实来源；
+- 共享的 TypeScript + Zod 领域契约连接客户端、接口和持久化；
+- 客户端以 courseId 为恢复锚点，串行触发“大纲 → 场景”，但不直接持久化课程；
+- DeepSeek 与阿里百炼复用 OpenAI-compatible AIAdapter，一次运行只选择一个配置档；
+- 大模型只生成 DTO，领域装配器负责 id、状态、Action 和时间戳；
+- 第一版不拆微服务、不建 monorepo、不使用 LangGraph。
+
+这套架构与 OpenMAIC 保持相同主方向，但把平台能力裁剪成一名学生可以理解、实现和验证的规模。
+
+## 2. OpenMAIC 深度解析结论
+
+### 2.1 规模与分层
+
+截至 2026-08-23 当前检出版本，参考仓库约有 1,960 个 TypeScript/JavaScript/CSS 源文件、600 个测试文件、43 个 API Route 和 6 个主要 `@openmaic/*` 包。这些数字说明它已是平台工程，不能把“完整功能一致”作为个人毕设第一阶段目标。
+
+OpenMAIC 可以从高到低理解成三层：
+
+1. **应用壳**：`app/` 和 `components/` 提供首页、生成预览、课堂、编辑器和 API；
+2. **应用服务层**：`lib/` 负责 Provider、生成适配、播放、存储、媒体、对话和业务状态；
+3. **可复用包**：`@openmaic/dsl`、`generation`、`renderer`、`editor`、`importer`、`storage` 提供纯契约或稳定能力。
+
+阅读时应先理解 package 中的纯能力，再看 `lib/` 如何注入 Provider、浏览器状态和产品规则。只读 `lib/` 容易误以为所有能力都耦合在一个应用中。
+
+### 2.2 领域主干
+
+OpenMAIC 的稳定核心是：
+
+```text
+Stage
+ ├─ SceneOutline[]  生成计划
+ └─ Scene[]         可播放页面
+      ├─ content    slide / quiz / interactive / pbl
+      └─ actions[]  speech / whiteboard / discussion / widget / effects
+```
+
+`Scene` 使用判别联合约束 `scene.type` 与 `content.type` 一致。Action 又分为立即执行的视觉效果和必须等待完成的同步动作。这使内容生成、渲染和播放可以围绕同一份数据契约协作。
+
+### 2.3 浏览器端课程生产链
+
+真实主链不是“一次调用生成整门课程”，而是：
+
+1. `app/page.tsx` 收集主题和材料，把生成会话写入 sessionStorage；
+2. `generation-preview` 解析材料、可选搜索并创建 Stage；
+3. 通过 SSE 流式生成 SceneOutline；
+4. 用户可审核大纲；
+5. 可选生成课程角色；
+6. 首个场景先调用 scene-content，再调用 scene-actions；
+7. 可选生成首场景 TTS；
+8. 保存 Stage、Outline 和首场景，跳转课堂；
+9. `classroom/[id]` 从存储加载数据，并继续生成剩余场景和媒体；
+10. 每个场景完成后增量保存，失败场景单独记录和重试。
+
+“先生成首场景再进入课堂”降低了首屏等待时间，但也引入了恢复、并发、媒体任务和完成屏障等复杂状态。毕设 MVP 先等待全部 3～5 个场景生成完再进入正式课堂；生成页面仍可预览已完成场景。后续确有性能需求时再采用前台首场景切换。
+
+### 2.4 服务端异步生成链
+
+OpenMAIC 另有 `POST /api/generate-classroom`：接口创建 job，后台依次生成大纲、场景、媒体和 TTS，调用方轮询 `GET /api/generate-classroom/{jobId}`。这主要服务外部集成和长任务，不是浏览器 MVP 的必要条件。
+
+本项目第一版仍不实现持久化服务端 job。浏览器串行触发每个短生命周期生成请求；服务端在请求内读取 MySQL 聚合、标记阶段、调用模型并事务保存结果。这样刷新后能从数据库恢复，又不必同时引入队列、Worker 和 job 轮询。只有生成任务需要脱离浏览器长期运行时，才升级为持久化 Job/Queue。
+
+### 2.5 渲染与播放
+
+OpenMAIC 的普通课件不是模型生成 React 代码。SceneRenderer 根据 `scene.type` 选择固定 React 渲染器；PlaybackEngine 顺序读取 `Scene.actions[]`，ActionEngine 执行具体动作。
+
+播放器是显式状态机，负责：
+
+- 当前场景和动作游标；
+- idle、playing、paused、live 等模式；
+- speech 的音频、浏览器 TTS 或阅读时间回退；
+- fire-and-forget 与同步动作的推进差异；
+- discussion 中断、恢复和课程完成。
+
+本项目复刻这个“数据驱动固定渲染 + 显式播放状态机”的核心，不复刻复杂白板和讨论动作。
+
+### 2.6 多智能体的实际边界
+
+OpenMAIC 的课程生产主要是结构化生成函数，不依赖 LangGraph。LangGraph 位于课堂实时对话路径，每个服务端请求最多执行一次：
+
+```text
+START → director → agent_generate → END
+```
+
+多轮讨论由客户端连续请求形成，而不是服务端图无限循环。因此，第一版不引入 LangGraph 不会妨碍大纲、场景和课堂播放。它只有在多角色实时讨论成为明确研究对象后才有价值。
+
+### 2.7 存储与恢复
+
+OpenMAIC 默认使用浏览器存储：Document、Runtime、KV 和 Asset Store 分别保存课程文档、运行状态、轻量键值和媒体字节；配置后可切换 HTTP + PostgreSQL/S3。课堂加载还处理版本迁移、旧媒体引用转换、生成恢复和并发删除防护。
+
+本项目第一版只保存一个较小的 Course 聚合根，不提前复刻多后端协议。仍需保留三条原则：
+
+1. 写入前校验；
+2. 每个生成阶段增量保存；
+3. 使用 schemaVersion 支持将来迁移。
+
+### 2.8 质量保障边界
+
+OpenMAIC 包含 JSON 修复、Schema/normalizer、按场景重试、存储校验、Vitest、Playwright 和离线 eval。这些机制能够提高“结构合法、可渲染、可播放、可恢复”的概率，但不能证明模型内容事实正确或教学质量优秀。离线 LLM/VLM Judge 评估也不是每次请求的事实核验。
+
+本项目文档和论文必须区分：
+
+- **确定性保证**：Schema、状态转换、选项索引、动作可执行、保存恢复；
+- **统计性质量**：内容完整性、教学连贯性、事实正确性和语言质量。
+
+## 3. MVP 架构决策
+
+### AD-01：使用 Next.js 单体
+
+前端页面和模型 Route Handler 放在同一仓库。这样可以共享 Schema、隐藏 Key，并减少跨服务部署和 CORS 问题。
+
+### AD-02：服务端拥有 Course，客户端拥有交互编排
+
+服务端创建 courseId，并通过 CourseRepository 负责所有状态转换和持久化。客户端只串行触发各阶段、展示进度和发送取消信号。每个生成接口仍只处理一个大纲或一个场景，不建立常驻后台 job。
+
+### AD-03：领域层不依赖框架
+
+`lib/domain` 只包含类型、Zod Schema、纯校验、装配器和状态转换，不依赖 React、Next.js、MySQL 驱动或模型 SDK。
+
+### AD-04：模型 DTO 与持久化实体分离
+
+模型只能返回教学内容字段；id、courseId、outlineId、order、status、createdAt、updatedAt 由系统生成。这样模型无法破坏实体身份或恢复状态。
+
+### AD-05：动作由程序装配
+
+MVP 模型返回 narration，服务端把它转换为 speech Action。quiz 场景由程序追加 learner pause。暂不让模型自由生成任意 Action，先保证播放器契约稳定。
+
+### AD-06：MySQL 一张课程主表保存一个聚合根
+
+MySQL 的 courses 表保存 Course 顶层字段以及 outlines、scenes、sceneProgress、生成元数据等 JSON 列，并使用 revision 做乐观并发控制。测验作答放入独立 quiz_attempts 表。MVP 数据量小，聚合事务更新比提前拆成大量表更容易保持不变量；以后需要复杂查询时再规范化。
+
+这里不要求复制 OpenMAIC 的 PostgreSQL 选型。目标系统需要的是事务、外键、唯一约束、JSON、索引和版本化迁移，MySQL 8.0+ 可以满足这些条件，而且使用熟悉的数据库能降低第一阶段风险。若后续研究强依赖 pgvector 等 PostgreSQL 特性，再单独评估迁移，不让尚未出现的需求决定 MVP。
+
+### AD-07：mock、DeepSeek 与百炼使用同一契约
+
+三个 Provider 都返回相同 DTO，并经过同一套 Zod/领域校验。DeepSeek 与百炼只是 OpenAI-compatible 配置档，不为页面建立两套调用逻辑；mock 也不是 UI 特例。
+
+### AD-08：静态代码块属于内容，不属于执行环境
+
+slide 可以包含 code block，但渲染器只进行文本转义和语法高亮，不运行代码。OpenMAIC 的 interactive iframe 作为后续扩展，不能借“代码块”绕过安全边界进入 MVP。
+
+## 4. 组件视图
+
+```mermaid
+flowchart TB
+    subgraph Browser["浏览器"]
+      Home["首页 / 历史课程"]
+      Generation["生成与大纲确认页"]
+      Classroom["课堂播放页"]
+      Renderer["SceneRenderer"]
+      Player["PlaybackEngine"]
+      Client["Course API Client"]
+    end
+
+    subgraph NextServer["Next.js 服务端"]
+      CourseAPI["Course CRUD API"]
+      OutlineAPI["Outline Generate API"]
+      SceneAPI["Scene Generate API"]
+      Service["CourseApplicationService"]
+      GenService["GenerationService"]
+      Repo["MySQLCourseRepository"]
+      Schema["Domain Schemas"]
+      Adapter["OpenAI-compatible Adapter"]
+      Mock["Mock Adapter"]
+    end
+
+    DB[("MySQL")]
+    DeepSeek["DeepSeek API"]
+    Bailian["阿里百炼 API"]
+
+    Home --> Client
+    Home --> Generation
+    Generation --> Client
+    Client --> CourseAPI
+    Client --> OutlineAPI
+    Client --> SceneAPI
+    Classroom --> Client
+    Classroom --> Renderer
+    Classroom --> Player
+    Player --> Renderer
+
+    CourseAPI --> Service
+    OutlineAPI --> Service
+    SceneAPI --> Service
+    Service --> Repo
+    Service --> GenService
+    Service --> Schema
+    Repo --> DB
+    GenService --> Adapter
+    GenService --> Mock
+    Adapter --> DeepSeek
+    Adapter --> Bailian
+```
+
+## 5. 分层与职责
+
+| 层 | 计划位置 | 允许职责 | 禁止职责 |
+|---|---|---|---|
+| 页面层 | `app/**/page.tsx` | 路由参数、页面组合、加载/错误边界 | Prompt、SQL、直接模型调用 |
+| UI 组件 | `components/` | 表单、列表、渲染器、播放器控件 | 读取 Key、模型解析 |
+| 客户端应用层 | `lib/client/` 或 hooks | 串行请求、取消、进度、Course API Client | SQL、模型解析 |
+| 服务端应用层 | `lib/application/` | 用例、事务边界、状态转换、仓储与生成协调 | React、直接拼 SQL |
+| 领域层 | `lib/domain/` | 类型、Schema、不变量、装配、状态机 | React、fetch、MySQL、模型 SDK |
+| 生成层 | `lib/generation/` | Prompt、解析、校验、重试和错误分类 | 浏览器组件状态 |
+| AI 基础设施 | `lib/ai/` | mock、DeepSeek/百炼配置、模型调用 | 课程持久化 |
+| 数据基础设施 | `lib/db/` | MySQLCourseRepository、事务、迁移 | Prompt 和播放推进 |
+| API 层 | `app/api/**/route.ts` | 请求校验、应用服务调用、HTTP 映射 | React 状态、直接 SQL |
+
+依赖方向应指向领域层。领域层不能反向导入其他层。
+
+## 6. 页面与接口
+
+### 页面路由
+
+| 路由 | 职责 |
+|---|---|
+| `/` | 创建课程，显示历史课程和状态 |
+| `/generation/[courseId]` | 加载草稿、生成/编辑大纲、生成场景、失败重试 |
+| `/classroom/[courseId]` | 加载 ready 课程、固定渲染、测验和播放 |
+
+courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢复，不能把 React state、sessionStorage 或 localStorage 作为课程事实来源。
+
+### API 路由
+
+| 接口 | 单次职责 | 是否保存课程 |
+|---|---|---|
+| `POST /api/courses` | 创建并保存 draft | 是 |
+| `GET /api/courses` | 返回历史课程摘要 | 读 |
+| `GET /api/courses/{courseId}` | 返回完整 CourseDTO | 读 |
+| `DELETE /api/courses/{courseId}` | 删除课程及关联作答 | 是 |
+| `POST /api/courses/{courseId}/outline/generate` | 生成、校验并保存大纲 | 是 |
+| `PATCH /api/courses/{courseId}/outline` | 保存用户编辑或确认的大纲 | 是 |
+| `POST /api/courses/{courseId}/scenes/{outlineId}/generate` | 生成、校验并保存一个场景 | 是 |
+
+Route Handler 不直接拼 SQL，而是调用应用服务。应用服务加载聚合、执行状态转换、调用 GenerationService，并用 expectedRevision 事务保存；客户端收到成功响应时，对应结果已经进入 MySQL。
+
+## 7. 课程创建时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant H as 首页
+    participant C as Course API
+    participant G as 生成页
+    participant A as CourseApplicationService
+    participant R as MySQLCourseRepository
+    participant M as AI Adapter
+
+    U->>H: 输入主题并创建
+    H->>C: POST /api/courses
+    C->>A: createCourse(topic, sceneCount)
+    A->>R: INSERT draft
+    R-->>H: CourseDTO
+    H->>G: /generation/{courseId}
+    G->>C: POST /api/courses/{id}/outline/generate
+    C->>A: generateOutline(id)
+    A->>R: load + mark outlining
+    A->>M: generate outline
+    M-->>A: raw model text
+    A->>A: parse + Zod + normalize
+    A->>R: transaction save outline_ready
+    A-->>G: updated CourseDTO
+    U->>G: 编辑并确认大纲
+    G->>C: PATCH outline + expectedRevision
+    C->>A: validate + transaction save
+
+    loop 每个 SceneOutline（MVP 串行）
+      G->>C: POST /api/courses/{id}/scenes/{outlineId}/generate
+      C->>A: generateScene(courseId, outlineId)
+      A->>R: transaction mark generating
+      A->>M: generate scene
+      M-->>A: raw model text
+      A->>A: parse + Zod + assemble actions
+      A->>R: transaction save ready/failed
+      A-->>G: updated CourseDTO
+    end
+
+    G-->>U: 进入课堂
+```
+
+## 8. 状态与恢复
+
+Course 状态转换：
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft
+    draft --> outlining
+    outlining --> outline_ready
+    outlining --> failed
+    failed --> outlining: 重试大纲
+    outline_ready --> generating
+    generating --> ready: 所有场景成功
+    generating --> partial_failed: 至少一个场景失败
+    partial_failed --> generating: 重试失败场景
+    ready --> [*]
+```
+
+恢复规则：
+
+1. `draft`：显示主题并允许开始；
+2. `outlining`：刷新后先重新读取数据库；超过请求超时上限仍未更新时，允许恢复为可重试失败；
+3. `outline_ready`：恢复大纲编辑；
+4. `generating`：保留 ready 场景；只把超过生成租约的遗留 generating 重置为可重试状态；
+5. `partial_failed`：显示失败项和单项重试；
+6. `ready`：允许进入课堂。
+
+浏览器刷新会中止客户端 fetch，但服务端请求可能已经提交结果。恢复时必须先读 MySQL，并用 operationId/revision 拒绝迟到响应；不能一刷新就覆盖仍在运行或刚完成的服务端操作。
+
+## 9. 播放架构
+
+PlaybackEngine 是纯状态机，输入为当前 Course.scenes，输出为模式、游标和回调事件：
+
+```text
+idle ── start ──> playing ── pause ──> paused
+  ^                   |                  |
+  |                   └──── resume ─────┘
+  |
+completed <── 所有场景与动作完成
+
+playing ── learner pause ──> awaitingLearner ── submit/next ──> playing
+```
+
+它不负责 React 渲染，也不直接访问 MySQL。页面订阅状态，SceneRenderer 渲染内容；TextOnlySpeechAdapter 默认显示文本并按估算时长完成，BrowserSpeechAdapter 可选包装 Web Speech API。切页、暂停和卸载都必须取消当前适配器及计时器。
+
+## 10. 错误、取消与一致性
+
+- Route Handler 把内部错误映射为统一 ApiError；
+- 客户端只根据 `code/retryable` 决定提示和按钮，不能解析错误字符串；
+- 每个生成请求关联 requestId 和 AbortSignal；
+- 用户切换课程或离开生成页时 abort 当前请求；
+- 保存采用“读取聚合 → 纯函数生成新聚合 → expectedRevision 事务更新”的写法；
+- 模型成功但 MySQL 事务失败时，API 必须返回存储错误，UI 不能显示为持久化成功；
+- revision 冲突返回 `COURSE_CONFLICT`，客户端重新加载，不能覆盖较新记录；
+- 读取失败或 Schema 不合法时进入可诊断错误页，不把坏记录喂给渲染器；
+- 删除与生成并发在 MVP UI 中互斥：生成中删除需先取消请求。
+
+## 11. 安全边界
+
+```text
+浏览器：topic、CourseDTO、播放状态、轻量 UI 偏好
+                │ 仅业务请求
+                ▼
+Route Handler / 应用服务：状态转换、Prompt、输出校验、事务
+          │                              │
+          ▼                              ▼
+       MySQL                    DeepSeek / 阿里百炼
+```
+
+关键规则：
+
+- 只有不含 `NEXT_PUBLIC_` 前缀的服务端环境变量保存模型 Key 和数据库凭据；
+- `lib/ai/server-*.ts` 只能被 Route Handler 或服务端模块导入；
+- 模型输出一律视为不可信；
+- MVP 不支持模型生成 HTML，所以不存在 iframe/script 执行路径；
+- code block 始终按文本转义，不允许 `eval`、动态 import 或 `dangerouslySetInnerHTML`；
+- API 限制 topic、outline 和响应长度，防止无界输入；
+- 日志只记录 requestId、阶段、模型、耗时、尝试次数和校验结果。
+
+## 12. 部署视图
+
+MVP 需要一个 Next.js 进程、一个 MySQL 实例和现代浏览器：
+
+```text
+Browser
+  ├─ React UI
+  └─ 可选 Web Speech API
+        │ HTTP(S)
+Next.js Server
+  ├─ MySQL
+  └─ DeepSeek / 阿里百炼 API
+```
+
+本地开发先启动 MySQL 并执行迁移，再运行 `pnpm dev`。第一版没有登录，虽然课程在服务端数据库中，也只允许部署到本机或受信任网络；“使用数据库”不自动等于“可以公开成为多用户服务”。备份采用数据库导出或受控 volume，不依赖浏览器缓存。
+
+## 13. 未来扩展点
+
+MVP 完成后按接口扩展，而不是重写主链：
+
+- 文档输入：在 outline 请求前增加 DocumentExtractor；
+- 生成优化：替换 GenerationPolicy，不改变 Course Schema；
+- 新场景：扩展 Scene 判别联合并新增固定 Renderer；
+- 新动作：扩展 Action 联合和 ActionExecutor；
+- 多智能体：在 discussion Action 后增加独立 ChatOrchestrator；
+- 多用户：增加认证、ownerId、授权检查和租户级查询；
+- 数据库演进：复杂查询出现后，把 Course JSON 列逐步规范化；
+- 异步任务：把客户端循环迁移到持久化 Job/Queue；
+- 质量评估：在持久化前增加可配置 QualityGate。
+
+任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。
