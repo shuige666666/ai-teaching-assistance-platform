@@ -4,6 +4,8 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
+> 实现状态（2026-08-24）：大纲与逐场景链路均已进入正式调用路径，并在 mock + MySQL 下验证；slide/quiz DTO、装配、短事务、失败隔离与单场重试已经实现。DeepSeek/百炼适配器代码已完成，但两家远端真实调用仍等待有效服务端 Key 验收。
+
 ## 1. 设计结论
 
 MVP 使用两层结构化生成：

@@ -13,9 +13,9 @@
 
 ## 当前状态
 
-项目目前处于 **M0 设计基线完成、M1 尚未开始编码** 的阶段。仓库中已经建立六份相互追踪的复刻方案，但当前页面仍是 Create Next App 默认脚手架，尚不能生成或播放课程。
+项目目前处于 **M4 逐场景生成代码完成、远端 Provider 验收待配置** 的阶段。默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建草稿，经正式管线生成并编辑 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂并从 MySQL 恢复课程。
 
-这一区分很重要：`docs/` 描述的是已经确认的目标设计，不代表对应功能已经实现。下一步先用固定数据跑通纵向闭环，然后接入 MySQL，再接真实模型；不立即引入 LangGraph 或 interactive iframe。
+大纲和场景阶段共用 `MockAIAdapter` 与 DeepSeek/百炼 `OpenAICompatibleAdapter`，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。每个场景在模型调用前后各使用一次短事务，并通过 `activeOperation + expectedRevision` 阻止迟到结果覆盖。单场失败只写入对应 `SceneProgress`，其余已完成场景继续保留并可继续生成；失败项支持显式重试。当前尚未提供两家远端 Key，因此只验证了 mock 完整调用链，不能把远端 Provider 描述为已经联调成功。
 
 ## MVP 要实现什么
 
@@ -43,8 +43,9 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 | [04. 领域模型与数据契约](docs/04-domain-model.md) | Course、Scene、Action、状态和 DTO 如何定义 |
 | [05. AI 生成管线设计](docs/05-generation-pipeline.md) | Prompt、解析、校验、修复、重试和预算如何控制 |
 | [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M6 先做什么，每阶段用什么证据退出 |
+| [07. 当前开发状态](docs/07-development-status.md) | 哪些代码已进入调用链、通过了什么验证、下一步是什么 |
 
-阅读顺序建议从 01 到 06。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
+01～06 是设计基线，07 是随开发维护的实现快照。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
 
 ## 目标架构
 
@@ -52,23 +53,27 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 
 ```text
 app/
-  page.tsx                       # 创建课程与历史课程
-  generation/[courseId]/         # 大纲确认、场景生成与失败重试
-  classroom/[courseId]/          # 固定渲染、播放和测验
-  api/courses/                   # 课程 CRUD
-  api/courses/[courseId]/        # 读取、删除与课程变更
+  page.tsx                       # [M3 已实现] 创建 MySQL 草稿、恢复与删除课程
+  generation/[courseId]/         # [M4 已实现] 大纲审核、逐场景生成、进度与重试
+  classroom/[courseId]/          # [M1 已实现] 固定渲染、手动翻页和测验
+  api/courses/                   # [M2 已实现] MySQL 课程创建与读取
+  api/courses/[courseId]/        # [M4 已实现] CRUD、大纲与逐场景生成接口
+  api/health/database/           # [M2 已实现] 无敏感信息的数据库健康检查
 components/
-  renderers/                     # slide / quiz / code block 固定渲染器
+  renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
 lib/
-  domain/                        # 纯 TypeScript 类型、Schema 和状态转换
-  application/                   # 服务端课程用例和事务编排
-  ai/                            # mock、DeepSeek、百炼配置与适配器
-  generation/                    # Prompt、解析、校验、重试与 AI Adapter
-  playback/                      # 播放 reducer 和 Action executor
-  db/                            # CourseRepository、MySQL 适配器与迁移
+  domain/                        # [M1 已实现] Schema、状态转换与 fixture
+  repository/                    # [M2 已实现] InMemory / MySQL 仓储与错误映射
+  db/                            # [M2 已实现] MySQL 配置、连接池和健康检查
+  application/                   # [M4 已实现] 大纲/场景用例、短事务和操作租约
+  ai/                            # [M3 已实现] mock 与 OpenAI-compatible 适配器
+  generation/                    # [M4 已实现] 大纲/场景 Prompt、解析、装配、修复与重试
+  playback/                      # [M5] 播放 reducer 和 Action executor
+migrations/                      # [M2 已实现] 版本化 SQL 迁移
+scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
 ```
 
-以上是计划目录，不是当前已存在的源码结构。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M4 的目录已经进入正式调用链，其余仍是计划结构。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 ## 技术栈
 
@@ -78,41 +83,52 @@ lib/
 - React 19.2.8；
 - TypeScript 5；
 - Tailwind CSS 4；
+- Zod 4.4；
+- Vitest 4.1；
+- Playwright 1.62；
+- mysql2 3.23；
 - pnpm 11.22.0。
 
-后续按里程碑最小化添加依赖：Zod 用于运行时契约校验，MySQL 8.0+ 用于服务端持久化，Vitest 与 Playwright 用于测试。数据库驱动/ORM 在 M2 先做连接池、JSON、事务、revision 和迁移验证后再确定；业务代码只依赖 CourseRepository。
+M2 选用 `mysql2/promise`，直接使用连接池、参数化 SQL 和事务，不引入 ORM；数据库差异仍封装在 `MySQLCourseRepository` 中。Vitest 分别运行无数据库单元测试和真实 MySQL 集成测试，Playwright CLI 用于跨进程恢复验证。
 
 LangGraph 不是 MVP 前置依赖。OpenMAIC 的主课程生成链本身并不依赖多智能体；只有论文延展确实需要有状态图编排并且能够设计对照实验时，再考虑引入。
 
 ## 本地运行
 
-环境要求：Node.js 20.9 或更高版本，以及与 `packageManager` 字段匹配的 pnpm。
+环境要求：Node.js 20.9 或更高版本、与 `packageManager` 字段匹配的 pnpm，以及 MySQL 8.0+。
 
-```bash
+```powershell
 pnpm install
+Copy-Item .env.example .env.local
+# 编辑 .env.local，填写仅供服务端使用的 DATABASE_URL
+pnpm db:migrate
 pnpm dev
 ```
 
-浏览器访问 [http://localhost:3000](http://localhost:3000)。当前只能看到默认脚手架页面；完成 M1 后，该命令应在无网络、无模型密钥时运行固定数据演示。
+浏览器访问 [http://localhost:3000](http://localhost:3000)。mock 模式无需模型密钥，但必须先启动 MySQL 并执行迁移。`COURSE_REPOSITORY=memory` 只用于受控测试，不是正式运行模式。
 
 常用质量命令：
 
 ```bash
 pnpm lint
+pnpm test
+pnpm test:db
 pnpm build
 ```
 
-`pnpm test` 和浏览器 E2E 命令将在测试框架于 M1/M6 接入后补充，README 不提前声明尚不存在的脚本。
+`pnpm test` 运行领域、适配器、生成管线、应用服务、内存仓储与渲染安全测试；`pnpm test:db` 读取本机 `.env.local`，额外运行真实 MySQL 仓储和大纲短事务恢复测试。完整 Playwright E2E 脚本将在 M6 补齐。
 
-## 计划中的模型配置
+## 模型配置
 
-从 M3 起，系统将支持 mock、DeepSeek 和阿里百炼。配置名称已经进入设计基线，但当前代码尚未读取这些变量。
+系统支持 mock、DeepSeek 和阿里百炼三个服务端配置档。mock 是确定性测试模式；`AI_MODE=remote` 时只校验 `AI_PROVIDER` 当前选中的配置，不会在远端失败后静默降级为 mock。
 
 ```env
 AI_MODE=mock
 
 # AI_MODE=remote 时选择一个配置档
 AI_PROVIDER=deepseek
+AI_OUTLINE_TIMEOUT_MS=90000
+AI_SCENE_TIMEOUT_MS=120000
 
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
@@ -129,11 +145,11 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 
 ## 实施顺序
 
-1. M1：用合法 fixture 跑通三个页面、slide/quiz/code block 和内存仓储；
-2. M2：接入 MySQL、迁移、CourseRepository 和课程 CRUD；
-3. M3：接入 DeepSeek/百炼、大纲生成和编辑确认；
-4. M4：逐场景生成、事务保存、失败隔离和单场景重试；
-5. M5：实现 Action 播放、quiz、TextOnly 与可选 BrowserSpeech；
+1. **M1（已完成）**：用合法 fixture 跑通三个页面、slide/quiz/code block 和内存仓储；
+2. **M2（已完成）**：接入 MySQL、迁移、CourseRepository 和课程 CRUD；
+3. **M3（代码完成，远端验收待 Key）**：统一适配器、大纲生成、修复和编辑确认已实现；
+4. **M4（代码完成，远端验收待 Key）**：逐场景生成、事务保存、失败隔离和单场景重试；
+5. **M5（下一开发步）**：实现 Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
 6. M6：完成自动化测试、故障注入、部署和需求验收。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。

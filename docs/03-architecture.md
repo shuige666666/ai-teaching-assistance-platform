@@ -139,6 +139,10 @@ MVP 模型返回 narration，服务端把它转换为 speech Action。quiz 场�
 
 MySQL 的 courses 表保存 Course 顶层字段以及 outlines、scenes、sceneProgress、生成元数据等 JSON 列，并使用 revision 做乐观并发控制。测验作答放入独立 quiz_attempts 表。MVP 数据量小，聚合事务更新比提前拆成大量表更容易保持不变量；以后需要复杂查询时再规范化。
 
+M2 实现选择 `mysql2/promise` 作为底层驱动，使用服务端进程级连接池、参数化 SQL 和显式事务；版本化 SQL 文件由 `scripts/migrate.mjs` 执行。该选择属于基础设施实现细节，领域和页面仍只依赖 `CourseRepository`，以后替换驱动不改变 Course 契约。
+
+M3/M4 已把该架构用于正式生成调用：大纲与每个场景分别在模型调用前登记 `activeOperation`，调用期间不持有连接，返回后再以 operation id 和 revision 提交。场景按 outline 串行生成，单项失败只更新对应 `SceneProgress`；运行时不再提供一次性 fixture 装配路由。
+
 这里不要求复制 OpenMAIC 的 PostgreSQL 选型。目标系统需要的是事务、外键、唯一约束、JSON、索引和版本化迁移，MySQL 8.0+ 可以满足这些条件，而且使用熟悉的数据库能降低第一阶段风险。若后续研究强依赖 pgvector 等 PostgreSQL 特性，再单独评估迁移，不让尚未出现的需求决定 MVP。
 
 ### AD-07：mock、DeepSeek 与百炼使用同一契约
