@@ -11,7 +11,7 @@ export default async function ClassroomPage({ params }: { params: Promise<{ cour
   try {
     course = await getCourseRepository().get(courseId);
   } catch (error) {
-    const message = mapRepositoryError(error).body.message;
+    const message = mapRepositoryError(error).body.error.message;
     return <main className="missing-state"><p className="eyebrow">DATABASE UNAVAILABLE</p><h1>暂时无法加载课堂</h1><p>{message}</p><Link className="button button--dark" href="/">返回首页</Link></main>;
   }
 

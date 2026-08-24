@@ -7,11 +7,11 @@ import {
 
 export type RepositoryErrorResponse = {
   status: number;
-  body: { code: string; message: string; retryable: boolean; requestId: string };
+  body: { success: false; error: { code: string; message: string; retryable: boolean; requestId: string } };
 };
 
 export function createApiError(code: string, message: string, retryable: boolean) {
-  return { code, message, retryable, requestId: randomUUID() };
+  return { success: false as const, error: { code, message, retryable, requestId: randomUUID() } };
 }
 
 /** 把服务端仓储异常映射为不泄露连接信息的统一 API 错误。 */

@@ -10,7 +10,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:db": "node --env-file=.env.local ./node_modules/vitest/vitest.mjs run --config vitest.integration.config.mjs",
-    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs"
+    "test:e2e": "playwright test",
+    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "verify": "pnpm lint && pnpm test && pnpm build",
+    "verify:full": "pnpm lint && pnpm test && pnpm test:db && pnpm build && pnpm test:e2e"
   },
   "dependencies": {
     "mysql2": "^3.23.4",

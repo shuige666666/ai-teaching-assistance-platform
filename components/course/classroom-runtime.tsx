@@ -66,8 +66,8 @@ export function ClassroomRuntime({ course }: { course: Course }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sceneId: scene.id, questionId, selectedOptionId }),
     });
-    const payload = await response.json() as { attempt?: { correct: boolean }; message?: string };
-    if (!response.ok || !payload.attempt) throw new Error(payload.message ?? "作答记录保存失败，请重试");
+    const payload = await response.json() as { attempt?: { correct: boolean }; error?: { message?: string } };
+    if (!response.ok || !payload.attempt) throw new Error(payload.error?.message ?? "作答记录保存失败，请重试");
     return { correct: payload.attempt.correct };
   }
 

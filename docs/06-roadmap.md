@@ -10,7 +10,7 @@
 
 M1 是第一个可运行原型，M2～M6 共同组成 MVP。M6 完成时达到导师可以独立复现的“可运行系统”；interactive HTML、多智能体等能力进入 M7，不得反向阻塞基线。
 
-**当前进度：M1～M5 已完成代码实现，M3/M4 的远端 Provider 验收仍待有效 Key，下一步进入 M6。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M6 代码与 mock 自动验收已完成；M3/M4/M6 的 DeepSeek、百炼真实调用以及 M6 异机复现仍待外部条件。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
@@ -37,7 +37,7 @@ M1 是第一个可运行原型，M2～M6 共同组成 MVP。M6 完成时达到�
 | M3 双 Provider 大纲（代码完成，远端验收待 Key） | DeepSeek/百炼可切换生成并保存大纲 | 固定大纲 | 4～6 天 |
 | M4 真实场景（代码完成，远端验收待 Key） | 逐场景生成、事务保存并隔离失败 | 固定场景 | 5～7 天 |
 | M5 课堂运行时（已完成） | 自动播放、单选测验和可选浏览器语音 | 手工翻页 | 4～6 天 |
-| M6 验收交付（下一开发步） | mock/DeepSeek/百炼配置均可回归 | 开发态系统 | 5～7 天 |
+| M6 验收交付（代码与 mock 完成） | mock 自动回归；远端和异机证据待补 | 开发态系统 | 5～7 天 |
 | M7 论文延展 | 完成一个可度量研究问题 | 无 | 视选题而定 |
 
 建议投入是专注开发日。延期时先减少视觉装饰和扩展能力，不压缩 Schema、事务、错误恢复和测试。
@@ -217,6 +217,8 @@ quiz 在作答前进入 awaitingLearner，提交后展示对错和解析。课�
 
 ## 10. M6：系统验收与交付
 
+> 状态：代码与 mock 自动验收完成。完整退出门仍等待 DeepSeek、百炼有效 Key 和另一台干净机器复现。
+
 ### 目标
 
 把“开发者机器上能跑”提升为“导师可以按文档启动数据库、应用并完成演示”。
@@ -242,6 +244,8 @@ quiz 在作答前进入 awaitingLearner，提交后展示对错和解析。课�
 ### 退出门
 
 在干净环境中仅按 README 即可启动 MySQL、执行迁移、运行 mock 完整演示；两个 remote Provider 配置分别验证；质量命令通过；所有 MVP 验收标准都有证据。
+
+当前已补齐统一 API error envelope、请求取消与不可重试 UI、配置健康检查、API 契约测试、production Chromium E2E、临时 MySQL mock CI、部署/备份/恢复/排障手册和 AC-01～AC-12 证据矩阵。mock 自动退出门已通过；远端 Provider 与异机人工证据按 [08-deployment-and-acceptance.md](08-deployment-and-acceptance.md) 补录。
 
 ## 11. M7：毕业论文延展
 

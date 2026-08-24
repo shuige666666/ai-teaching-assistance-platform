@@ -25,4 +25,23 @@ describe("ProviderConfigResolver", () => {
     expect(() => resolveAIConfig({ AI_MODE: "remote", AI_PROVIDER: "deepseek", DEEPSEEK_BASE_URL: "https://api.deepseek.com", DEEPSEEK_MODEL: "model" }))
       .toThrowError(AIAdapterError);
   });
+
+  it("不会因为未启用 Provider 的空配置而阻塞当前档位", () => {
+    expect(resolveAIConfig({
+      AI_MODE: "remote",
+      AI_PROVIDER: "deepseek",
+      DEEPSEEK_API_KEY: "server-secret",
+      DEEPSEEK_BASE_URL: "https://api.deepseek.com",
+      DEEPSEEK_MODEL: "configured-model",
+      BAILIAN_API_KEY: "",
+    })).toMatchObject({ provider: "deepseek", model: "configured-model" });
+  });
+
+  it.each([
+    [{ AI_MODE: "remote", AI_PROVIDER: "unknown" }, "AI_PROVIDER"],
+    [{ AI_MODE: "remote", AI_PROVIDER: "deepseek", DEEPSEEK_API_KEY: "secret", DEEPSEEK_BASE_URL: "http://example.com", DEEPSEEK_MODEL: "model" }, "BASE_URL"],
+    [{ AI_MODE: "mock", AI_OUTLINE_TIMEOUT_MS: "999" }, "TIMEOUT"],
+  ])("拒绝无效配置 %#", (environment, expectedMessage) => {
+    expect(() => resolveAIConfig(environment)).toThrowError(expectedMessage);
+  });
 });

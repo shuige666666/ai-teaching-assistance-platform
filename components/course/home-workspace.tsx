@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import type { CourseSummary } from "@/lib/domain/schemas";
 
+function apiErrorMessage(payload: { error?: { message?: string } }, fallback: string) {
+  return payload.error?.message ?? fallback;
+}
+
 const statusLabels: Record<CourseSummary["status"], string> = {
   draft: "草稿", outlining: "生成大纲", outline_ready: "大纲就绪", generating: "生成场景", partial_failed: "部分失败", ready: "可以上课", failed: "生成失败",
 };
@@ -27,7 +31,7 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic, requestedSceneCount: sceneCount }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? "创建课程失败");
+      if (!response.ok) throw new Error(apiErrorMessage(payload, "创建课程失败"));
       router.push(`/generation/${payload.course.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "创建课程失败");
@@ -43,7 +47,7 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
       const response = await fetch(`/api/courses/${course.id}`, { method: "DELETE" });
       if (!response.ok) {
         const payload = await response.json();
-        throw new Error(payload.message ?? "删除课程失败");
+        throw new Error(apiErrorMessage(payload, "删除课程失败"));
       }
       setCourses((current) => current.filter((item) => item.id !== course.id));
       router.refresh();
@@ -56,7 +60,7 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
     <main className="home-shell">
       <header className="site-header">
         <Link className="brand" href="/" aria-label="课序首页"><span className="brand-mark">课</span><span><strong>课序</strong><small>COURSE COMPOSER</small></span></Link>
-        <div className="header-status"><span className="status-dot" /> M4 · SCENE GENERATION</div>
+        <div className="header-status"><span className="status-dot" /> M6 · ACCEPTANCE READY</div>
       </header>
 
       <section className="hero-grid">

@@ -4,7 +4,7 @@
 
 ## 1. 当前结论
 
-项目已完成 **M1 固定数据闭环、M2 MySQL 持久化、M3 大纲生成代码、M4 逐场景生成代码和 M5 课堂运行时**。mock 下的大纲、场景与课堂正式链路均已通过，DeepSeek/阿里百炼远端调用仍等待有效 Key 做 smoke test。当前在无模型 Key、无模型网络的环境中可以完成：
+项目已完成 **M1～M6 的代码实现与 mock 自动验收**。mock 下的大纲、场景、课堂、刷新恢复和自动清理均进入可重复 Chromium E2E；DeepSeek/阿里百炼远端调用和另一台干净机器复现仍等待外部条件。当前在无模型 Key、无模型网络的环境中可以完成：
 
 ```text
 首页填写主题并选择 3～5 个场景
@@ -20,6 +20,7 @@
   → quiz 停在 awaitingLearner，服务端判分并写入 quiz_attempts
   → 重启 Next.js 后从 MySQL 恢复课程
   → 显式删除课程及其关联测验记录
+  → CI 使用临时 MySQL 重跑同一套 mock 质量门
 ```
 
 MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository` 仍用于不依赖数据库的单元测试，但正式 `.env.local` 使用 `COURSE_REPOSITORY=mysql`，不会在数据库失败时静默切换到内存。
@@ -47,7 +48,8 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 - `PATCH /api/courses/[courseId]/outline`：人工编辑后的结构与语义复验；
 - `POST /api/courses/[courseId]/scenes/[outlineId]/generate`：只生成 URL 指定的一个场景；
 - `GET /api/health/database`：只返回状态、数据库名和版本，不返回主机、用户或密码；
-- 仓储错误统一映射为 code、message、retryable、requestId。
+- `GET /api/health/config`：校验当前 AI 档位，只返回 mode、provider、model 和超时；
+- 所有失败响应统一为 `success:false + error(code/message/retryable/requestId)`。
 
 ### AI 大纲与场景管线
 
@@ -71,6 +73,9 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 - 参数化 SQL 用于所有业务值；数据库名在迁移脚本中经过标识符白名单；
 - 数据库失败会返回 `DATABASE_UNAVAILABLE`，不会伪装成空课程列表；
 - 固定渲染与代码块纯文本安全边界继续保留。
+- 生成页离开或用户点击取消时会中止已登记的浏览器请求；迟到服务端事实通过刷新恢复；
+- failed 场景只有 `retryable=true` 才显示重试，认证/配置错误明确要求修正环境；
+- GitHub Actions 只使用 mock 与临时 MySQL，不读取或调用远端模型 Key。
 
 ### 课堂播放与学习行为
 
@@ -88,9 +93,11 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 ```text
 pnpm db:migrate  # 首次 applied 001；复跑 skip 001
 pnpm lint
-pnpm test        # 12 个文件、35 项无数据库测试
+pnpm test        # 13 个文件、42 项无数据库/API 契约测试
 pnpm test:db     # 1 个文件、9 项真实 MySQL 测试
 pnpm build
+pnpm test:e2e    # 1 项 production Chromium 完整流程
+pnpm verify:full # lint + unit + MySQL + build + E2E
 ```
 
 单元测试在 M3/M4 覆盖项之外，新增播放器完整状态路径、暂停/继续不重复、快速切页迟到事件保护、可暂停 TextOnly 计时、BrowserSpeech 不可用回退，以及测验服务端判分和非法选项拒绝。MySQL 集成测试新增“服务端判分后由新作答仓储实例恢复记录且 Course revision 不变”。
@@ -99,14 +106,17 @@ Playwright CLI 在 production server 上完成“创建 3 场景草稿 → mock 
 
 M5 继续在 production server 上验证“进入 ready 课程 → TextOnly 开始播放 → 暂停状态 → 手工切到 quiz 并确认旧 Action 取消 → 讲解完成进入 awaitingLearner → 选择答案 → 服务端保存 → 本场景 completed”。页面显示 `ACTION 2 / 2` 和“回答正确”，MySQL 查询得到 1 条 `correct=1` 作答记录且 Course 保持 `REV.9`；浏览器错误与警告均为 0。验证课程和 Playwright 临时产物在验收后清理。
 
+M6 将上述人工步骤固化为 `e2e/mock-course-flow.spec.ts`：在 1280×720 Chromium 中创建唯一主题课程，生成 REV.8 ready 课程，验证播放/暂停/继续、手工切页取消、awaitingLearner、服务端判分、页面刷新、首页历史和 `/api/health/config`，最后无条件删除测试课程。本地 production E2E 1/1 通过；API 错误 envelope、三档配置解析和非法请求另由 Vitest 自动覆盖。
+
 ## 4. 当前明确未实现
 
 - 尚未用有效 Key 实际调用 DeepSeek 或阿里百炼，因此不能宣称双 Provider 远端联调完成；
 - 超时租约可以被下一次显式生成请求接管，但尚无后台扫描器主动恢复遗留操作；
-- 完整 Playwright 回归测试文件仍留在 M6，当前使用受控 CLI 验证关键浏览器链路。
+- 尚未在另一台干净机器仅按文档完成安装与启动；当前 CI 临时环境和本机 production 测试只能作为自动证据；
+- BrowserSpeech 的回退与控制已自动测试，实际系统音色和听感仍需目标演示机器人工确认。
 
-M5 代码完成不代表整个 MVP 已完成交付；远端 Provider smoke test、完整 E2E、故障矩阵、部署和导师复现仍属于 M6。
+M6 的代码与 mock 验收已完成，但完整交付退出门不能用配置解析代替真实 Provider，也不能用本机测试代替异机复现。
 
-## 5. 下一步：M6（远端 Provider 验收并行保留）
+## 5. 下一步：补齐 M6 外部证据，再选择 M7 论文问题
 
-下一开发步进入 M6：把当前受控 CLI 验证固化为可重复 E2E，补齐 API/故障矩阵、部署启动、备份恢复、需求追踪和导师复现说明。DeepSeek 与百炼真实 smoke test 仍是独立验收项；获得有效 Key 后应验证完整“大纲 + 多场景”链路，并以数据库中的 outline/scene `GenerationMetadata` 和实际课程内容作为证据，不以 HTTP 200 单独判定成功。
+按 [08-deployment-and-acceptance.md](08-deployment-and-acceptance.md) 分别完成 DeepSeek、百炼三场景真实 smoke test，并在另一台干净机器执行生产启动和 mock E2E。补齐这些证据后再从 M7 候选中选择一个可度量研究问题；不要同时加入 RAG、多智能体和 interactive HTML。

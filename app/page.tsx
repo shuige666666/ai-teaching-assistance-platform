@@ -11,7 +11,7 @@ export default async function HomePage() {
   try {
     courses = await getCourseRepository().list();
   } catch (error) {
-    initialError = mapRepositoryError(error).body.message;
+    initialError = mapRepositoryError(error).body.error.message;
   }
   return <HomeWorkspace initialCourses={courses} initialError={initialError} />;
 }

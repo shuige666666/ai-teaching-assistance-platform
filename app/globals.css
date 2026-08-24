@@ -103,6 +103,9 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .mode-note { text-align: right; }
 .mode-note strong { font: 11px/1.2 var(--font-mono); color: var(--olive); }
 .form-error { border-left: 3px solid var(--accent); background: #f5dbd3; padding: 12px; font-size: 13px; color: #762311; white-space: pre-line; }
+.error-notice span { display: block; margin-bottom: 7px; font: 9px/1 var(--font-mono); letter-spacing: .08em; }
+.error-notice p { margin: 0; line-height: 1.55; }
+.cancel-request { align-self: center; border: 0; border-bottom: 1px solid var(--accent); padding: 4px 0; background: transparent; color: #8e3422; font-size: 11px; cursor: pointer; }
 .form-success { border-left: 3px solid var(--olive); background: var(--mint); padding: 12px; font-size: 13px; color: #3f4924; }
 .form-footnote { margin: 15px 0 0; text-align: center; color: var(--muted); font-size: 11px; }
 
@@ -192,6 +195,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .scene-progress-cell small { font: 8px/1 var(--font-mono); color: var(--muted); letter-spacing: .08em; }
 .scene-progress-cell button { border: 0; border-bottom: 1px solid currentColor; padding: 2px; color: var(--accent-dark); background: transparent; font-size: 10px; cursor: pointer; }
 .scene-progress-cell button:disabled { opacity: .45; cursor: wait; }
+.scene-progress-cell em { color: #8e3422; font-size: 9px; font-style: normal; line-height: 1.35; text-align: center; }
 .generation-hint { margin: 0; border: 1px dashed var(--line); padding: 15px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 @keyframes progress-pulse { 50% { transform: scale(.82); opacity: .55; } }
 
