@@ -4,7 +4,7 @@
 
 ## 1. 当前结论
 
-项目已完成 **M1 固定数据闭环、M2 MySQL 持久化、M3 大纲生成代码和 M4 逐场景生成代码**。mock 下的大纲与场景正式链路均已通过，DeepSeek/阿里百炼远端调用仍等待有效 Key 做 smoke test。当前在无模型 Key、无模型网络的环境中可以完成：
+项目已完成 **M1 固定数据闭环、M2 MySQL 持久化、M3 大纲生成代码、M4 逐场景生成代码和 M5 课堂运行时**。mock 下的大纲、场景与课堂正式链路均已通过，DeepSeek/阿里百炼远端调用仍等待有效 Key 做 smoke test。当前在无模型 Key、无模型网络的环境中可以完成：
 
 ```text
 首页填写主题并选择 3～5 个场景
@@ -16,7 +16,8 @@
   → 按 outline 顺序逐个登记和生成 slide / quiz
   → 每场独立解析、语义校验、装配 Action 并短事务提交
   → 单场失败时保留其他结果、继续后续场景并显式重试
-  → 进入课堂手动翻页并完成单选题
+  → 进入课堂按 Action 自动播放、暂停、继续和重播
+  → quiz 停在 awaitingLearner，服务端判分并写入 quiz_attempts
   → 重启 Next.js 后从 MySQL 恢复课程
   → 显式删除课程及其关联测验记录
 ```
@@ -71,30 +72,41 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 - 数据库失败会返回 `DATABASE_UNAVAILABLE`，不会伪装成空课程列表；
 - 固定渲染与代码块纯文本安全边界继续保留。
 
+### 课堂播放与学习行为
+
+- 纯 playback reducer 覆盖 idle、playing、paused、awaitingLearner、completed；
+- Action executor 顺序执行 speech、timed pause 与 learner pause，并用 sceneId、runId、actionIndex 拒绝迟到完成事件；
+- TextOnlySpeechAdapter 按文本长度估算时长，是无语音环境下的默认路径；
+- BrowserSpeechAdapter 仅在用户开启且 Web Speech API 可用时朗读，启动失败或不可用会回退 TextOnly；
+- 手动切页、重新播放和组件卸载都会取消旧语音或计时器，暂停/继续复用当前任务而不是重复执行；
+- quiz 作答前保持 awaitingLearner，所有题目成功保存后本场景才完成；
+- `POST /api/courses/[courseId]/quiz-attempts` 只接受 scene/question/option ID，服务端从 Course 查题判分；
+- 作答独立写入 quiz_attempts，不增加 Course revision；语音偏好只保存在 localStorage。
+
 ## 3. 验证记录
 
 ```text
 pnpm db:migrate  # 首次 applied 001；复跑 skip 001
 pnpm lint
-pnpm test        # 10 个文件、29 项无数据库测试
-pnpm test:db     # 1 个文件、8 项真实 MySQL 测试
+pnpm test        # 12 个文件、35 项无数据库测试
+pnpm test:db     # 1 个文件、9 项真实 MySQL 测试
 pnpm build
 ```
 
-单元测试在 M3 覆盖项之外，新增 slide/code/quiz DTO 装配、模型 ID 注入拒绝、答案索引越界、重复选项、HTML/URL 安全门、场景 repair、逐场景 revision、失败隔离、后续继续、单场重试、最终事务失败和迟到响应保护。MySQL 集成测试新增“三个场景分别提交后由新仓储实例恢复为 REV.8 ready 课程”。
+单元测试在 M3/M4 覆盖项之外，新增播放器完整状态路径、暂停/继续不重复、快速切页迟到事件保护、可暂停 TextOnly 计时、BrowserSpeech 不可用回退，以及测验服务端判分和非法选项拒绝。MySQL 集成测试新增“服务端判分后由新作答仓储实例恢复记录且 Course revision 不变”。
 
 Playwright CLI 在 production server 上完成“创建 3 场景草稿 → mock 生成 REV.2 大纲 → 确认后依次生成 2 个 slide 和 1 个 quiz → REV.8 ready → 进入课堂检查生成内容和答案选项”的浏览器链路。页面显示 03/03 独立提交，课堂显示 `REV.8 · MOCK`，控制台错误数为 0；验证课程随后已从 MySQL 删除。
+
+M5 继续在 production server 上验证“进入 ready 课程 → TextOnly 开始播放 → 暂停状态 → 手工切到 quiz 并确认旧 Action 取消 → 讲解完成进入 awaitingLearner → 选择答案 → 服务端保存 → 本场景 completed”。页面显示 `ACTION 2 / 2` 和“回答正确”，MySQL 查询得到 1 条 `correct=1` 作答记录且 Course 保持 `REV.9`；浏览器错误与警告均为 0。验证课程和 Playwright 临时产物在验收后清理。
 
 ## 4. 当前明确未实现
 
 - 尚未用有效 Key 实际调用 DeepSeek 或阿里百炼，因此不能宣称双 Provider 远端联调完成；
 - 超时租约可以被下一次显式生成请求接管，但尚无后台扫描器主动恢复遗留操作；
-- 课堂仍为手动翻页，Action executor、自动播放、TextOnlySpeechAdapter 和 BrowserSpeechAdapter 尚未实现；
-- quiz 页面可以判分，但尚未通过 API 写入 quiz_attempts；
 - 完整 Playwright 回归测试文件仍留在 M6，当前使用受控 CLI 验证关键浏览器链路。
 
-M4 场景代码完成不代表整个 MVP 完成；远端验收、课堂运行时和测验持久化仍分别属于 Provider 验收及 M5。
+M5 代码完成不代表整个 MVP 已完成交付；远端 Provider smoke test、完整 E2E、故障矩阵、部署和导师复现仍属于 M6。
 
-## 5. 下一步：M5（远端 Provider 验收并行保留）
+## 5. 下一步：M6（远端 Provider 验收并行保留）
 
-下一开发步进入 M5：实现 playback reducer、Action executor、默认 TextOnlySpeechAdapter、可选 BrowserSpeechAdapter，以及 quiz_attempts 服务端写入。DeepSeek 与百炼真实 smoke test 仍是独立验收项；获得有效 Key 后应验证完整“大纲 + 多场景”链路，并以数据库中的 outline/scene `GenerationMetadata` 和实际课程内容作为证据，不以 HTTP 200 单独判定成功。
+下一开发步进入 M6：把当前受控 CLI 验证固化为可重复 E2E，补齐 API/故障矩阵、部署启动、备份恢复、需求追踪和导师复现说明。DeepSeek 与百炼真实 smoke test 仍是独立验收项；获得有效 Key 后应验证完整“大纲 + 多场景”链路，并以数据库中的 outline/scene `GenerationMetadata` 和实际课程内容作为证据，不以 HTTP 200 单独判定成功。

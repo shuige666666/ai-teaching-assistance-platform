@@ -5,9 +5,11 @@ import { createCourseDraft, createFixtureCourse, materializeFixtureCourse } from
 import { MockAIAdapter } from "@/lib/ai/mock-adapter";
 import { OutlineGenerationService } from "@/lib/application/outline-generation-service";
 import { SceneGenerationService } from "@/lib/application/scene-generation-service";
+import { QuizAttemptService } from "@/lib/application/quiz-attempt-service";
 import { courseRepositoryContract } from "@/tests/domain/course-repository-contract";
 import { DatabaseUnavailableError, StoredCourseInvalidError } from "@/lib/repository/course-repository";
 import { MySQLCourseRepository } from "@/lib/repository/mysql-course-repository";
+import { MySQLQuizAttemptRepository } from "@/lib/repository/mysql-quiz-attempt-repository";
 
 const pool = getDatabasePool();
 courseRepositoryContract("MySQL", () => new MySQLCourseRepository(pool));
@@ -65,6 +67,24 @@ describe("MySQLCourseRepository integration", () => {
     await repository.delete(created.id);
     const [rows] = await pool.execute<Array<RowDataPacket & { count: number }>>("SELECT COUNT(*) AS count FROM quiz_attempts WHERE course_id = ?", [created.id]);
     expect(Number(rows[0].count)).toBe(0);
+  });
+
+  it("服务端判分后可由新作答仓储实例恢复记录", async () => {
+    const courseRepository = new MySQLCourseRepository(pool);
+    const course = await courseRepository.create(materializeFixtureCourse(createFixtureCourse(`作答恢复 ${crypto.randomUUID()}`, 3)));
+    cleanupIds.push(course.id);
+    const scene = course.scenes.find((item) => item.type === "quiz");
+    if (!scene || scene.type !== "quiz") throw new Error("fixture quiz missing");
+    const question = scene.content.questions[0];
+    const attempt = await new QuizAttemptService(courseRepository, new MySQLQuizAttemptRepository(pool)).submit(course.id, {
+      sceneId: scene.id,
+      questionId: question.id,
+      selectedOptionId: question.correctOptionId,
+    });
+    const recovered = await new MySQLQuizAttemptRepository(pool).listByCourse(course.id);
+    expect(attempt.correct).toBe(true);
+    expect(recovered).toEqual([attempt]);
+    expect((await courseRepository.get(course.id))?.revision).toBe(course.revision);
   });
 
   it("读取损坏 JSON 聚合时返回 STORED_COURSE_INVALID", async () => {

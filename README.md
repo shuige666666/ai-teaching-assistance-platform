@@ -13,9 +13,9 @@
 
 ## 当前状态
 
-项目目前处于 **M4 逐场景生成代码完成、远端 Provider 验收待配置** 的阶段。默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建草稿，经正式管线生成并编辑 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂并从 MySQL 恢复课程。
+项目目前处于 **M5 课堂运行时代码完成、M6 系统验收待执行** 的阶段。默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建草稿，经正式管线生成并编辑 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂自动播放并从 MySQL 恢复课程。
 
-大纲和场景阶段共用 `MockAIAdapter` 与 DeepSeek/百炼 `OpenAICompatibleAdapter`，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。每个场景在模型调用前后各使用一次短事务，并通过 `activeOperation + expectedRevision` 阻止迟到结果覆盖。单场失败只写入对应 `SceneProgress`，其余已完成场景继续保留并可继续生成；失败项支持显式重试。当前尚未提供两家远端 Key，因此只验证了 mock 完整调用链，不能把远端 Provider 描述为已经联调成功。
+大纲和场景阶段共用 `MockAIAdapter` 与 DeepSeek/百炼 `OpenAICompatibleAdapter`，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 会停在 `awaitingLearner`，由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。当前尚未提供两家远端 Key，因此只验证了 mock 完整调用链，不能把远端 Provider 描述为已经联调成功。
 
 ## MVP 要实现什么
 
@@ -55,9 +55,9 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 app/
   page.tsx                       # [M3 已实现] 创建 MySQL 草稿、恢复与删除课程
   generation/[courseId]/         # [M4 已实现] 大纲审核、逐场景生成、进度与重试
-  classroom/[courseId]/          # [M1 已实现] 固定渲染、手动翻页和测验
+  classroom/[courseId]/          # [M5 已实现] 固定渲染、Action 播放、测验与可选语音
   api/courses/                   # [M2 已实现] MySQL 课程创建与读取
-  api/courses/[courseId]/        # [M4 已实现] CRUD、大纲与逐场景生成接口
+  api/courses/[courseId]/        # [M5 已实现] CRUD、生成与 quiz_attempts 接口
   api/health/database/           # [M2 已实现] 无敏感信息的数据库健康检查
 components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
@@ -65,15 +65,15 @@ lib/
   domain/                        # [M1 已实现] Schema、状态转换与 fixture
   repository/                    # [M2 已实现] InMemory / MySQL 仓储与错误映射
   db/                            # [M2 已实现] MySQL 配置、连接池和健康检查
-  application/                   # [M4 已实现] 大纲/场景用例、短事务和操作租约
+  application/                   # [M5 已实现] 生成用例与服务端测验判分
   ai/                            # [M3 已实现] mock 与 OpenAI-compatible 适配器
   generation/                    # [M4 已实现] 大纲/场景 Prompt、解析、装配、修复与重试
-  playback/                      # [M5] 播放 reducer 和 Action executor
+  playback/                      # [M5 已实现] 播放 reducer、Action executor 与语音适配器
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
 scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
 ```
 
-标记为 M1～M4 的目录已经进入正式调用链，其余仍是计划结构。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M5 的目录已经进入正式调用链，其余仍是计划结构。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 ## 技术栈
 
@@ -116,7 +116,7 @@ pnpm test:db
 pnpm build
 ```
 
-`pnpm test` 运行领域、适配器、生成管线、应用服务、内存仓储与渲染安全测试；`pnpm test:db` 读取本机 `.env.local`，额外运行真实 MySQL 仓储和大纲短事务恢复测试。完整 Playwright E2E 脚本将在 M6 补齐。
+`pnpm test` 运行领域、适配器、生成管线、播放状态机、应用服务、内存仓储与渲染安全测试；`pnpm test:db` 读取本机 `.env.local`，额外运行真实 MySQL 仓储、生成恢复与测验作答测试。完整 Playwright E2E 脚本将在 M6 补齐。
 
 ## 模型配置
 
@@ -149,8 +149,8 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 2. **M2（已完成）**：接入 MySQL、迁移、CourseRepository 和课程 CRUD；
 3. **M3（代码完成，远端验收待 Key）**：统一适配器、大纲生成、修复和编辑确认已实现；
 4. **M4（代码完成，远端验收待 Key）**：逐场景生成、事务保存、失败隔离和单场景重试；
-5. **M5（下一开发步）**：实现 Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
-6. M6：完成自动化测试、故障注入、部署和需求验收。
+5. **M5（已完成）**：Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
+6. **M6（下一开发步）**：完成自动化测试、故障注入、部署和需求验收。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。
 

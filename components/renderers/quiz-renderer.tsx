@@ -1,23 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { QuizContent } from "@/lib/domain/schemas";
 
 type QuizRendererProps = {
   content: QuizContent;
+  disabled?: boolean;
+  onSubmit?: (questionId: string, selectedOptionId: string) => Promise<{ correct: boolean }>;
+  onCompleted?: () => void;
 };
 
-/** 在浏览器中确定性判分，测验提交不调用模型。 */
-export function QuizRenderer({ content }: QuizRendererProps) {
+/** 展示固定单选题，并在课堂模式下等待服务端持久化后再公布结果。 */
+export function QuizRenderer({ content, disabled = false, onSubmit, onCompleted }: QuizRendererProps) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [submitted, setSubmitted] = useState<Record<string, boolean>>({});
+  const [results, setResults] = useState<Record<string, { correct: boolean }>>({});
+  const [pendingQuestionId, setPendingQuestionId] = useState<string>();
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const completedNotified = useRef(false);
+
+  useEffect(() => {
+    if (!completedNotified.current && Object.keys(results).length === content.questions.length) {
+      completedNotified.current = true;
+      onCompleted?.();
+    }
+  }, [content.questions.length, onCompleted, results]);
+
+  /** 未注入 API 时保留纯渲染器的本地判分能力，正式课堂由服务端返回 correct。 */
+  async function submit(questionId: string, selectedOptionId: string, correctOptionId: string) {
+    setPendingQuestionId(questionId);
+    setErrors((current) => ({ ...current, [questionId]: "" }));
+    try {
+      const result = onSubmit
+        ? await onSubmit(questionId, selectedOptionId)
+        : { correct: selectedOptionId === correctOptionId };
+      setResults((current) => ({ ...current, [questionId]: result }));
+    } catch (error) {
+      setErrors((current) => ({ ...current, [questionId]: error instanceof Error ? error.message : "提交失败，请重试" }));
+    } finally {
+      setPendingQuestionId(undefined);
+    }
+  }
 
   return (
     <div className="quiz-stack" data-testid="quiz-renderer">
       {content.questions.map((question, questionIndex) => {
         const selectedId = answers[question.id];
-        const isSubmitted = submitted[question.id] === true;
-        const isCorrect = selectedId === question.correctOptionId;
+        const result = results[question.id];
+        const isSubmitted = result !== undefined;
+        const isCorrect = result?.correct === true;
+        const isPending = pendingQuestionId === question.id;
         return (
           <section className="quiz-card" key={question.id}>
             <p className="quiz-number">CHECK {String(questionIndex + 1).padStart(2, "0")}</p>
@@ -34,7 +65,7 @@ export function QuizRenderer({ content }: QuizRendererProps) {
                       name={question.id}
                       value={option.id}
                       checked={checked}
-                      disabled={isSubmitted}
+                      disabled={disabled || isSubmitted || isPending}
                       onChange={() => setAnswers((current) => ({ ...current, [question.id]: option.id }))}
                     />
                     <span className="option-letter">{String.fromCharCode(65 + optionIndex)}</span>
@@ -47,15 +78,16 @@ export function QuizRenderer({ content }: QuizRendererProps) {
               <button
                 className="button button--dark quiz-submit"
                 type="button"
-                disabled={!selectedId}
-                onClick={() => setSubmitted((current) => ({ ...current, [question.id]: true }))}
-              >提交答案</button>
+                disabled={disabled || !selectedId || isPending}
+                onClick={() => selectedId && void submit(question.id, selectedId, question.correctOptionId)}
+              >{isPending ? "正在保存…" : disabled ? "播放讲解后作答" : "提交答案"}</button>
             ) : (
               <div className={`quiz-result ${isCorrect ? "is-correct" : "is-wrong"}`} role="status">
                 <strong>{isCorrect ? "回答正确" : "再想一步"}</strong>
                 <p>{question.explanation}</p>
               </div>
             )}
+            {errors[question.id] && <p className="quiz-error" role="alert">{errors[question.id]}</p>}
           </section>
         );
       })}

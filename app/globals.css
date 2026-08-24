@@ -228,6 +228,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .scene-rail button.is-active { color: white; }
 .scene-rail button.is-active span { color: var(--accent); }
 .scene-rail button.is-active i { background: var(--accent); width: 3px; }
+.scene-rail button.is-passed { color: #afb0aa; }
+.scene-rail button.is-passed i { background: var(--olive); }
 
 .classroom-stage { min-width: 0; overflow: auto; padding: 38px clamp(32px, 5vw, 82px) 60px; background: var(--paper); }
 .scene-heading { display: flex; justify-content: space-between; align-items: end; border-bottom: 1px solid var(--ink); padding-bottom: 19px; margin-bottom: 28px; }
@@ -264,11 +266,37 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .quiz-result { margin-top: 20px; padding: 16px; border-left: 5px solid var(--olive); background: var(--mint); }
 .quiz-result.is-wrong { border-color: var(--accent); background: #f3d9d0; }
 .quiz-result p { margin: 7px 0 0; line-height: 1.6; }
+.quiz-error { margin: 12px 0 0; color: #9f321f; font-size: 12px; }
 
 .narration-panel { border-left: 1px solid #b7b0a3; background: #e9e4d9; padding: 35px 27px; display: flex; flex-direction: column; }
 .narration-panel h2 { margin: 0; font-family: var(--font-display); font-size: 25px; }
-.narration-panel blockquote { margin: 35px 0; padding: 0; font-family: var(--font-display); font-size: 17px; line-height: 2; }
+.runtime-heading { display: flex; align-items: start; justify-content: space-between; gap: 15px; }
+.runtime-lamp { width: 11px; height: 11px; margin-top: 5px; border: 1px solid #8c8c83; border-radius: 50%; background: #beb8ac; box-shadow: 0 0 0 4px rgba(255,255,255,.32); }
+.runtime-lamp--playing { border-color: #285b38; background: #4ba766; animation: runtime-pulse 1.4s infinite; }
+.runtime-lamp--paused, .runtime-lamp--awaitingLearner { border-color: #9b4e36; background: var(--accent); }
+.runtime-lamp--completed { border-color: #516332; background: var(--olive); }
+.runtime-status { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 12px; padding-top: 14px; border-top: 1px solid var(--ink); }
+.runtime-status span { font: 12px/1 var(--font-mono); color: var(--ink); }
+.runtime-status small { font: 9px/1 var(--font-mono); color: var(--muted); }
+.runtime-primary, .runtime-wait { min-height: 48px; width: 100%; border: 1px solid var(--ink); display: flex; align-items: center; justify-content: center; gap: 12px; background: var(--ink); color: white; font-size: 12px; }
+.runtime-primary { cursor: pointer; transition: transform .15s, background .15s; }
+.runtime-primary:hover { transform: translateY(-2px); background: #343630; }
+.runtime-primary span { color: var(--accent); font: 15px/1 var(--font-mono); }
+.runtime-wait { background: transparent; color: var(--ink); }
+.runtime-wait i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: runtime-pulse 1.4s infinite; }
+.runtime-track { height: 3px; margin-top: 12px; overflow: hidden; background: #cbc5b9; }
+.runtime-track i { display: block; height: 100%; background: var(--accent); transition: width .25s ease; }
+.narration-panel blockquote { margin: 31px 0; padding: 0; font-family: var(--font-display); font-size: 16px; line-height: 1.9; }
 .narration-panel blockquote::before { content: "“"; display: block; color: var(--accent); font-size: 52px; line-height: .5; margin-bottom: 18px; }
+.speech-switch { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px 0; border-top: 1px solid var(--line); }
+.speech-switch span, .speech-switch small { display: block; }
+.speech-switch span { font-size: 12px; }
+.speech-switch small { max-width: 175px; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.speech-switch button { position: relative; flex: 0 0 37px; width: 37px; height: 20px; padding: 0; border: 1px solid #96968e; border-radius: 20px; background: #c8c3b8; cursor: pointer; }
+.speech-switch button i { position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: white; transition: transform .2s ease; }
+.speech-switch button.is-on { border-color: var(--olive); background: var(--olive); }
+.speech-switch button.is-on i { transform: translateX(17px); }
+.speech-switch button:disabled { cursor: not-allowed; opacity: .5; }
 .runtime-note { margin-top: auto; border-top: 1px solid var(--line); padding-top: 18px; }
 .runtime-note span { display: block; font: 9px/1 var(--font-mono); color: var(--muted); }
 .runtime-note strong { display: block; margin: 8px 0; font-size: 12px; color: var(--olive); }
@@ -280,6 +308,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .control-center { display: flex; align-items: center; gap: 16px; color: #9c9d96; font-size: 11px; }
 .control-index { color: var(--accent); font: 16px/1 var(--font-mono); }
 .control-divider { width: 1px; height: 25px; background: #4d4f49; }
+
+@keyframes runtime-pulse { 50% { opacity: .45; box-shadow: 0 0 0 7px rgba(194,83,55,.08); } }
 
 .missing-state { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; width: min(720px, calc(100% - 48px)); margin: auto; }
 .missing-state h1 { font-size: clamp(42px, 7vw, 76px); }
@@ -305,6 +335,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .generation-aside .button, .generation-aside .text-link, .generation-aside .form-error, .generation-aside .form-success { grid-column: 1 / -1; }
   .classroom-layout { grid-template-columns: 76px 1fr; }
   .narration-panel { grid-column: 2; border-left: 0; border-top: 1px solid var(--line); }
+  .narration-panel blockquote { max-width: 760px; }
 }
 
 @media (max-width: 700px) {
@@ -336,6 +367,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .scene-heading { align-items: start; }
   .scene-heading > span { display: none; }
   .narration-panel { grid-column: 1; }
+  .runtime-note { margin-top: 24px; }
   .classroom-controls { padding: 0 15px; }
   .control-button span, .control-center > span:last-child, .control-divider { display: none; }
 }
