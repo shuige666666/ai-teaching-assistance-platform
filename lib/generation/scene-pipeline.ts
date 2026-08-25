@@ -92,7 +92,8 @@ export async function generateScene(
       output = validateSceneOutput(parseModelJson(repair.text), input.outline);
     } catch (repairError) {
       const finalError = repairError instanceof InvalidSceneError ? repairError : invalid;
-      throw new SceneGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合场景契约", false, upstreamCalls, finalError.issues, { cause: repairError });
+      // 本次修复预算已经耗尽，但下一次请求会重新采样，仍允许用户显式重试。
+      throw new SceneGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合场景契约", true, upstreamCalls, finalError.issues, { cause: repairError });
     }
   }
 

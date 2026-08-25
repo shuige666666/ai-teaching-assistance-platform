@@ -4,6 +4,7 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
   const topic = `M6 自动验收 ${Date.now()}`;
   const browserErrors: string[] = [];
   let courseId: string | undefined;
+  let interceptedCourseId: string | undefined;
 
   page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
   page.on("pageerror", (error) => browserErrors.push(error.message));
@@ -14,11 +15,24 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     await page.getByLabel("这堂课要讲什么？").fill(topic);
     await page.getByRole("button", { name: "3", exact: true }).click();
 
+    // 暂存成功响应，确保用户在真实等待期间能看到阶段、耗时和请求编号。
+    await page.route("**/api/courses", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const response = await route.fetch();
+      const body = await response.body();
+      interceptedCourseId = (JSON.parse(body.toString()) as { course: { id: string } }).course.id;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await route.fulfill({ response, body });
+    });
+
     const creationResponsePromise = page.waitForResponse((response) => response.url().endsWith("/api/courses") && response.request().method() === "POST");
     await page.getByRole("button", { name: /生成课程大纲/ }).click();
+    await expect(page.getByText("正在写入 MySQL")).toBeVisible();
+    await expect(page.getByText(/requestId:/)).toBeVisible();
     const creationResponse = await creationResponsePromise;
     expect(creationResponse.status()).toBe(201);
-    courseId = ((await creationResponse.json()) as { course: { id: string } }).course.id;
+    expect(interceptedCourseId).toBeTruthy();
+    courseId = interceptedCourseId;
     await expect(page).toHaveURL(new RegExp(`/generation/${courseId}$`));
 
     await page.getByRole("button", { name: "生成课程大纲" }).click();
@@ -43,9 +57,7 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
 
     await page.getByRole("button", { name: /打开场景 3/ }).click();
     await expect(page.getByText("QUIZ · SCENE 03")).toBeVisible();
-    await expect(page.getByRole("button", { name: "播放讲解后作答" })).toBeDisabled();
-    await page.getByRole("button", { name: /开始课堂/ }).click();
-    await expect(page.getByText("等待作答", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("radio").first()).toBeEnabled();
     await page.getByRole("radio").first().check();
     await page.getByRole("button", { name: "提交答案" }).click();
     await expect(page.getByText("回答正确")).toBeVisible();

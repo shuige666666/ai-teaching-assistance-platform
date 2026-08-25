@@ -73,7 +73,11 @@ export function usePlaybackController(scene: Scene, browserSpeechEnabled: boolea
     pause: () => dispatch({ type: "PAUSE" }),
     resume: () => dispatch({ type: "RESUME" }),
     replay: () => { cancelActive(); dispatch({ type: "REPLAY" }); },
-    completeLearner: () => dispatch({ type: "LEARNER_COMPLETED", sceneId: state.sceneId, actionIndex: state.actionIndex, runId: state.runId }),
+    completeLearner: () => {
+      // 用户可能在讲解仍播放时完成测验，先取消旧语音或计时器再结束场景。
+      cancelActive();
+      dispatch({ type: "LEARNER_COMPLETED", sceneId: state.sceneId, actionIndex: state.actionIndex, runId: state.runId });
+    },
   }), [currentAction, progress, state]);
 }
 

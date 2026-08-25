@@ -26,6 +26,16 @@ describe("playback reducer", () => {
     const replayed = playbackReducer(state, { type: "REPLAY" });
     expect(playbackReducer(replayed, { type: "ACTION_COMPLETED", sceneId: "scene-2", actionIndex: 0, runId: 0 })).toEqual(replayed);
   });
+
+  it("允许测验在讲解前或讲解中直接提交并完成场景", () => {
+    const idle = createPlaybackState("quiz-1", 2);
+    expect(playbackReducer(idle, { type: "LEARNER_COMPLETED", sceneId: "quiz-1", actionIndex: 0, runId: 0 }))
+      .toMatchObject({ status: "completed", actionIndex: 2 });
+
+    const playing = playbackReducer(createPlaybackState("quiz-1", 2), { type: "PLAY" });
+    expect(playbackReducer(playing, { type: "LEARNER_COMPLETED", sceneId: "quiz-1", actionIndex: 0, runId: 0 }))
+      .toMatchObject({ status: "completed", actionIndex: 2 });
+  });
 });
 
 describe("speech adapters", () => {

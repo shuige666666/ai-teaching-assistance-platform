@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const port = Number(process.env.E2E_PORT ?? 3100);
+const baseURL = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -9,14 +12,14 @@ export default defineConfig({
   outputDir: "output/playwright/test-results",
   reporter: [["line"], ["html", { outputFolder: "output/playwright/report", open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
   },
   webServer: {
-    command: "pnpm start",
-    url: "http://127.0.0.1:3000/api/health/database",
+    command: `pnpm start --port ${port}`,
+    url: `${baseURL}/api/health/database`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },

@@ -198,7 +198,7 @@ mock 必须确定性生成 3～5 项大纲。分别使用有效 DeepSeek 与百�
 
 实现 playback reducer 和 Action executor，支持 speech、pause。默认 TextOnlySpeechAdapter 显示讲解并按估算时长完成；BrowserSpeechAdapter 在用户启用且浏览器支持时使用 `speechSynthesis`。后续若需要云 TTS，只新增适配器，不改变 Action 或播放器。
 
-quiz 在作答前进入 awaitingLearner，提交后展示对错和解析。课堂提供播放、暂停、继续、上一场景、下一场景和重新播放。切换课程或卸载页面时取消当前适配器、定时器和监听器。quiz_attempts 通过服务端保存；语音开关和非关键播放游标可留在 localStorage。
+quiz 进入页面即可作答；自动播放到 learner pause 时进入 awaitingLearner，提交后展示对错和解析。若在讲解前或讲解中完成全部题目，则取消当前语音或计时并完成场景。课堂提供播放、暂停、继续、上一场景、下一场景和重新播放。切换课程或卸载页面时取消当前适配器、定时器和监听器。quiz_attempts 通过服务端保存；语音开关和非关键播放游标可留在 localStorage。
 
 ### 最小测试
 

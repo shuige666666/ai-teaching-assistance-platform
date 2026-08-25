@@ -52,6 +52,9 @@ export function playbackReducer(state: PlaybackState, event: PlaybackEvent): Pla
     case "AWAIT_LEARNER":
       return state.status === "playing" && matchesCurrentRun(state, event) ? { ...state, status: "awaitingLearner" } : state;
     case "LEARNER_COMPLETED":
-      return state.status === "awaitingLearner" && matchesCurrentRun(state, event) ? advance(state) : state;
+      // 测验允许在讲解前或讲解中直接作答；提交完成后直接结束当前 quiz 场景。
+      return matchesCurrentRun(state, event) && ["idle", "playing", "paused", "awaitingLearner"].includes(state.status)
+        ? { ...state, actionIndex: state.actionCount, status: "completed" }
+        : state;
   }
 }

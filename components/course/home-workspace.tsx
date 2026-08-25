@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import type { CourseSummary } from "@/lib/domain/schemas";
+
+type CreationProgress = {
+  phase: "saving" | "opening";
+  requestId: string;
+  startedAt: number;
+};
 
 function apiErrorMessage(payload: { error?: { message?: string } }, fallback: string) {
   return payload.error?.message ?? fallback;
@@ -18,24 +24,50 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
   const [topic, setTopic] = useState("TCP 拥塞控制");
   const [sceneCount, setSceneCount] = useState(4);
   const [submitting, setSubmitting] = useState(false);
+  const [creationProgress, setCreationProgress] = useState<CreationProgress | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [courses, setCourses] = useState(initialCourses);
+
+  useEffect(() => {
+    if (!creationProgress) return;
+    const timer = window.setInterval(() => setElapsedMs(Date.now() - creationProgress.startedAt), 250);
+    return () => window.clearInterval(timer);
+  }, [creationProgress]);
 
   /** 创建成功后只携带 courseId 跳转，生成页从仓储重新读取课程事实。 */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const requestId = crypto.randomUUID();
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
     setSubmitting(true);
+    setElapsedMs(0);
+    setCreationProgress({ phase: "saving", requestId, startedAt });
     setError(null);
     try {
       const response = await fetch("/api/courses", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic, requestedSceneCount: sceneCount }),
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-request-id": requestId },
+        body: JSON.stringify({ topic, requestedSceneCount: sceneCount }),
+        signal: controller.signal,
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(apiErrorMessage(payload, "创建课程失败"));
-      router.push(`/generation/${payload.course.id}`);
+      setCreationProgress({ phase: "opening", requestId: payload.meta?.requestId ?? requestId, startedAt });
+      // 开发模式的 RSC 客户端跳转可能长时间停留在 Rendering；完整导航可可靠进入服务端页面。
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign(`/generation/${payload.course.id}`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "创建课程失败");
+      const message = caught instanceof DOMException && caught.name === "AbortError"
+        ? `保存课程超过 15 秒，已停止等待。请用请求编号 ${requestId} 检查终端日志，刷新后确认课程是否已经创建。`
+        : caught instanceof Error ? caught.message : "创建课程失败";
+      setError(message);
       setSubmitting(false);
+      setCreationProgress(null);
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
@@ -80,7 +112,17 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
             <div className="mode-note"><span>运行模式</span><strong>AI PIPELINE + MYSQL</strong></div>
           </div>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
-          <button className="button button--accent button--wide" type="submit" disabled={submitting}>{submitting ? "正在建立课程…" : "生成课程大纲"}<span aria-hidden="true">→</span></button>
+          {creationProgress ? (
+            <div className="creation-progress" role="status" aria-live="polite">
+              <div className="creation-progress__head"><span>LIVE REQUEST</span><strong>{(elapsedMs / 1000).toFixed(1)}s</strong></div>
+              <ol>
+                <li className="is-active"><span>01</span><div><strong>保存课程草稿</strong><small>{creationProgress.phase === "saving" ? "正在写入 MySQL" : "已经完成"}</small></div></li>
+                <li className={creationProgress.phase === "opening" ? "is-active" : ""}><span>02</span><div><strong>打开大纲工作台</strong><small>{creationProgress.phase === "opening" ? "正在加载页面" : "等待保存完成"}</small></div></li>
+              </ol>
+              <code>requestId: {creationProgress.requestId}</code>
+            </div>
+          ) : null}
+          <button className="button button--accent button--wide" type="submit" disabled={submitting}>{creationProgress?.phase === "opening" ? "课程已保存，正在打开…" : submitting ? "正在保存课程草稿…" : "生成课程大纲"}<span aria-hidden="true">→</span></button>
           <p className="form-footnote">默认 mock 无需模型 Key；remote Provider 仅由服务端环境配置。</p>
         </form>
       </section>

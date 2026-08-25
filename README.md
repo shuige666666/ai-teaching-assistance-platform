@@ -15,7 +15,7 @@
 
 项目目前处于 **M6 代码与 mock 自动验收完成、远端 Provider 和异机复现待外部条件** 的阶段。默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建草稿，经正式管线生成并编辑 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂自动播放并从 MySQL 恢复课程。
 
-大纲和场景阶段共用 `MockAIAdapter` 与 DeepSeek/百炼 `OpenAICompatibleAdapter`，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 会停在 `awaitingLearner`，由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。当前尚未提供两家远端 Key，因此只验证了 mock 完整调用链，不能把远端 Provider 描述为已经联调成功。
+大纲和场景阶段共用 `MockAIAdapter` 与 DeepSeek/百炼 `OpenAICompatibleAdapter`，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 可在讲解前直接作答；自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。当前尚未提供两家远端 Key，因此只验证了 mock 完整调用链，不能把远端 Provider 描述为已经联调成功。
 
 ## MVP 要实现什么
 
@@ -110,6 +110,8 @@ pnpm dev
 ```
 
 浏览器访问 [http://localhost:3000](http://localhost:3000)。mock 模式无需模型密钥，但必须先启动 MySQL 并执行迁移。`COURSE_REPOSITORY=memory` 只用于受控测试，不是正式运行模式。
+
+开发时普通的 `pnpm dev` 已输出课程创建、大纲生成和场景生成的结构化日志；长时间模型调用每 10 秒输出一次 `running` 心跳。需要在 IDE 中给 Route Handler 或应用服务设置 Node.js 断点时使用 `pnpm dev:inspect`。页面操作台与终端日志共用 `requestId`，可据此定位同一次请求；日志不会打印主题、Prompt、模型原文、数据库 URL 或 API Key。
 
 常用质量命令：
 

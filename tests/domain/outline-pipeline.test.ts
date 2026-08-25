@@ -36,6 +36,6 @@ describe("outline generation pipeline", () => {
   it("修复后仍失败时停止，不静默写入", async () => {
     const invalid = JSON.stringify({ courseTitle: "失败课程", outlines: [] });
     await expect(generateOutline(new MockAIAdapter([invalid, invalid]), { topic: "测试主题", sceneCount: 3, requestId: "request-3", signal: new AbortController().signal }))
-      .rejects.toMatchObject({ code: "INVALID_MODEL_OUTPUT", upstreamCalls: 2 });
+      .rejects.toMatchObject({ code: "INVALID_MODEL_OUTPUT", retryable: true, upstreamCalls: 2 });
   });
 });

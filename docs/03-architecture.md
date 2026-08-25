@@ -333,6 +333,7 @@ idle ── start ──> playing ── pause ──> paused
 completed <── 所有场景与动作完成
 
 playing ── learner pause ──> awaitingLearner ── submit/next ──> playing
+idle/playing/paused ── quiz 全部提交 ──> completed
 ```
 
 它不负责 React 渲染，也不直接访问 MySQL。页面订阅状态，SceneRenderer 渲染内容；TextOnlySpeechAdapter 默认显示文本并按估算时长完成，BrowserSpeechAdapter 可选包装 Web Speech API。切页、暂停和卸载都必须取消当前适配器及计时器。

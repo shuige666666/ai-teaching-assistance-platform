@@ -156,6 +156,7 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-406 | 上一页、下一页必须重置当前动作游标，并取消当前 SpeechAdapter。 |
 | FR-407 | quiz 未提交时，自动播放必须进入 awaitingLearner。 |
 | FR-408 | 页面卸载时必须清理 SpeechAdapter、计时器和 AbortController。 |
+| FR-409 | quiz 进入页面后应立即允许选择和提交，不以前置播放讲解作为作答条件；全部题目保存成功后完成当前场景。 |
 
 ### 4.6 持久化与恢复
 

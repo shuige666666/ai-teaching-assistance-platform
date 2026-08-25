@@ -23,7 +23,7 @@ export async function readLimitedJson(request: Request): Promise<unknown> {
   return JSON.parse(text);
 }
 
-export function mapOutlineError(error: unknown, requestId = randomUUID()) {
+export function mapOutlineError(error: unknown, requestId: string = randomUUID()) {
   let status = 500;
   let code = "INTERNAL_ERROR";
   let message = "服务端处理失败";

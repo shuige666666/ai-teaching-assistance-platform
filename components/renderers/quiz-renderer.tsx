@@ -5,13 +5,12 @@ import type { QuizContent } from "@/lib/domain/schemas";
 
 type QuizRendererProps = {
   content: QuizContent;
-  disabled?: boolean;
   onSubmit?: (questionId: string, selectedOptionId: string) => Promise<{ correct: boolean }>;
   onCompleted?: () => void;
 };
 
 /** 展示固定单选题，并在课堂模式下等待服务端持久化后再公布结果。 */
-export function QuizRenderer({ content, disabled = false, onSubmit, onCompleted }: QuizRendererProps) {
+export function QuizRenderer({ content, onSubmit, onCompleted }: QuizRendererProps) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [results, setResults] = useState<Record<string, { correct: boolean }>>({});
   const [pendingQuestionId, setPendingQuestionId] = useState<string>();
@@ -65,7 +64,7 @@ export function QuizRenderer({ content, disabled = false, onSubmit, onCompleted 
                       name={question.id}
                       value={option.id}
                       checked={checked}
-                      disabled={disabled || isSubmitted || isPending}
+                      disabled={isSubmitted || isPending}
                       onChange={() => setAnswers((current) => ({ ...current, [question.id]: option.id }))}
                     />
                     <span className="option-letter">{String.fromCharCode(65 + optionIndex)}</span>
@@ -78,9 +77,9 @@ export function QuizRenderer({ content, disabled = false, onSubmit, onCompleted 
               <button
                 className="button button--dark quiz-submit"
                 type="button"
-                disabled={disabled || !selectedId || isPending}
+                disabled={!selectedId || isPending}
                 onClick={() => selectedId && void submit(question.id, selectedId, question.correctOptionId)}
-              >{isPending ? "正在保存…" : disabled ? "播放讲解后作答" : "提交答案"}</button>
+              >{isPending ? "正在保存…" : "提交答案"}</button>
             ) : (
               <div className={`quiz-result ${isCorrect ? "is-correct" : "is-wrong"}`} role="status">
                 <strong>{isCorrect ? "回答正确" : "再想一步"}</strong>

@@ -104,7 +104,6 @@ export function ClassroomRuntime({ course }: { course: Course }) {
           <SceneRenderer
             scene={scene}
             quizSessionId={playback.state.runId}
-            quizDisabled={playback.state.status !== "awaitingLearner"}
             onQuizSubmit={submitQuiz}
             onQuizCompleted={playback.completeLearner}
           />
@@ -115,12 +114,12 @@ export function ClassroomRuntime({ course }: { course: Course }) {
           <div className="runtime-status" aria-live="polite"><span>{statusLabels[playback.state.status]}</span><small>ACTION {Math.min(playback.state.actionIndex + 1, playback.state.actionCount)} / {playback.state.actionCount}</small></div>
           {primaryControl()}
           <div className="runtime-track"><i style={{ width: `${playback.progress}%` }} /></div>
-          <blockquote>{speech?.type === "speech" ? speech.text : "当前场景没有讲解动作。"}</blockquote>
+          <blockquote tabIndex={0} aria-label="当前场景讲解文本，可上下滚动">{speech?.type === "speech" ? speech.text : "当前场景没有讲解动作。"}</blockquote>
           <div className="speech-switch">
             <div><span>浏览器朗读</span><small>{browserSpeechSupported ? "可选增强 · 失败自动回退文本" : "当前浏览器不支持，使用文本计时"}</small></div>
             <button type="button" role="switch" aria-checked={browserSpeechEnabled} disabled={!browserSpeechSupported} className={browserSpeechEnabled ? "is-on" : ""} onClick={toggleBrowserSpeech}><i /></button>
           </div>
-          <div className="runtime-note"><span>PLAYBACK POLICY</span><strong>{continuousPlay ? "连续播放已开启" : "手动场景导航"}</strong><p>切换场景会取消旧语音与计时器；测验必须成功保存后才继续。</p></div>
+          <div className="runtime-note"><span>PLAYBACK POLICY</span><strong>{continuousPlay ? "连续播放已开启" : "手动场景导航"}</strong><p>切换场景会取消旧语音与计时器；测验可直接作答，全部提交成功后完成本场景。</p></div>
         </aside>
       </div>
 

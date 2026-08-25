@@ -6,6 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import type { Course, SceneOutline } from "@/lib/domain/schemas";
 
 type ErrorNotice = { code: string; message: string; retryable: boolean };
+type OperationView = {
+  requestId: string;
+  label: string;
+  status: "running" | "succeeded" | "failed" | "cancelled";
+  startedAt: number;
+};
 
 class ClientRequestError extends Error {
   constructor(public readonly notice: ErrorNotice) { super(notice.message); this.name = "ClientRequestError"; }
@@ -25,12 +31,23 @@ function caughtNotice(caught: unknown, fallback: string): ErrorNotice {
   return { code: "REQUEST_FAILED", message: caught instanceof Error ? caught.message : fallback, retryable: true };
 }
 
+/** 兼容修复前已经持久化为不可重试的模型输出错误；重新采样仍可能成功。 */
+function canRetryGeneration(error?: { code: string; retryable: boolean }) {
+  return Boolean(error && (error.retryable || error.code === "INVALID_MODEL_OUTPUT"));
+}
+
+function requiresServerConfiguration(error?: { code: string }) {
+  return error?.code === "AI_NOT_CONFIGURED" || error?.code === "AI_AUTH_FAILED";
+}
+
 export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }) {
   const router = useRouter();
   const [course, setCourse] = useState(initialCourse);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<ErrorNotice | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [operationView, setOperationView] = useState<OperationView | null>(null);
+  const [operationElapsedMs, setOperationElapsedMs] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [leaseClock, setLeaseClock] = useState(initialCourse.updatedAt);
   const activeRequests = useRef(new Set<AbortController>());
@@ -45,6 +62,12 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
       controllers.forEach((controller) => controller.abort());
     };
   }, []);
+
+  useEffect(() => {
+    if (!operationView || operationView.status !== "running") return;
+    const timer = window.setInterval(() => setOperationElapsedMs(Date.now() - operationView.startedAt), 250);
+    return () => window.clearInterval(timer);
+  }, [operationView]);
 
   useEffect(() => {
     const expiresAt = course.activeOperation?.expiresAt;
@@ -62,9 +85,22 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
     finally { activeRequests.current.delete(controller); }
   }
 
+  /** 建立浏览器可见的操作编号；同一编号随请求传到服务端日志。 */
+  function beginOperation(label: string) {
+    const requestId = crypto.randomUUID();
+    setOperationElapsedMs(0);
+    setOperationView({ requestId, label, status: "running", startedAt: Date.now() });
+    return requestId;
+  }
+
+  function finishOperation(status: OperationView["status"], label?: string) {
+    setOperationView((current) => current ? { ...current, status, label: label ?? current.label } : current);
+  }
+
   function cancelCurrentRequests() {
     cancellationRequested.current = true;
     activeRequests.current.forEach((controller) => controller.abort());
+    finishOperation("cancelled", "浏览器请求已取消；等待刷新同步服务端事实");
     setBusy(null);
     setError({ code: "REQUEST_CANCELLED", message: "已取消浏览器中的未完成请求。刷新页面可同步服务端最终状态。", retryable: true });
   }
@@ -81,19 +117,22 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
     setBusy("outline");
     setError(null);
     setSavedNotice(null);
+    const requestId = beginOperation("正在生成并校验课程大纲");
     try {
       const response = await request(`/api/courses/${course.id}/outline/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-request-id": requestId },
         body: JSON.stringify({ expectedRevision: course.revision }),
       });
       const payload = await response.json();
       if (!response.ok) throw responseError(payload, "大纲生成失败");
       setCourse(payload.data.course);
       setDirty(false);
+      finishOperation("succeeded", "课程大纲已生成并保存");
       setSavedNotice("大纲已通过解析、Schema 与语义门，并保存到 MySQL。现在可以人工修订。");
       router.refresh();
     } catch (caught) {
+      finishOperation(caught instanceof DOMException && caught.name === "AbortError" ? "cancelled" : "failed");
       setError(caughtNotice(caught, "大纲生成失败"));
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       // 生成失败也会由服务端提交 failed 与新 revision，立即同步避免重试使用旧版本。
@@ -106,15 +145,20 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
 
   /** 将人工修订后的完整大纲交回服务端复验并按 revision 保存。 */
   async function persistOutline(): Promise<Course> {
+    const requestId = beginOperation("正在验证并保存人工修订的大纲");
     const response = await request(`/api/courses/${course.id}/outline`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-request-id": requestId },
       body: JSON.stringify({ expectedRevision: course.revision, courseTitle: course.title, outlines: course.outlines }),
     });
     const payload = await response.json();
-    if (!response.ok) throw responseError(payload, "大纲保存失败");
+    if (!response.ok) {
+      finishOperation("failed");
+      throw responseError(payload, "大纲保存失败");
+    }
     setCourse(payload.data.course);
     setDirty(false);
+    finishOperation("succeeded", "人工修订的大纲已保存");
     return payload.data.course;
   }
 
@@ -127,6 +171,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
       setSavedNotice("人工修订已保存，并重新通过课程级语义校验。");
       router.refresh();
     } catch (caught) {
+      finishOperation(caught instanceof DOMException && caught.name === "AbortError" ? "cancelled" : "failed");
       setError(caughtNotice(caught, "大纲保存失败"));
     } finally {
       setBusy(null);
@@ -143,6 +188,8 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
 
   /** 生成一个指定场景；失败后立即读取服务端提交的 failed 进度和新 revision。 */
   async function generateOneScene(current: Course, outlineId: string): Promise<{ course: Course; failed: boolean }> {
+    const outline = current.outlines.find((item) => item.id === outlineId);
+    const requestId = beginOperation(`正在生成场景 ${outline?.order ?? "?"}/${current.requestedSceneCount} · ${outline?.title ?? outlineId}`);
     setCourse({
       ...current,
       status: "generating",
@@ -151,22 +198,24 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
     try {
       const response = await request(`/api/courses/${current.id}/scenes/${outlineId}/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-request-id": requestId },
         body: JSON.stringify({ expectedRevision: current.revision }),
       });
       const payload = await response.json();
       if (!response.ok) throw responseError(payload, "场景生成失败");
       const saved = payload.data.course as Course;
       setCourse(saved);
+      finishOperation("succeeded", `场景 ${outline?.order ?? "?"} 已校验并保存`);
       return { course: saved, failed: false };
     } catch (caught) {
+      finishOperation(caught instanceof DOMException && caught.name === "AbortError" ? "cancelled" : "failed");
       if (caught instanceof DOMException && caught.name === "AbortError" && !mounted.current) {
         return { course: current, failed: true };
       }
       const latest = await loadLatestCourse();
-      const outline = latest.outlines.find((item) => item.id === outlineId);
+      const latestOutline = latest.outlines.find((item) => item.id === outlineId);
       const notice = caughtNotice(caught, "场景生成失败");
-      setError((currentError) => ({ ...notice, message: [currentError?.message, `${outline?.title ?? "场景"}：${notice.message}`].filter(Boolean).join("\n") }));
+      setError((currentError) => ({ ...notice, message: [currentError?.message, `${latestOutline?.title ?? "场景"}：${notice.message}`].filter(Boolean).join("\n") }));
       return { course: latest, failed: true };
     }
   }
@@ -198,6 +247,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
       await generatePendingScenes(saved);
       setDirty(false);
     } catch (caught) {
+      finishOperation(caught instanceof DOMException && caught.name === "AbortError" ? "cancelled" : "failed");
       setError(caughtNotice(caught, "场景生成失败"));
     } finally {
       setBusy(null);
@@ -256,7 +306,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
                 {course.outlines.map((outline, index) => {
                   const progress = course.sceneProgress.find((item) => item.outlineId === outline.id);
                   const recoverable = progress?.status === "generating" && course.activeOperation?.outlineId === outline.id && course.activeOperation.expiresAt <= leaseClock;
-                  const canRetry = progress?.status === "failed" && progress.lastError?.retryable !== false;
+                  const canRetry = progress?.status === "failed" && canRetryGeneration(progress.lastError);
                   return (
                     <li key={outline.id}>
                       <span className="outline-order">{String(outline.order).padStart(2, "0")}</span>
@@ -270,7 +320,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
                         <span className={`progress-mark progress-mark--${progress?.status}`}>{progress?.status === "ready" ? "✓" : progress?.status === "failed" ? "!" : progress?.status === "generating" ? "…" : "○"}</span>
                         <small>{progress?.status === "ready" ? "完成" : progress?.status === "failed" ? "失败" : recoverable ? "可恢复" : progress?.status === "generating" ? "生成中" : "待生成"}</small>
                         {canRetry || recoverable ? <button type="button" onClick={() => retryScene(outline.id)} disabled={busy !== null}>{busy === `scene:${outline.id}` ? "处理中" : recoverable ? "恢复" : "重试"}</button> : null}
-                        {progress?.status === "failed" && !canRetry ? <em>需修正配置</em> : null}
+                        {progress?.status === "failed" && !canRetry ? <em>{requiresServerConfiguration(progress.lastError) ? "需修正配置" : "需人工处理"}</em> : null}
                       </div>
                     </li>
                   );
@@ -282,7 +332,15 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
 
         <aside className="generation-aside reveal reveal--three">
           <div className="metric-card"><p>SCENE PROGRESS</p><strong>{String(readyCount).padStart(2, "0")}<span> / {String(course.requestedSceneCount).padStart(2, "0")}</span></strong><div className="progress-track"><i style={{ width: `${(readyCount / course.requestedSceneCount) * 100}%` }} /></div></div>
-          <div className="boundary-card"><span>M6 RECOVERABLE PIPELINE</span><h3>{readyCount > 0 ? `${String(readyCount).padStart(2, "0")} 个场景已独立提交` : metadata ? `${metadata.provider.toUpperCase()} · 大纲已就绪` : "先登记，再调用，后提交"}</h3><p>{course.status === "partial_failed" ? "已完成场景仍安全保留。只有 retryable 错误开放重试；配置错误需要先修正服务端环境。" : "每个 slide / quiz 都独立经过解析、Schema、语义门和短事务；离开页面会取消浏览器请求，服务端事实仍可刷新恢复。"}</p></div>
+          <div className="boundary-card"><span>M6 RECOVERABLE PIPELINE</span><h3>{readyCount > 0 ? `${String(readyCount).padStart(2, "0")} 个场景已独立提交` : metadata ? `${metadata.provider.toUpperCase()} · 大纲已就绪` : "先登记，再调用，后提交"}</h3><p>{course.status === "partial_failed" ? "已完成场景仍安全保留。模型输出不合约可重新采样；认证或配置错误需要先修正服务端环境。" : "每个 slide / quiz 都独立经过解析、Schema、语义门和短事务；离开页面会取消浏览器请求，服务端事实仍可刷新恢复。"}</p></div>
+          {operationView ? (
+            <div className={`operation-console operation-console--${operationView.status}`} role="status" aria-live="polite">
+              <div><span>LIVE OPERATION</span><strong>{operationView.status === "running" ? `${(operationElapsedMs / 1000).toFixed(1)}s` : operationView.status.toUpperCase()}</strong></div>
+              <p>{operationView.label}</p>
+              <code>requestId: {operationView.requestId}</code>
+              <small>{operationView.status === "running" ? "终端每 10 秒输出一次 running 心跳" : "可用 requestId 对照终端中的结束日志"}</small>
+            </div>
+          ) : null}
           {savedNotice ? <p className="form-success" role="status">{savedNotice}</p> : null}
           {error ? <div className="form-error error-notice" role="alert"><span>{error.code} · {error.retryable ? "可重试" : "需人工处理"}</span><p>{error.message}</p></div> : null}
           {busy ? <button className="cancel-request" type="button" onClick={cancelCurrentRequests}>取消当前请求</button> : null}
@@ -293,7 +351,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
           ) : ["generating", "partial_failed"].includes(course.status) ? (
             course.activeOperation ? <p className="generation-hint">存在登记中的场景操作。租约到期后，可在对应场景右侧点击“恢复”。</p> : pendingCount > 0 ? <button className="button button--accent button--wide" type="button" onClick={continuePendingScenes} disabled={busy !== null}>{busy === "scenes" ? `正在生成 ${readyCount + 1} / ${course.requestedSceneCount}…` : `继续生成 ${pendingCount} 个待处理场景`}<span>→</span></button> : <p className="generation-hint">没有待生成项，请在失败场景右侧点击“重试”。</p>
           ) : (
-            <button className="button button--accent button--wide" type="button" onClick={generateCourseOutline} disabled={busy !== null || course.status === "outlining" || course.lastError?.retryable === false}>{busy === "outline" || course.status === "outlining" ? "正在生成并校验…" : course.lastError?.retryable === false ? "请先修正服务端配置" : course.status === "failed" ? "重试大纲生成" : "生成课程大纲"}<span>→</span></button>
+            <button className="button button--accent button--wide" type="button" onClick={generateCourseOutline} disabled={busy !== null || course.status === "outlining" || Boolean(course.lastError && !canRetryGeneration(course.lastError))}>{busy === "outline" || course.status === "outlining" ? "正在生成并校验…" : course.lastError && !canRetryGeneration(course.lastError) ? requiresServerConfiguration(course.lastError) ? "请先修正服务端配置" : "当前错误需要人工处理" : course.status === "failed" ? "重试大纲生成" : "生成课程大纲"}<span>→</span></button>
           )}
           <Link className="text-link" href="/">← 返回课程首页</Link>
         </aside>

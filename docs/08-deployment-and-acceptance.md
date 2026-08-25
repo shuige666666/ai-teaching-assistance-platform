@@ -75,10 +75,25 @@ pnpm db:migrate
 | `AI_NOT_CONFIGURED` | remote 当前档位缺 Key、Base URL、Model 或超时非法 | 修正当前 Provider 变量并重启；不要反复点击不可重试按钮 |
 | `AI_AUTH_FAILED` | Key 无效、无权限或地域/Base URL 不匹配 | 在 Provider 控制台确认权限和地域，不自动切换 mock |
 | `AI_RATE_LIMITED` / 5xx | 上游限流或短暂故障 | 等待后重试；系统最多自动传输重试两次 |
+| `INVALID_MODEL_OUTPUT` | 首次输出和一次修复仍未通过场景契约 | 已完成场景不会丢失；在失败场景右侧点击“重试”，新请求会重新采样 |
 | 页面显示生成中但进程已重启 | 数据库保留未过期 activeOperation | 等租约到期，在对应场景点击“恢复” |
 | `COURSE_CONFLICT` | 页面 revision 落后于服务器 | 刷新课程后重新操作，禁止覆盖新版本 |
 | Playwright 缺浏览器 | 首次机器没有对应 Chromium | 运行 `pnpm exec playwright install chromium` |
 | Windows `.next/trace-build` EPERM | 旧 Node/Next 进程占用构建目录 | 停止旧进程后重新构建，不删除源码或重置 Git |
+| `<html>` hydration mismatch 且包含 `--ai-translator-*` | 翻译类浏览器扩展在 React 水合前修改根元素样式 | 根布局只忽略根元素外部属性差异；需要确认来源时用无痕窗口或暂时关闭对应扩展复测 |
+
+### 开发调试与生成可观测性
+
+`pnpm dev` 适合日常开发，并会在终端输出 JSON 行日志。需要 IDE 服务端断点时改用 `pnpm dev:inspect`；Inspector 只增加断点能力，不会替代业务日志。
+
+```powershell
+pnpm dev          # 页面热更新 + 结构化业务日志
+pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
+```
+
+一次课程创建或生成操作会使用相同 `requestId` 贯穿浏览器操作台、请求头、API 响应/错误和服务端日志。日志事件为 `course.create.*`、`outline.generate.*`、`scene.generate.*`；持续操作每 10 秒输出 `running` 和 `elapsedMs`。排障时先复制页面 requestId，再在终端搜索该值，不要通过反复点击制造重复草稿。日志刻意不记录主题、Prompt、模型返回、Key 和数据库连接串。
+
+如果首页停在“正在打开工作台”，先复制 requestId，然后直接刷新首页检查“最近课程”。看到课程说明草稿已经写入 MySQL，可点击该课程继续，不应再次创建。客户端保存草稿超过 15 秒会停止等待并显示同样的排障提示；服务端可能已完成提交，因此重试前仍应刷新核对。
 
 ## 6. AC-01～AC-12 证据矩阵
 

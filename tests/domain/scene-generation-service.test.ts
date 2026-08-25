@@ -29,9 +29,10 @@ describe("SceneGenerationService", () => {
     course = await new SceneGenerationService(repository, new MockAIAdapter()).generate(course.id, course.outlines[0].id, course.revision, "scene-first");
     const failedOutlineId = course.outlines[1].id;
     await expect(new SceneGenerationService(repository, new MockAIAdapter(["{}", "{}"])).generate(course.id, failedOutlineId, course.revision, "scene-failed"))
-      .rejects.toMatchObject({ code: "INVALID_MODEL_OUTPUT" });
+      .rejects.toMatchObject({ code: "INVALID_MODEL_OUTPUT", retryable: true });
     course = (await repository.get(course.id))!;
     expect(course).toMatchObject({ status: "partial_failed", revision: 6 });
+    expect(course.sceneProgress.find((item) => item.outlineId === failedOutlineId)?.lastError).toMatchObject({ code: "INVALID_MODEL_OUTPUT", retryable: true });
     expect(course.scenes).toHaveLength(1);
 
     course = await new SceneGenerationService(repository, new MockAIAdapter()).generate(course.id, course.outlines[2].id, course.revision, "scene-last");

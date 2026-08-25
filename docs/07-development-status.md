@@ -50,6 +50,8 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 - `GET /api/health/database`：只返回状态、数据库名和版本，不返回主机、用户或密码；
 - `GET /api/health/config`：校验当前 AI 档位，只返回 mode、provider、model 和超时；
 - 所有失败响应统一为 `success:false + error(code/message/retryable/requestId)`。
+- 首页创建草稿显示“保存 MySQL → 打开工作台”的分阶段进度、耗时和 requestId；成功后使用完整导航规避开发模式 RSC 长时间停在 Rendering；
+- 大纲与场景生成页面显示当前阶段、耗时、结束状态和 requestId，服务端同步输出 started/running/succeeded/failed 结构化日志。
 
 ### AI 大纲与场景管线
 
@@ -76,6 +78,7 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 - 生成页离开或用户点击取消时会中止已登记的浏览器请求；迟到服务端事实通过刷新恢复；
 - failed 场景只有 `retryable=true` 才显示重试，认证/配置错误明确要求修正环境；
 - GitHub Actions 只使用 mock 与临时 MySQL，不读取或调用远端模型 Key。
+- `pnpm dev:inspect` 开启 Next.js Node Inspector 供 IDE 断点调试；普通 `pnpm dev` 同样保留业务结构化日志和每 10 秒心跳。
 
 ### 课堂播放与学习行为
 
@@ -84,7 +87,8 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 - TextOnlySpeechAdapter 按文本长度估算时长，是无语音环境下的默认路径；
 - BrowserSpeechAdapter 仅在用户开启且 Web Speech API 可用时朗读，启动失败或不可用会回退 TextOnly；
 - 手动切页、重新播放和组件卸载都会取消旧语音或计时器，暂停/继续复用当前任务而不是重复执行；
-- quiz 作答前保持 awaitingLearner，所有题目成功保存后本场景才完成；
+- quiz 进入页面即可作答；自动播放到 learner pause 时仍进入 awaitingLearner，所有题目成功保存后会停止当前讲解并完成本场景；
+- 桌面课堂 Grid 行高只由左侧场景内容决定，右侧调度栏自动拉伸到同高，讲解正文占据剩余空间并独立滚动；窄屏布局回到普通文档流并限制讲解窗口高度；
 - `POST /api/courses/[courseId]/quiz-attempts` 只接受 scene/question/option ID，服务端从 Course 查题判分；
 - 作答独立写入 quiz_attempts，不增加 Course revision；语音偏好只保存在 localStorage。
 
@@ -93,7 +97,7 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 ```text
 pnpm db:migrate  # 首次 applied 001；复跑 skip 001
 pnpm lint
-pnpm test        # 13 个文件、42 项无数据库/API 契约测试
+pnpm test        # 14 个文件、45 项无数据库/API 契约测试
 pnpm test:db     # 1 个文件、9 项真实 MySQL 测试
 pnpm build
 pnpm test:e2e    # 1 项 production Chromium 完整流程
@@ -106,7 +110,13 @@ Playwright CLI 在 production server 上完成“创建 3 场景草稿 → mock 
 
 M5 继续在 production server 上验证“进入 ready 课程 → TextOnly 开始播放 → 暂停状态 → 手工切到 quiz 并确认旧 Action 取消 → 讲解完成进入 awaitingLearner → 选择答案 → 服务端保存 → 本场景 completed”。页面显示 `ACTION 2 / 2` 和“回答正确”，MySQL 查询得到 1 条 `correct=1` 作答记录且 Course 保持 `REV.9`；浏览器错误与警告均为 0。验证课程和 Playwright 临时产物在验收后清理。
 
-M6 将上述人工步骤固化为 `e2e/mock-course-flow.spec.ts`：在 1280×720 Chromium 中创建唯一主题课程，生成 REV.8 ready 课程，验证播放/暂停/继续、手工切页取消、awaitingLearner、服务端判分、页面刷新、首页历史和 `/api/health/config`，最后无条件删除测试课程。本地 production E2E 1/1 通过；API 错误 envelope、三档配置解析和非法请求另由 Vitest 自动覆盖。
+M6 将上述人工步骤固化为 `e2e/mock-course-flow.spec.ts`：在 1280×720 Chromium 中创建唯一主题课程，生成 REV.8 ready 课程，验证播放/暂停/继续、手工切页取消、quiz 无需播放即可提交、服务端判分、页面刷新、首页历史和 `/api/health/config`，最后无条件删除测试课程。本地 production E2E 1/1 通过；API 错误 envelope、三档配置解析和非法请求另由 Vitest 自动覆盖。
+
+M6 可观测性补强回归进一步故意延迟课程创建响应，确认首页在等待期间显示 MySQL 写入阶段、耗时和 requestId，随后通过完整导航进入工作台。生产进程已用固定 requestId 核对 `course.create.started` 与 `course.create.succeeded` JSON 日志；临时验收课程均已删除。
+
+远端 DeepSeek 场景 smoke test 暴露并修正了恢复分类：`INVALID_MODEL_OUTPUT` 表示本次输出及一次修复均未通过契约，但新请求重新采样仍可能成功，因此会保存为可重试错误。前端同时兼容修复前已保存的同码错误，并在失败场景右侧显示“重试”；修复 Prompt 明确限制 slide block 字段、callout tone 和 quiz option 的 `label` 字段。现有 5 场景课程已在独立 production 页面确认两个重试按钮可见，控制台 0 error / 0 warning，未代替用户发起付费重试。
+
+课堂长讲解布局使用现有 1344 字真实场景完成浏览器检查：左侧 stage、Grid 行和右侧调度栏均为 1263px，讲解窗口随剩余空间扩展到 `clientHeight=793`，实际内容 `scrollHeight=3093` 且 `overflow-y=auto`。左右栏动态同高，浏览器控制台 0 error / 0 warning。
 
 ## 4. 当前明确未实现
 

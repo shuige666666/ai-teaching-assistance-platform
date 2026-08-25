@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createCourseDraft } from "@/lib/domain/fixture";
+import { resolveRequestId, startServerOperation } from "@/lib/observability/server-log";
 import { getCourseRepository } from "@/lib/repository";
 import { createApiError, mapRepositoryError } from "@/lib/repository/error-response";
 
@@ -20,15 +21,19 @@ export async function GET() {
 
 /** 创建只包含主题和场景数量的草稿；正式大纲由独立生成接口完成。 */
 export async function POST(request: Request) {
+  const requestId = resolveRequestId(request);
+  const operation = startServerOperation("course.create", { requestId, stage: "course" });
   try {
     const input = CreateCourseInputSchema.parse(await request.json());
     const course = await getCourseRepository().create(createCourseDraft(input.topic, input.requestedSceneCount));
-    return NextResponse.json({ course }, { status: 201 });
+    operation.success({ courseId: course.id, sceneCount: course.requestedSceneCount });
+    return NextResponse.json({ course, meta: { requestId } }, { status: 201 });
   } catch (error) {
+    operation.failure(error);
     if (error instanceof z.ZodError) {
-      return NextResponse.json(createApiError("INVALID_INPUT", error.issues[0]?.message ?? "输入不合法", false), { status: 400 });
+      return NextResponse.json(createApiError("INVALID_INPUT", error.issues[0]?.message ?? "输入不合法", false, requestId), { status: 400 });
     }
-    const mapped = mapRepositoryError(error);
+    const mapped = mapRepositoryError(error, requestId);
     return NextResponse.json(mapped.body, { status: mapped.status });
   }
 }

@@ -83,7 +83,8 @@ export async function generateOutline(
       output = validateAndNormalizeOutline(parseModelJson(repair.text), input.sceneCount);
     } catch (repairError) {
       const finalError = repairError instanceof InvalidOutlineError ? repairError : invalid;
-      throw new OutlineGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合课程大纲契约", false, upstreamCalls, finalError.issues, { cause: repairError });
+      // 本次修复预算已经耗尽，但下一次请求会重新采样，仍允许用户显式重试。
+      throw new OutlineGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合课程大纲契约", true, upstreamCalls, finalError.issues, { cause: repairError });
     }
   }
   const successful = successfulResults.at(-1) ?? first;
