@@ -1,8 +1,8 @@
 # 03. 系统架构设计
 
-> 文档版本：0.2  
+> 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 架构原则：先完成单体纵向闭环，再按真实变化点提取模块。
+> 状态说明：M1～M6 架构已经实现；标记为 v0.4/M7 的增量设计尚未进入代码。
 
 ## 1. 架构结论
 
@@ -13,11 +13,11 @@ MVP 采用一个 Next.js App Router 单体：
 - MySQL 通过服务端 CourseRepository 保存课程，是唯一课程事实来源；
 - 共享的 TypeScript + Zod 领域契约连接客户端、接口和持久化；
 - 客户端以 courseId 为恢复锚点，串行触发“大纲 → 场景”，但不直接持久化课程；
-- DeepSeek 与阿里百炼复用 OpenAI-compatible AIAdapter，一次运行只选择一个配置档；
+- MVP 以 DeepSeek 作为唯一验收远端 Provider；百炼兼容档仍复用同一 OpenAI-compatible AIAdapter，但属于可选扩展；
 - 大模型只生成 DTO，领域装配器负责 id、状态、Action 和时间戳；
 - 第一版不拆微服务、不建 monorepo、不使用 LangGraph。
 
-这套架构与 OpenMAIC 保持相同主方向，但把平台能力裁剪成一名学生可以理解、实现和验证的规模。
+这套架构与 OpenMAIC 保持相同主方向，但把平台能力裁剪成一名学生可以理解、实现和验证的规模。v0.4 继续使用同一个 Next.js 单体、CourseRepository、AIAdapter 和播放器，只增加质量上下文、受控 Block 与一个沙箱互动场景，不引入 LangGraph 或新的服务进程。
 
 ## 2. OpenMAIC 深度解析结论
 
@@ -113,7 +113,9 @@ OpenMAIC 包含 JSON 修复、Schema/normalizer、按场景重试、存储校验
 - **确定性保证**：Schema、状态转换、选项索引、动作可执行、保存恢复；
 - **统计性质量**：内容完整性、教学连贯性、事实正确性和语言质量。
 
-## 3. MVP 架构决策
+## 3. 架构决策
+
+**AD-01～AD-08 已在 v0.3 实现。**
 
 ### AD-01：使用 Next.js 单体
 
@@ -145,13 +147,35 @@ M3/M4 已把该架构用于正式生成调用：大纲与每个场景分别在�
 
 这里不要求复制 OpenMAIC 的 PostgreSQL 选型。目标系统需要的是事务、外键、唯一约束、JSON、索引和版本化迁移，MySQL 8.0+ 可以满足这些条件，而且使用熟悉的数据库能降低第一阶段风险。若后续研究强依赖 pgvector 等 PostgreSQL 特性，再单独评估迁移，不让尚未出现的需求决定 MVP。
 
-### AD-07：mock、DeepSeek 与百炼使用同一契约
+### AD-07：mock 与 OpenAI-compatible Provider 使用同一契约
 
-三个 Provider 都返回相同 DTO，并经过同一套 Zod/领域校验。DeepSeek 与百炼只是 OpenAI-compatible 配置档，不为页面建立两套调用逻辑；mock 也不是 UI 特例。
+mock 和 DeepSeek 返回相同 DTO，并经过同一套 Zod/领域校验。代码中保留的百炼兼容档也复用这一边界，不为页面建立另一套调用逻辑；是否实测第二 Provider 不影响 MVP 完成。
 
 ### AD-08：静态代码块属于内容，不属于执行环境
 
-slide 可以包含 code block，但渲染器只进行文本转义和语法高亮，不运行代码。OpenMAIC 的 interactive iframe 作为后续扩展，不能借“代码块”绕过安全边界进入 MVP。
+slide 可以包含 code block，但渲染器只进行文本转义和语法高亮，不运行代码。v0.4 的 interactive iframe 是独立 Scene 类型和独立安全边界，不能借“代码块”绕过校验，也不能把任意 HTML 塞入普通 SlideBlock。
+
+**AD-09～AD-13 是 v0.4/M7 增量决策，尚未实现。**
+
+### AD-09：先持久化 CourseBrief，再升级 Prompt
+
+学习者水平、学习目标、先修知识、时长、教学风格和互动偏好属于 Course 事实，必须在创建草稿时由服务端规范化并进入 MySQL。大纲、场景和再生成只读取这份事实，不能让不同请求各自猜测上下文。首页保持主题必填，其余设置折叠并提供默认值。
+
+### AD-10：丰富内容仍使用判别联合和固定 React Renderer
+
+steps、comparison 和 table 分别拥有严格 Schema 与固定组件；不采用自由坐标 PPT 画布，也不让模型生成 React/CSS。这样能够提高教学表达力，同时保留现有可校验、响应式和可测试优势。
+
+### AD-11：互动脚本只能在无同源权限的 iframe 中执行
+
+`InteractiveContent.html` 是不可信完整文档，只允许进入 `srcDoc` iframe。sandbox 仅包含 `allow-scripts`，明确排除同源权限、表单提交、弹窗、下载和顶层导航；宿主注入拒绝外部资源与连接的 CSP，脚本检查另行拒绝导航 API，并用 `event.source` + Zod 管理最小 postMessage 协议。静态扫描和脚本 AST 检查是纵深防御，不能替代 sandbox 与 CSP。
+
+### AD-12：M7 不引入 LangGraph、多智能体和多模态
+
+CourseBrief、Prompt v2、三种 Block 和 diagram HTML 都是现有两阶段生成管线的普通类型分支。LangGraph 只在未来出现多角色、有状态、跨请求编排问题时评估；多模态只在材料/图片输入成为范围时评估。未出现这些需求前，引入框架只会增加状态、费用和测试矩阵。
+
+### AD-13：在线质量门与离线教学评价分开
+
+在线硬门只处理 Schema、不变量、密度、重复、答案索引、HTML 安全和运行协议等可确定性判断；教学适配度和事实正确性通过固定评价集与人工量表离线评估。LLM-as-judge 可以辅助筛查，但不能作为在线事实门，也不能替代人工报告。
 
 ## 4. 组件视图
 
@@ -180,7 +204,6 @@ flowchart TB
 
     DB[("MySQL")]
     DeepSeek["DeepSeek API"]
-    Bailian["阿里百炼 API"]
 
     Home --> Client
     Home --> Generation
@@ -203,8 +226,32 @@ flowchart TB
     GenService --> Adapter
     GenService --> Mock
     Adapter --> DeepSeek
-    Adapter --> Bailian
 ```
+
+### 4.1 v0.4 组件增量
+
+v0.4 不替换上图，只增加下面的受控分支：
+
+```mermaid
+flowchart LR
+    Brief["CourseBrief 表单"] --> CourseAPI["Course API"]
+    CourseAPI --> Repo["CourseRepository + v1/v2 Migrator"]
+    Repo --> DB[(MySQL)]
+
+    Generation["GenerationService"] --> PromptV2["Outline/Scene Prompt v2"]
+    PromptV2 --> Quality["Deterministic Quality Report"]
+    PromptV2 --> InteractiveGen["Interactive Diagram Generator"]
+    InteractiveGen --> HtmlGate["HTML Validator + CSP Patcher"]
+    HtmlGate --> Repo
+
+    Classroom["Classroom"] --> SceneRenderer["SceneRenderer"]
+    SceneRenderer --> FixedBlocks["Fixed Block Renderers"]
+    SceneRenderer --> IframeHost["Sandbox InteractiveIframeHost"]
+    IframeHost <--> Bridge["Typed postMessage Bridge"]
+    Bridge --> Player["Playback learner pause"]
+```
+
+`HTML Validator + CSP Patcher` 属于互动内容边界，不是通用富文本工具；`Quality Report` 先实现规则检查，不在在线请求里循环调用评审模型。
 
 ## 5. 分层与职责
 
@@ -216,7 +263,9 @@ flowchart TB
 | 服务端应用层 | `lib/application/` | 用例、事务边界、状态转换、仓储与生成协调 | React、直接拼 SQL |
 | 领域层 | `lib/domain/` | 类型、Schema、不变量、装配、状态机 | React、fetch、MySQL、模型 SDK |
 | 生成层 | `lib/generation/` | Prompt、解析、校验、重试和错误分类 | 浏览器组件状态 |
-| AI 基础设施 | `lib/ai/` | mock、DeepSeek/百炼配置、模型调用 | 课程持久化 |
+| 质量层（M7） | `lib/quality/` | 确定性质量规则、评价 DTO 和离线汇总 | 在线主观判分、直接持久化 |
+| 互动运行时（M7） | `lib/interactive/`、`components/renderers/` | HTML 校验/CSP、iframe 宿主、消息协议和 fallback | 读取服务端 Key、访问主页面身份 |
+| AI 基础设施 | `lib/ai/` | mock、DeepSeek 配置与模型调用；保留可选兼容档 | 课程持久化 |
 | 数据基础设施 | `lib/db/` | MySQLCourseRepository、事务、迁移 | Prompt 和播放推进 |
 | API 层 | `app/api/**/route.ts` | 请求校验、应用服务调用、HTTP 映射 | React 状态、直接 SQL |
 
@@ -228,9 +277,9 @@ flowchart TB
 
 | 路由 | 职责 |
 |---|---|
-| `/` | 创建课程，显示历史课程和状态 |
-| `/generation/[courseId]` | 加载草稿、生成/编辑大纲、生成场景、失败重试 |
-| `/classroom/[courseId]` | 加载 ready 课程、固定渲染、测验和播放 |
+| `/` | 创建课程，显示历史课程和状态；M7 增加折叠 CourseBrief 设置 |
+| `/generation/[courseId]` | 加载草稿、生成/编辑大纲、生成场景、失败重试；M7 增加 ready 场景再生成 |
+| `/classroom/[courseId]` | 加载 ready 课程、固定渲染、测验和播放；M7 增加互动 iframe 宿主 |
 
 courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢复，不能把 React state、sessionStorage 或 localStorage 作为课程事实来源。
 
@@ -245,6 +294,7 @@ courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢
 | `POST /api/courses/{courseId}/outline/generate` | 生成、校验并保存大纲 | 是 |
 | `PATCH /api/courses/{courseId}/outline` | 保存用户编辑或确认的大纲 | 是 |
 | `POST /api/courses/{courseId}/scenes/{outlineId}/generate` | 生成、校验并保存一个场景 | 是 |
+| `POST /api/courses/{courseId}/scenes/{outlineId}/regenerate`（M7） | 按用户意见生成候选并原位替换 ready 场景 | 是 |
 
 Route Handler 不直接拼 SQL，而是调用应用服务。应用服务加载聚合、执行状态转换、调用 GenerationService，并用 expectedRevision 事务保存；客户端收到成功响应时，对应结果已经进入 MySQL。
 
@@ -359,7 +409,7 @@ idle/playing/paused ── quiz 全部提交 ──> completed
 Route Handler / 应用服务：状态转换、Prompt、输出校验、事务
           │                              │
           ▼                              ▼
-       MySQL                    DeepSeek / 阿里百炼
+       MySQL                         DeepSeek
 ```
 
 关键规则：
@@ -367,8 +417,10 @@ Route Handler / 应用服务：状态转换、Prompt、输出校验、事务
 - 只有不含 `NEXT_PUBLIC_` 前缀的服务端环境变量保存模型 Key 和数据库凭据；
 - `lib/ai/server-*.ts` 只能被 Route Handler 或服务端模块导入；
 - 模型输出一律视为不可信；
-- MVP 不支持模型生成 HTML，所以不存在 iframe/script 执行路径；
+- v0.3 不支持模型生成 HTML；v0.4 只有 InteractiveRenderer 可以创建 script 执行路径，普通 slide/code 仍严格禁止；
 - code block 始终按文本转义，不允许 `eval`、动态 import 或 `dangerouslySetInnerHTML`；
+- interactive HTML 只能进入无 `allow-same-origin` 的 sandbox iframe，并由 CSP 禁止外部连接、子 frame、对象和表单提交；
+- postMessage 只接受绑定 iframe 的 `event.source` 和严格消息联合，切页后拒绝旧 iframe 事件；
 - API 限制 topic、outline 和响应长度，防止无界输入；
 - 日志只记录 requestId、阶段、模型、耗时、尝试次数和校验结果。
 
@@ -383,23 +435,23 @@ Browser
         │ HTTP(S)
 Next.js Server
   ├─ MySQL
-  └─ DeepSeek / 阿里百炼 API
+  └─ DeepSeek API
 ```
 
 本地开发先启动 MySQL 并执行迁移，再运行 `pnpm dev`。第一版没有登录，虽然课程在服务端数据库中，也只允许部署到本机或受信任网络；“使用数据库”不自动等于“可以公开成为多用户服务”。备份采用数据库导出或受控 volume，不依赖浏览器缓存。
 
-## 13. 未来扩展点
+## 13. 已选 v0.4 扩展与更远期边界
 
-MVP 完成后按接口扩展，而不是重写主链：
+M7 已选择 CourseBrief、Prompt v2、丰富 Block、diagram 互动和单场景再生成，按接口扩展而不重写主链。以下能力仍属于 M8 或更远期候选：
 
 - 文档输入：在 outline 请求前增加 DocumentExtractor；
-- 生成优化：替换 GenerationPolicy，不改变 Course Schema；
-- 新场景：扩展 Scene 判别联合并新增固定 Renderer；
+- 生成优化：替换 GenerationPolicy，不改变已持久化身份和恢复语义；
+- 新互动类型：只有 diagram 通过 M7 退出门后才扩展 Scene 判别联合和专用 Renderer/运行契约；
 - 新动作：扩展 Action 联合和 ActionExecutor；
 - 多智能体：在 discussion Action 后增加独立 ChatOrchestrator；
 - 多用户：增加认证、ownerId、授权检查和租户级查询；
 - 数据库演进：复杂查询出现后，把 Course JSON 列逐步规范化；
 - 异步任务：把客户端循环迁移到持久化 Job/Queue；
-- 质量评估：在持久化前增加可配置 QualityGate。
+- 多模态与 RAG：仅在材料输入或来源增强成为明确研究问题时加入。
 
-任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。
+任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。M7 的完整依赖、顺序和止损规则见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。

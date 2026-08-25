@@ -1,20 +1,20 @@
 # 06. 复刻实施路线图
 
-> 文档状态：v0.2 设计基线  
-> 适用范围：`ai-teaching-assistance-platform` 第一阶段复刻  
+> 文档状态：v0.4 设计基线
+> 适用范围：`ai-teaching-assistance-platform` 工程基线与课程质量增强
 > 总目标：任何时候都保留一个可运行、可演示、可回退到 mock 的系统。
 
 ## 1. 实施结论
 
 复刻不按 OpenMAIC 的目录逐项照搬，而按纵向闭环推进：**固定课程可浏览 → MySQL 可恢复 → 真实大纲 → 真实场景 → 播放与测验 → 完整验收**。数据库现在是基础能力，因此必须在真实模型接入前完成，不能等课程已经生成后再补持久化。
 
-M1 是第一个可运行原型，M2～M6 共同组成 MVP。M6 完成时达到导师可以独立复现的“可运行系统”；interactive HTML、多智能体等能力进入 M7，不得反向阻塞基线。
+M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7 不直接做论文创新，而是把当前工程基线提升为“课程要求更明确、静态内容更丰富、至少一种互动场景可安全运行、质量改进有证据”的 v0.4 产品基线。M8 才选择一个可度量研究问题。
 
-**当前进度：M1～M6 代码与 mock 自动验收已完成；M3/M4/M6 的 DeepSeek、百炼真实调用以及 M6 异机复现仍待外部条件。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M6 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7 方案已冻结但尚未进入代码。下一步先执行 M7.0 质量基线，再依次实现 CourseBrief/Prompt v2、丰富静态内容、diagram 互动闭环和单场景再生成。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
-以下定义适用于 M1～M6 的实现任务；M0 只执行文档链接、术语和追踪一致性检查。
+以下定义适用于 M1～M7 的实现任务；M0 只执行文档链接、术语和追踪一致性检查。
 
 1. 代码已经进入正式调用链，不是孤立示例；
 2. 正常路径能在 `AI_MODE=mock` 下复现；
@@ -24,6 +24,8 @@ M1 是第一个可运行原型，M2～M6 共同组成 MVP。M6 完成时达到�
 6. 至少有与风险相称的自动化测试；
 7. `pnpm lint`、`pnpm test`、`pnpm build` 全部通过；
 8. 文档、`.env.example` 和代码一致，不记录 Key、数据库密码、完整 Prompt 或原始响应。
+9. 新增 Scene/Block 同时具有 Schema、装配、Renderer/Executor、fixture、迁移和测试；
+10. 质量结论说明数据集、模型、Prompt 版本、量表和成本，不能用单个示例代替。
 
 每个里程碑保存验收记录，包含提交版本、运行命令、数据库迁移版本、通过场景、故障注入、遗留问题和演示截图。
 
@@ -34,11 +36,12 @@ M1 是第一个可运行原型，M2～M6 共同组成 MVP。M6 完成时达到�
 | M0 设计基线（已完成） | 六份设计文档形成统一方案 | 默认脚手架说明 | 1～2 天 |
 | M1 固定数据闭环（已完成） | 从首页进入课堂并浏览含代码块的固定课程 | 空白脚手架 | 4～6 天 |
 | M2 MySQL 持久化（已完成） | 重启应用后课程仍可查询和删除 | 内存仓储 | 4～6 天 |
-| M3 双 Provider 大纲（代码完成，远端验收待 Key） | DeepSeek/百炼可切换生成并保存大纲 | 固定大纲 | 4～6 天 |
-| M4 真实场景（代码完成，远端验收待 Key） | 逐场景生成、事务保存并隔离失败 | 固定场景 | 5～7 天 |
+| M3 DeepSeek 真实大纲（已完成） | DeepSeek 生成并保存可审核大纲 | 固定大纲 | 4～6 天 |
+| M4 DeepSeek 真实场景（已完成） | 逐场景生成、事务保存并隔离失败 | 固定场景 | 5～7 天 |
 | M5 课堂运行时（已完成） | 自动播放、单选测验和可选浏览器语音 | 手工翻页 | 4～6 天 |
-| M6 验收交付（代码与 mock 完成） | mock 自动回归；远端和异机证据待补 | 开发态系统 | 5～7 天 |
-| M7 论文延展 | 完成一个可度量研究问题 | 无 | 视选题而定 |
+| M6 本机验收交付（已完成） | mock 自动回归、生产构建与 DeepSeek 实测 | 开发态系统 | 5～7 天 |
+| M7 课程质量与互动能力（计划） | Prompt v2、丰富内容、一个 diagram 互动页和成对质量报告 | v0.3 通用静态课程 | 分四个可独立验收的小阶段 |
+| M8 毕业论文延展 | 基于 M7 数据完成一个可度量研究问题 | 无 | 视选题而定 |
 
 建议投入是专注开发日。延期时先减少视觉装饰和扩展能力，不压缩 Schema、事务、错误恢复和测试。
 
@@ -46,7 +49,7 @@ M1 是第一个可运行原型，M2～M6 共同组成 MVP。M6 完成时达到�
 
 ### 目标与交付
 
-固化范围、需求、架构、领域模型、生成管线和实施顺序。v0.2 已确认：单用户、功能复刻优先、静态代码块进入 MVP、DeepSeek/阿里百炼双配置、MySQL 唯一持久化、语音非必需。
+固化范围、需求、架构、领域模型、生成管线和实施顺序。v0.3 已确认：单用户、功能复刻优先、静态代码块进入 MVP、DeepSeek 为唯一验收远端 Provider、MySQL 唯一持久化、语音非必需；百炼和异机部署均为可选扩展。
 
 ### 退出门
 
@@ -131,23 +134,23 @@ DELETE /api/courses/{courseId}
 - Playwright CLI 创建并装配课程后停止、重启 Next.js，同一 URL 和首页列表仍恢复 REV.1 与 4/4 场景；
 - UI 删除课程后历史列表与数据库记录均清空，浏览器控制台无错误。
 
-## 7. M3：DeepSeek、阿里百炼与真实大纲
+## 7. M3：DeepSeek 与真实大纲
 
 ### 目标
 
-用统一 AIAdapter 接入两个 OpenAI-compatible 平台，并用正式大纲接口替换固定大纲。
+用统一 AIAdapter 接入 DeepSeek，并用正式大纲接口替换固定大纲。
 
 ### 主要任务
 
-实现 MockAIAdapter、OpenAICompatibleAdapter 和 ProviderConfigResolver。`AI_PROVIDER=deepseek|bailian` 选择一个服务端配置档；两个平台分别配置 Key、Base URL 和 Model，一次课程运行中不自动切换。
+实现 MockAIAdapter、OpenAICompatibleAdapter 和 ProviderConfigResolver。MVP 的 remote 档使用 DeepSeek 服务端 Key、Base URL 和 Model；一次课程运行中不自动切换。已有百炼配置分支保留，但不进入当前验收。
 
 完成 `POST /api/courses/{courseId}/outline/generate`：应用服务加载 Course、登记 activeOperation、调用模型、解析 JSON、执行 Zod/语义门、必要时一次修复，并用 operation id + expectedRevision 事务保存。用户编辑和确认大纲通过 `PATCH /api/courses/{courseId}/outline`。
 
-Provider、模型、promptVersion、requestId、耗时、upstreamCalls 和可用 token usage 写入 outlineGeneration。模型名与百炼地域 URL保持环境可配置，不能散落在业务代码中。
+Provider、模型、promptVersion、requestId、耗时、upstreamCalls 和可用 token usage 写入 outlineGeneration。模型名与服务地址保持环境可配置，不能散落在业务代码中。
 
 ### 最小测试
 
-- mock、DeepSeek、百炼适配器输出共用同一契约；
+- mock 与 DeepSeek 适配器输出共用同一契约；
 - Provider 配置缺失、Key/地域不匹配、401、429、超时得到稳定错误码；
 - 代码围栏 JSON、纯 JSON、非法字段和场景数越界按规则处理；
 - 模型成功但数据库事务失败时接口返回失败；
@@ -155,9 +158,9 @@ Provider、模型、promptVersion、requestId、耗时、upstreamCalls 和可用
 
 ### 退出门
 
-mock 必须确定性生成 3～5 项大纲。分别使用有效 DeepSeek 与百炼配置完成至少一次真实大纲生成，数据库元数据能够证明实际使用的平台和模型；失败时草稿仍可恢复。
+mock 必须确定性生成 3～5 项大纲。使用有效 DeepSeek 配置完成至少一次真实大纲生成，数据库元数据能够证明实际平台和模型；失败时草稿仍可恢复。
 
-截至 2026-08-24，mock、配置解析、共用远端适配器、短事务应用服务、编辑确认和数据库元数据均已通过自动化与浏览器验证。由于本地尚未配置 DeepSeek/百炼有效 Key，两家远端 smoke test 仍未完成，因此 M3 只标记为“代码完成”，尚未跨过完整退出门。
+截至 2026-08-25，mock、配置解析、共用远端适配器、短事务应用服务、编辑确认和数据库元数据均已通过自动化与浏览器验证。DeepSeek 已用 `deepseek-v4-flash` 完成一门 5 场景课程的真实大纲与场景生成，MySQL 保存了 Provider、模型、请求编号、Prompt 版本、耗时、调用次数和修复标记；M3 退出门已通过。
 
 ## 8. M4：逐场景生成与失败隔离
 
@@ -184,7 +187,7 @@ mock 必须确定性生成 3～5 项大纲。分别使用有效 DeepSeek 与百�
 
 一门 3～5 场景课程逐项显示生成进度；故障注入证明失败隔离、单场景重试、事务失败和迟到响应保护有效；全部 ready 后课程才进入 ready。
 
-截至 2026-08-24，mock 下的 slide/quiz 生成、逐项进度、故障注入、失败隔离、单场重试、迟到响应保护、MySQL 增量恢复和浏览器课堂闭环均已通过。与 M3 相同，真实 DeepSeek/百炼调用仍等待有效 Key，因此这里标记为“代码完成”，不宣称远端验收完成。
+截至 2026-08-25，mock 下的 slide/quiz 生成、逐项进度、故障注入、失败隔离、单场重试、迟到响应保护、MySQL 增量恢复和浏览器课堂闭环均已通过。DeepSeek 真实课程曾有两个场景在输出修复后仍未通过契约，系统保留其他完成内容并允许逐场重试，最终达到 `5/5 ready`；M4 退出门已通过。
 
 ## 9. M5：课堂播放、测验与可选语音
 
@@ -217,7 +220,7 @@ quiz 进入页面即可作答；自动播放到 learner pause 时进入 awaiting
 
 ## 10. M6：系统验收与交付
 
-> 状态：代码与 mock 自动验收完成。完整退出门仍等待 DeepSeek、百炼有效 Key 和另一台干净机器复现。
+> 状态：已按本机、MySQL、mock 与 DeepSeek 范围完成。
 
 ### 目标
 
@@ -225,9 +228,9 @@ quiz 进入页面即可作答；自动播放到 learner pause 时进入 awaiting
 
 ### 主要任务
 
-补齐领域单元测试、MySQL 仓储集成测试、API 集成测试和完整 E2E。建立 mock、DeepSeek、百炼三份配置检查，但 CI 默认只运行 mock，避免费用和网络不稳定。统一 loading、empty、error、conflict、cancelled 状态；整理 `.env.example`、迁移、测试数据、备份恢复、部署和故障排查说明。
+补齐领域单元测试、MySQL 仓储集成测试、API 集成测试和完整 E2E。建立 mock 与 DeepSeek 配置检查，但自动测试固定运行 mock，避免费用和网络不稳定。统一 loading、empty、error、conflict、cancelled 状态；整理 `.env.example`、迁移、测试数据、备份恢复、部署和故障排查说明。
 
-逐项审计 FR、NFR 与 AC-01～AC-12。未实现项必须修复、正式缩小范围，或列入 M7，不能用“接口存在”代替行为验收。
+逐项审计 FR、NFR 与 AC-01～AC-12。未实现项必须修复、正式缩小范围，或列入后续版本，不能用“接口存在”代替行为验收。
 
 ### 验收矩阵
 
@@ -238,44 +241,79 @@ quiz 进入页面即可作答；自动播放到 learner pause 时进入 awaiting
 | 数据库集成 | 迁移、CRUD、revision conflict、事务和级联删除 |
 | API 集成 | mock 下课程、大纲、场景成功与失败响应 |
 | 浏览器 E2E | 创建 → 大纲 → 场景 → 课堂 → 测验 → 重启恢复 |
-| Provider 冒烟 | DeepSeek、百炼各一次受控真实调用，不进入默认 CI |
+| Provider 冒烟 | DeepSeek 一次受控真实调用，不进入默认 CI |
 | 故障注入 | 非法 JSON、429、超时、DB 失败、迟到响应、无 TTS |
 
 ### 退出门
 
-在干净环境中仅按 README 即可启动 MySQL、执行迁移、运行 mock 完整演示；两个 remote Provider 配置分别验证；质量命令通过；所有 MVP 验收标准都有证据。
+在本机仅按 README 可启动 MySQL、执行迁移、运行 mock 完整演示；DeepSeek remote 配置完成真实验证；质量命令通过；所有 MVP 验收标准都有证据。
 
-当前已补齐统一 API error envelope、请求取消与不可重试 UI、配置健康检查、API 契约测试、production Chromium E2E、临时 MySQL mock CI、部署/备份/恢复/排障手册和 AC-01～AC-12 证据矩阵。mock 自动退出门已通过；远端 Provider 与异机人工证据按 [08-deployment-and-acceptance.md](08-deployment-and-acceptance.md) 补录。
+当前已补齐统一 API error envelope、请求取消与不可重试 UI、配置健康检查、API 契约测试、production Chromium E2E、临时 MySQL mock CI、部署/备份/恢复/排障手册和 AC-01～AC-12 证据矩阵。mock 自动退出门与 DeepSeek 真实 smoke test 已通过，M6 正式完成；百炼与异机部署仅在后续确有需要时另立扩展任务。
 
-## 11. M7：毕业论文延展
+## 11. M7：课程质量与互动能力
 
-M7 只选择一个主问题，不建议同时引入互动脚本、RAG、多智能体和多模态。可选方向包括：
+> 状态：方案已完成，代码尚未开始。完整任务、字段、安全协议和提交顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
 
-- 受控互动场景：先支持一种 simulation 或 code widget，生成完整 HTML/CSS/JS，在无 `allow-same-origin` 的 sandbox iframe 中运行，并研究运行错误检测与自动修复；
-- 双 Provider 质量成本比较：在相同测试集和 Prompt 下比较 DeepSeek 与百炼模型的结构通过率、人工质量、延迟、token 和费用；
-- 可恢复生成：比较整课重生成与逐场景事务恢复的成功率、浪费调用和恢复时间；
-- 教学结构质量：比较基础 Prompt 与教学策略约束，使用结构合法率和人工量表；
-- 文档增强：加入受控文档检索，比较有无来源上下文时的事实一致性。
+### M7.0：质量基线与评价协议
 
-若引入 LangGraph，它必须解决可验证的编排问题；“使用了多智能体框架”本身不是研究贡献。
+冻结覆盖概念、机制和编程实践的 6 个开发评价主题；使用当前 Prompt v1 生成基线，记录结构完成率、修复次数、耗时、token 和人工六维评分。先确定评分说明和阈值，之后不得根据候选结果临时修改。
 
-## 12. 风险登记与止损规则
+**退出门**：评价数据、量表版本、模型/Prompt 配置和基线报告可复现；不修改生产 Prompt。
+
+### M7.1：CourseBrief、Schema v2 与大纲质量
+
+增加 CourseBrief、服务端默认值、MySQL `brief_json`、v1 → v2 迁移和 outline.v2。大纲增加场景角色、误区/评估意图和可选 diagram 计划；旧课程无需清库即可恢复。
+
+**退出门**：同一主题按初学者/进阶目标生成的计划有可解释差异；v1 fixture、MySQL 恢复和 M6 E2E 均通过。
+
+### M7.2：丰富静态场景与课程连贯性
+
+增加 steps、comparison、table 固定 Block，升级 slide/quiz Prompt；使用受限课程记忆传递已覆盖关键点、待覆盖目标和前文摘要；增加密度、重复、覆盖和 quiz 对齐报告。
+
+**退出门**：三种 Block 在桌面和窄屏安全渲染；候选课程不是靠增加长段落提高信息量；原 slide/quiz/code 回归全部通过。
+
+### M7.3：interactive/diagram 纵向闭环
+
+只实现 `interactive/diagram`：专用 Prompt 生成自包含 HTML/CSS/JavaScript，服务端进行大小、结构、危险能力和运行协议校验；课堂使用无 `allow-same-origin`、无外部网络的 sandbox iframe，支持 ready、reset、completed、error 和固定 fallback。
+
+**退出门**：`interactionMode=required` 的课程完成“生成 → MySQL 保存 → 课堂操作 → 重置 → 完成 → 刷新恢复”的 production Chromium E2E；恶意 fixture 不能访问主页面身份、存储或网络；失败不影响其他场景。
+
+### M7.4：单场景再生成与 v0.4 验收
+
+允许 ready 场景携带 500 字以内意见进行事务化再生成。候选生成期间不改变 ready Course；提交前保留旧结果，失败、取消和 conflict 均不破坏课程。quiz 再生成经用户确认后，在替换场景的同一事务清理旧作答。最后在固定模型配置下完成 v0.3/v0.4 成对人工评价，并报告质量、成本、延迟和修复率。
+
+**退出门**：AC-Q01～AC-Q11 全部有证据；M6 `pnpm verify:full` 继续通过；质量达到 M7.0 预先冻结的阈值。达到此门后才宣布 v0.4 完成。
+
+### M7 的硬边界
+
+M7 不加入 LangGraph、多智能体、多模态、RAG、媒体、自由坐标画布、code/simulation/game/3D widget 或任意学习者代码执行。diagram 未稳定前不得增加第二类互动场景。
+
+## 12. M8：毕业论文延展
+
+M8 从 M7 已收集的数据中只选择一个主问题，例如教学策略 Prompt 的成对实验、互动脚本运行错误检测与修复、双 Provider 质量—成本比较，或整课重生成与单场景恢复的效率比较。实验必须写清基线、唯一主要变量、评价指标、样本、重复次数和失败处理。
+
+若引入 LangGraph、多智能体、多模态或 RAG，它必须是该研究问题的必要变量并有消融对照；“使用了某个框架”本身不是研究贡献。
+
+## 13. 风险登记与止损规则
 
 | 风险 | 早期信号 | 止损措施 |
 | --- | --- | --- |
-| 范围膨胀 | M1 前开始做 iframe、RAG 或 Agent | 非 MVP 任务全部移入 M7 |
+| 范围膨胀 | diagram 未稳定就加入 RAG、Agent 或第二种 widget | 严格按 M7.0～M7.4，额外能力移入 M8 |
 | 数据库先于领域模型扩张 | 页面和 API 直接拼 SQL | 强制 CourseRepository 与契约测试 |
 | 长事务 | 模型调用期间占用数据库事务 | 使用登记操作和结果提交两个短事务 |
 | 并发覆盖 | 迟到响应覆盖重试结果 | operation id + expectedRevision |
-| Provider 漂移 | 模型名或百炼地域 URL 写死 | 环境配置、启动校验、保存生成元数据 |
+| Provider 漂移 | 模型名或服务地址写死 | 环境配置、启动校验、保存生成元数据 |
 | 演示依赖网络 | 无 Key 就无法进入课堂 | mock 走同一数据库和生成链路 |
 | 语音拖慢主线 | 调试集中在音色或兼容性 | TextOnly 为默认，BrowserSpeech 可关闭 |
-| 论文成为功能堆砌 | 延展没有基线和指标 | M7 开工前先写实验问题与评价方案 |
+| 生成脚本越权 | iframe 可访问网络、主页面或存储 | 关闭 interactive 入口，先修复 sandbox/CSP/消息边界 |
+| 旧课程无法读取 | schemaVersion 2 直接替换 v1 | 停止 UI/Prompt 开发，先完成迁移与 fixture 回归 |
+| 质量提升不可证 | 只展示一个好看的课程 | M7.0 先冻结数据集、量表与阈值，再做成对评价 |
+| 论文成为功能堆砌 | 延展没有唯一变量 | M8 一次只选择一个主问题 |
 
 当前主分支无法启动、迁移不可重复、CourseSchema 可被绕过、密钥进入客户端、失败只能清库恢复或测试连续失效时，停止增加功能并先恢复基线。
 
-## 13. 推荐的第一次开发迭代
+## 14. 推荐的下一次开发迭代
 
-第一批提交严格限制为：领域类型与 Schema、合法 fixture、InMemoryCourseRepository、三个页面骨架、slide/quiz/CodeBlockRenderer，以及一条首页到课堂的冒烟测试。暂不安装数据库库、Provider SDK、LangGraph、富文本编辑器或媒体 SDK。
+下一批提交只执行 M7.0，不直接改 Prompt 或加 iframe：建立评价集、评分量表、基线生成清单和报告模板，选择 6 个无隐私主题，用当前 DeepSeek 配置生成可追踪基线。评价产物放入明确目录，默认不记录真实用户输入、Key、完整请求日志或未授权内容。
 
-M1 通过后立即进入 MySQL 技术验证和 M2，不先接真实模型。这样模型输出从第一天起就进入最终持久化边界，后续问题可以明确定位在模型、Schema、应用服务、数据库事务、渲染或播放中的某一层。
+M7.0 退出后再开始 Course v2 和迁移；迁移通过前不修改当前 Scene 联合。这样后续质量变化可以和 v0.3 基线比较，数据版本问题也不会与 Prompt、Renderer 和 iframe 问题混在一起。

@@ -1,21 +1,21 @@
 # 05. AI 生成管线设计
 
-> 文档版本：0.2  
+> 文档版本：0.4
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-24）：大纲与逐场景链路均已进入正式调用路径，并在 mock + MySQL 下验证；slide/quiz DTO、装配、短事务、失败隔离与单场重试已经实现。DeepSeek/百炼适配器代码已完成，但两家远端真实调用仍等待有效服务端 Key 验收。
+> 实现状态（2026-08-25）：大纲与逐场景 v1 链路均已进入正式调用路径，并在 mock + MySQL 下验证；slide/quiz DTO、装配、短事务、失败隔离与单场重试已经实现。DeepSeek 已完成真实大纲、5 场景生成、模型修复和局部失败后重试验收。本文标记为 v2、interactive 或 M7 的内容仍是计划，详细顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
 
 ## 1. 设计结论
 
-MVP 使用两层结构化生成：
+v0.3 使用两层结构化生成：
 
 ```text
 第一层：topic → CourseOutlineDTO
 第二层：一个 SceneOutline + 紧凑课程上下文 → GeneratedSceneDTO
 ```
 
-第二层按场景串行执行。模型生成可见内容和 narration，程序负责生成所有 id、引用、状态、时间戳和 Action。这样既保留 OpenMAIC“先计划、后逐页物化”的可恢复结构，又避免首版为内容和动作分别调用模型带来的成本和复杂度。
+第二层按场景串行执行。模型生成可见内容和 narration，程序负责生成所有 id、引用、状态、时间戳和 Action。v0.4 保留两层与串行恢复边界，只把 CourseBrief、课程记忆、丰富 Block 和 interactive 作为类型化输入/输出加入，不改成 Agent 图或无限评审循环。
 
 ## 2. 与 OpenMAIC 的对应关系
 
@@ -36,11 +36,13 @@ scene-outlines-stream
 | SSE 流式大纲 | 普通 JSON 响应，先保证结构正确 |
 | content 与 actions 两次模型调用 | 一次生成 content + narration，程序装配 Action |
 | 四类 Scene | slide、quiz |
-| 按阶段/类型模型路由 | DeepSeek/百炼二选一；一次运行固定一个 Provider/模型 |
+| 按阶段/类型模型路由 | MVP 固定 DeepSeek；一次运行固定一个 Provider/模型 |
 | 多种 JSON 修复策略 | 精确解析 + 代码围栏提取 + 一次模型修复 |
 | 默认最多多次传输重试 | 有类型分类、总调用硬上限 |
 | 首场景完成即进课堂 | MVP 全部场景结束后进入正式课堂 |
 | 图片、视频、云 TTS | 不进入生成管线 |
+
+v0.4 只追加 OpenMAIC 中最接近当前质量问题的三点：更完整的教学要求、专用场景 Prompt，以及一个自包含 diagram 互动页面。自由坐标画布、媒体、多智能体和五类 widget 仍不复刻。
 
 后续若要研究“动作生成质量”，可以把 Action 生成重新拆成第三阶段，而不改变前两阶段与 CourseRepository。
 
@@ -76,6 +78,36 @@ flowchart TD
     Repair --> Adapter
 ```
 
+### 3.1 v0.4 增量管线（计划）
+
+```mermaid
+flowchart TD
+    Brief["MySQL Course.brief"] --> OutlineV2["outline.v2"]
+    OutlineV2 --> OutlineGate["Schema + 教学结构门"]
+    OutlineGate --> Review["用户审核"]
+    Review --> Route{"Scene type"}
+
+    Route -->|slide| SlideV2["scene-slide.v2"]
+    Route -->|quiz| QuizV2["scene-quiz.v2"]
+    Route -->|interactive| DiagramV1["scene-interactive-diagram.v1"]
+
+    Memory["covered / remaining / bounded summaries"] --> SlideV2
+    Memory --> QuizV2
+    Memory --> DiagramV1
+
+    SlideV2 --> SceneGate["DTO + deterministic quality report"]
+    QuizV2 --> SceneGate
+    DiagramV1 --> HtmlGate["HTML parse + safety + runtime contract"]
+    HtmlGate --> SceneGate
+    SceneGate --> Persist["assemble + expectedRevision transaction"]
+
+    SceneGate -.invalid.-> RepairOnce["type-specific repair once"]
+    HtmlGate -.invalid.-> RepairOnce
+    RepairOnce --> Route
+```
+
+diagram 的运行错误不会触发浏览器内自动模型循环。用户看到 fallback 后显式点击再生成，服务端重新执行有硬上限的正常请求；这样费用、revision 和恢复证据仍可追踪。
+
 ## 4. AI Adapter
 
 ### 4.1 接口
@@ -110,28 +142,24 @@ GenerationService 只依赖 AIAdapter，不导入具体 Provider SDK。实现包
 
 - `MockAIAdapter`：读取确定性 fixture，不访问网络；
 - `OpenAICompatibleAdapter`：只在服务端加载，接收经过校验的 ProviderConfig；
-- `ProviderConfigResolver`：根据 AI_PROVIDER 选择 DeepSeek 或阿里百炼配置。
+- `ProviderConfigResolver`：MVP 正式解析 DeepSeek 配置，同时保留可选百炼兼容档。
 
 ### 4.2 环境配置
 
 ```env
 AI_MODE=mock
-# AI_MODE=remote 时从以下两个配置档中选择一个
+# MVP 的 AI_MODE=remote 使用 DeepSeek
 AI_PROVIDER=deepseek
 
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 
-BAILIAN_API_KEY=
-# 按百炼地域和业务空间填写 OpenAI-compatible Base URL
-BAILIAN_BASE_URL=https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-BAILIAN_MODEL=qwen3.6-plus
 ```
 
-截至 2026-08-23，两个平台都提供 OpenAI-compatible 接口，但模型名、地域 URL 和产品规则会变化，因此它们必须保持为环境配置而不是写死在业务代码中。百炼的 Base URL 必须与 API Key 地域匹配；DeepSeek 和百炼的 Key 不共用。
+远端模型名和服务地址可能变化，因此必须保持为环境配置而不是写死在业务代码中。MVP 只要求 DeepSeek 配置有效；`.env.example` 中保留的百炼变量仅用于未来确有第二 Provider 需求时的兼容扩展。
 
-配置依据以官方文档为准：[DeepSeek API 快速开始](https://api-docs.deepseek.com/quick_start/pricing-details-cny/)、[阿里百炼 Base URL 总览](https://help.aliyun.com/zh/model-studio/base-url)、[百炼 OpenAI 兼容接口](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope)。
+配置依据以官方文档为准：[DeepSeek API 快速开始](https://api-docs.deepseek.com/quick_start/pricing-details-cny/)。
 
 启动时只校验当前激活配置档。remote 模式缺少 Key、Base URL 或 Model 时返回 `AI_NOT_CONFIGURED`，不等到用户点击后才抛出模糊错误。切换 Provider 需要修改服务端环境并重启，MVP 不允许浏览器按请求切换。
 
@@ -351,6 +379,32 @@ Prompt 要求：
 - 不把 Zod Schema 原样无限展开到 Prompt，可维护一份紧凑格式说明；
 - 不能依赖“模型应该懂”来代替运行时校验。
 
+### 7.1 Prompt v2 设计（M7 计划）
+
+v2 不覆盖 v1 文件，而是新增并保留版本元数据：
+
+```text
+prompts/
+├─ outline.v2.ts
+├─ scene-slide.v2.ts
+├─ scene-quiz.v2.ts
+├─ scene-interactive-diagram.v1.ts
+├─ scene-regenerate.v1.ts
+└─ repair-interactive.v1.ts
+```
+
+所有 v2 User Prompt 都从 MySQL Course 构造，至少包含：
+
+- topic 与规范化 CourseBrief；
+- 完整但紧凑的课程计划和目标；
+- 当前 SceneOutline 的 role、objective、keyPoints、misconceptions/assessmentFocus；
+- 有上限的 `coveredKeyPoints`、`remainingObjectives` 和前文摘要；
+- 当前场景的可见内容密度、允许类型和禁止字段。
+
+outline.v2 应要求模型先围绕学习结果安排 hook、概念/机制、案例或练习和评估，但不能把固定模板强加给所有主题。slide.v2 明确“页面是视觉提示，不是讲稿”，细节进入 narration；quiz.v2 必须说明每题对应哪个 objective，并生成可机械验证的答案与解析。
+
+diagram Prompt 只生成一个完整 HTML 文档和 fallback DTO，不使用 Markdown。它必须遵守宿主提供的元素 ID、reset、ready/completed/error 协议和无网络限制；生成器不得要求 CDN、外部字体或第三方库。完整脚本仍须经过服务端安全门，Prompt 约束不能替代运行时隔离。
+
 ## 8. 解析与修复
 
 ### 8.1 解析顺序
@@ -559,9 +613,40 @@ Schema 通过只表示“数据形状合法且满足可机械检查的规则”�
 - 测验答案在现实学科中没有争议；
 - 内容不存在模型偏见。
 
-若论文研究内容质量，需要另外建立人工标注集、客观题或 LLM-as-judge 协议，并报告 Judge 自身局限。
+M7 必须建立小型固定人工评价集来判断产品质量是否改善；若 M8 选择内容质量作为论文问题，再扩大样本、重复生成并补充一致性分析。LLM-as-judge 只能作为辅助信号，并报告 Judge 自身局限。
 
-## 15. 后续研究接口
+### 14.4 v0.4 规则质量报告（计划）
+
+每个候选大纲或场景在持久化前生成 `DeterministicQualityReport`，至少记录：
+
+- requiredObjectiveCoverage：要求目标是否有对应场景；
+- keyPointCoverage：规范化关键点的弱覆盖率；
+- duplicateSignals：跨页标题、摘要和高相似内容；
+- visibleDensity：页面字符、列表项、表格单元和代码长度；
+- quizAlignment：题目是否引用已教学目标、答案索引和选项是否一致；
+- interactiveSafety：HTML 大小、禁止能力、必需元素和消息协议结果。
+
+可以确定性判错的项目进入硬门；只能提供启发的关键词覆盖和相似度进入报告，不得仅凭一个分数拒绝事实正确但措辞不同的内容。
+
+### 14.5 人工成对评价（M7 退出门）
+
+使用同一主题集、Provider、模型、温度和场景数量分别生成 v0.3 与 v0.4 课程，隐藏版本后评价事实正确性、目标匹配、结构连贯、解释/案例价值、可读性和测验对齐。互动页另评教学必要性、控件可理解性、重置和完成反馈。报告同时给出生成完成率、修复率、耗时、token 和关键事实错误，禁止只展示改善的维度。
+
+## 15. 再生成管线（M7 计划）
+
+`POST /api/courses/{courseId}/scenes/{outlineId}/regenerate` 接收 `expectedRevision` 与不超过 500 字的 instruction。服务端流程为：
+
+```text
+读取 ready Course 与目标 Scene
+  → 构造 CourseBrief + Outline + bounded baseline + instruction
+  → 按 scene.type 调用对应 Prompt
+  → 完整解析、Schema、质量/安全门与装配
+  → expectedRevision 短事务原位替换
+```
+
+再生成调用期间不修改 Course.status、SceneProgress 或持久化 activeOperation，新候选提交前旧 Scene 始终保留。模型不能决定 courseId、outlineId、type、order、状态或 ID；失败、取消、HTML 安全错误和 revision conflict 都只结束本次操作，不把原场景改成 failed。quiz 再生成要求用户确认旧作答失效；最终事务同时替换 Scene 并删除旧 sceneId 的 QuizAttempt，任一步失败则回滚。
+
+## 16. M8 研究接口
 
 生成管线预留但不提前实现：
 
@@ -576,4 +661,4 @@ export interface QualityGate<T> {
 }
 ```
 
-可能的研究方向包括错误感知自适应修复、质量—成本约束模型路由或课程内容质量反馈。实验必须与固定单模型、固定一次修复的 MVP 基线比较。
+这些接口不要求在 M7 全部实现。M8 可以从 M7 已产生的数据中选择错误感知修复、质量—成本约束模型路由、教学策略 Prompt 对比或互动运行错误修复中的一个问题。实验必须与固定模型、固定 Prompt 版本和明确调用预算的基线比较；LangGraph、多智能体或多模态只有在成为该单一问题的必要变量时才评估。

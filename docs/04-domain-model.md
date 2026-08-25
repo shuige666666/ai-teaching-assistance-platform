@@ -1,8 +1,8 @@
 # 04. 领域模型与数据契约
 
-> 文档版本：0.2  
+> 文档版本：0.4
 > 目标：为页面、API、生成管线、播放器和 MySQL Repository 提供唯一数据语言。  
-> 本文代码是设计契约，实施时以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
+> 状态说明：第 1～15 节描述已实现的 schemaVersion 1；第 16 节描述 M7 计划中的 schemaVersion 2，实施后仍以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
 
 ## 1. 建模原则
 
@@ -11,7 +11,7 @@
 3. **生成状态显式持久化**：刷新后不靠内存猜测哪一步完成；
 4. **Action 是唯一播放指令**：播放器不从页面文本隐式推导行为；
 5. **一处定义，多处复用**：API、客户端和存储导入同一套 Zod Schema；
-6. **先小后扩**：MVP 只定义真正有执行器和渲染器的类型。
+6. **先小后扩**：只有 Schema、装配器、Renderer/Executor、迁移和测试同时存在的类型才能进入当前版本。
 
 ## 2. 聚合关系
 
@@ -695,3 +695,183 @@ create/save 在写入前调用 CourseSchema.parse；get 在读取并组装后再
 - 新 Scene 类型只有在 Schema、Renderer、生成器和测试同时存在时才能加入；
 - 新 Action 类型只有在 Schema、Executor、取消语义和测试同时存在时才能加入；
 - 不允许用 `any` 绕开外部输入校验，也不允许用类型断言代替运行时验证。
+
+## 16. v0.4/M7 计划契约：schemaVersion 2
+
+### 16.1 版本兼容策略
+
+v0.4 扩展 Scene 判别联合并增加持久化 CourseBrief，因此升级到 `schemaVersion: 2`。Repository 不能把旧行直接交给 v2 Schema，也不能要求用户清库；读取顺序应为：
+
+```text
+MySQL row
+  → 按 schema_version 解析 StoredCourseV1 | StoredCourseV2
+  → v1 执行 migrateCourseV1ToV2
+  → CurrentCourseSchema(v2)
+  → 应用服务
+```
+
+MySQL 增加可空的 `brief_json` 列以兼容已有行。新建 v2 Course 必须写入非空 brief；旧 v1 行在迁移函数中获得确定性默认值，并在下一次明确保存时升级 schema_version。迁移不得重新生成大纲或场景，也不得改变已有 id、order、revision、生成元数据和测验引用。
+
+### 16.2 CourseBrief
+
+```ts
+export interface CourseBrief {
+  learnerLevel: 'beginner' | 'intermediate' | 'advanced';
+  learningGoal: string;
+  prerequisites: string[];
+  durationMinutes: 10 | 15 | 20;
+  teachingStyle: 'structured' | 'case_based' | 'practice_oriented';
+  interactionMode: 'off' | 'auto' | 'required';
+}
+
+export interface CourseV2 extends Omit<CourseV1, 'schemaVersion' | 'outlines' | 'scenes'> {
+  schemaVersion: 2;
+  brief: CourseBrief;
+  outlines: SceneOutlineV2[];
+  scenes: SceneV2[];
+}
+```
+
+约束：
+
+- learningGoal 为 2～300 个字符；
+- prerequisites 为 0～5 项，每项 1～120 个字符，规范化后不能重复；
+- 只有 topic 仍为必填用户输入，其余字段由服务端补齐并持久化有效值；
+- v1 → v2 默认值为 beginner、15 分钟、case_based、auto、空先修知识，并从 topic 构造不超过 300 字的通用学习目标；
+- 生成接口不得接受另一份 brief 覆盖 Course.brief。
+
+### 16.3 SceneOutlineV2
+
+```ts
+export type SceneTypeV2 = 'slide' | 'quiz' | 'interactive';
+
+export type SceneRole =
+  | 'hook'
+  | 'concept'
+  | 'mechanism'
+  | 'worked_example'
+  | 'practice'
+  | 'summary'
+  | 'assessment';
+
+export interface SceneOutlineV2 {
+  id: string;
+  type: SceneTypeV2;
+  role: SceneRole;
+  title: string;
+  teachingObjective: string;
+  keyPoints: string[];
+  misconceptions?: string[];
+  assessmentFocus?: string;
+  widgetType?: 'diagram';
+  order: number;
+  estimatedMinutes?: number;
+}
+```
+
+除 v1 规则外，v2 课程级不变量为：
+
+- role 必须与教学目标一致，但不强制每门课机械包含所有 role；
+- misconceptions 为 0～3 项，每项 1～160 个字符；
+- quiz 应使用 `assessment`，也可以在需要即时练习时使用 `practice`；
+- interactive 必须提供 `widgetType: 'diagram'`，其他 Scene 不得提供 widgetType；
+- `interactionMode=off` 时 interactive 数量为 0，`auto` 时为 0～1，`required` 时恰好为 1；
+- interactive 不能是第一场，且其 teachingObjective 必须引用课程中已引入的概念；
+- requestedSceneCount 在 v2 仍为 3～5，至少一个 quiz、最多两个 quiz 的规则不变。
+
+### 16.4 SlideBlockV2
+
+```ts
+export interface StepItem {
+  id: string;
+  title: string;
+  text: string;
+}
+
+export interface StepsBlock {
+  id: string;
+  type: 'steps';
+  items: StepItem[];
+}
+
+export interface ComparisonBlock {
+  id: string;
+  type: 'comparison';
+  leftTitle: string;
+  rightTitle: string;
+  rows: Array<{ id: string; dimension: string; left: string; right: string }>;
+}
+
+export interface TableBlock {
+  id: string;
+  type: 'table';
+  headers: string[];
+  rows: Array<{ id: string; cells: string[] }>;
+}
+
+export type SlideBlockV2 = SlideBlockV1 | StepsBlock | ComparisonBlock | TableBlock;
+```
+
+约束：steps 为 2～6 步；comparison 为 2～5 行且每行必须同时有左右内容；table 为 2～5 列、1～6 行，每行 cells 数量必须等于 headers 数量；所有可见单元都设置短文本上限。模型 DTO 不包含任何 id，装配器递归生成 Block、Step 和 Row id。
+
+### 16.5 InteractiveScene
+
+```ts
+export interface InteractiveFallback {
+  title: string;
+  description: string;
+  steps: string[];
+}
+
+export interface InteractiveContent {
+  type: 'interactive';
+  widgetType: 'diagram';
+  runtimeContractVersion: 1;
+  html: string;
+  fallback: InteractiveFallback;
+}
+
+export interface InteractiveScene extends SceneBase {
+  type: 'interactive';
+  content: InteractiveContent;
+}
+
+export type SceneV2 = SlideSceneV2 | QuizSceneV2 | InteractiveScene;
+```
+
+约束：
+
+- html 为完整、自包含文档，UTF-8 字节长度不超过 100 KiB；
+- html 不接受 url fallback，不允许外部网络依赖；
+- fallback.title 为 1～100 字，description 为 1～500 字，steps 为 2～8 项；
+- runtimeContractVersion 当前只能为 1；
+- InteractiveScene 至少有 speech，最后一个 Action 为 learner pause；
+- iframe 内的临时交互状态不写入 Course；刷新后重新初始化 widget，但生成内容、fallback 和完成前的课程事实仍可恢复；
+- runtime error 只进入 UI 诊断/遥测，不允许脚本直接修改 Course。
+
+### 16.6 互动消息联合
+
+```ts
+export type WidgetToHostMessage =
+  | { type: 'INTERACTIVE_READY'; contractVersion: 1 }
+  | { type: 'INTERACTIVE_COMPLETED'; contractVersion: 1 }
+  | { type: 'INTERACTIVE_ERROR'; contractVersion: 1; message: string };
+
+export type HostToWidgetMessage =
+  | { type: 'INTERACTIVE_RESET'; contractVersion: 1 };
+```
+
+所有消息使用 `.strict()` Schema，message 最多 300 字。宿主必须先验证 `event.source === iframe.contentWindow`，再验证消息；不得仅凭 `event.origin`，因为无同源权限的 srcDoc iframe 使用不透明来源。
+
+### 16.7 再生成替换不变量
+
+- 再生成只允许替换同一个 courseId + outlineId 的 ready Scene；
+- 候选 Scene 沿用 courseId、outlineId、type 和 order，获得新的 scene id、Block id、Action id、GenerationMetadata 和时间戳；
+- 新候选未通过完整校验和事务提交前，旧 Scene 保持在聚合中；
+- 候选生成期间 Course.status、SceneProgress 和持久化 activeOperation 都保持不变；最终 expectedRevision 不匹配时拒绝迟到结果，因此崩溃或取消天然回到旧 ready 场景；
+- quiz 场景再生成必须要求用户确认旧作答会失效；替换 Course Scene 与删除旧 sceneId 的 QuizAttempt 使用同一个 MySQL 事务，任一步失败则全部回滚；
+- 互动场景再生成必须重新走 HTML 安全检查和 iframe E2E fixture，不能只校验通用 Scene 字段。
+
+### 16.8 v2 完成门
+
+schemaVersion 2 只有在以下内容同时进入正式调用链后才能成为 `CURRENT_SCHEMA_VERSION`：v1/v2 读取与迁移、MySQL 列迁移、CourseBrief 表单/API、三种 Block、interactive Schema/生成器/Renderer、消息协议、fixture、仓储契约测试和 production E2E。仅提前修改联合类型或数据库版本号会让旧数据不可读，因此禁止分离发布。

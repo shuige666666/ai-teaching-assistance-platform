@@ -4,7 +4,7 @@
 
 ## 1. 当前结论
 
-项目已完成 **M1～M6 的代码实现与 mock 自动验收**。mock 下的大纲、场景、课堂、刷新恢复和自动清理均进入可重复 Chromium E2E；DeepSeek/阿里百炼远端调用和另一台干净机器复现仍等待外部条件。当前在无模型 Key、无模型网络的环境中可以完成：
+项目已完成 **M1～M6 的代码实现、mock 自动验收与 DeepSeek 真实 smoke test**，达到当前“本机 + MySQL + mock + DeepSeek”的 MVP 交付范围。mock 下的大纲、场景、课堂、刷新恢复和自动清理均进入可重复 Chromium E2E；DeepSeek 已完成真实大纲、5 个场景、输出修复和失败后单场景重试。当前在无模型 Key、无模型网络的环境中可以完成：
 
 ```text
 首页填写主题并选择 3～5 个场景
@@ -112,21 +112,50 @@ M5 继续在 production server 上验证“进入 ready 课程 → TextOnly 开�
 
 M6 将上述人工步骤固化为 `e2e/mock-course-flow.spec.ts`：在 1280×720 Chromium 中创建唯一主题课程，生成 REV.8 ready 课程，验证播放/暂停/继续、手工切页取消、quiz 无需播放即可提交、服务端判分、页面刷新、首页历史和 `/api/health/config`，最后无条件删除测试课程。本地 production E2E 1/1 通过；API 错误 envelope、三档配置解析和非法请求另由 Vitest 自动覆盖。
 
+2026-08-25 在本机 remote 档位下复跑质量门时发现 Playwright 服务会继承 `.env.local`，使标称 mock 的 E2E 误用真实 Provider。现已在 `playwright.config.ts` 强制测试服务使用 `AI_MODE=mock`、禁止复用未知配置的既有 3100 端口服务，并让 ESLint 忽略 `output/` 中的报告、trace 与截图生成物。修复后 `pnpm verify:full` 完整通过：14 个文件 45 项单元/API 契约测试、1 个文件 9 项 MySQL 集成测试、production build 和 Chromium E2E 1/1 均成功。
+
 M6 可观测性补强回归进一步故意延迟课程创建响应，确认首页在等待期间显示 MySQL 写入阶段、耗时和 requestId，随后通过完整导航进入工作台。生产进程已用固定 requestId 核对 `course.create.started` 与 `course.create.succeeded` JSON 日志；临时验收课程均已删除。
 
-远端 DeepSeek 场景 smoke test 暴露并修正了恢复分类：`INVALID_MODEL_OUTPUT` 表示本次输出及一次修复均未通过契约，但新请求重新采样仍可能成功，因此会保存为可重试错误。前端同时兼容修复前已保存的同码错误，并在失败场景右侧显示“重试”；修复 Prompt 明确限制 slide block 字段、callout tone 和 quiz option 的 `label` 字段。现有 5 场景课程已在独立 production 页面确认两个重试按钮可见，控制台 0 error / 0 warning，未代替用户发起付费重试。
+远端 DeepSeek 场景 smoke test 暴露并修正了恢复分类：`INVALID_MODEL_OUTPUT` 表示本次输出及一次修复均未通过契约，但新请求重新采样仍可能成功，因此会保存为可重试错误。前端同时兼容修复前已保存的同码错误，并在失败场景右侧显示“重试”；修复 Prompt 明确限制 slide block 字段、callout tone 和 quiz option 的 `label` 字段。用户随后对两个失败场景执行了付费重试，最终课程达到 `5/5 ready`，证明真实 Provider 下已完成场景不会因局部失败或重试丢失。
+
+2026-08-25 从 MySQL 对课程 `40e63cea-8afd-462c-b888-300e4ddee3d9` 进行脱敏核验：最终状态为 `ready`、`REV.16`，大纲 Provider 为 `deepseek`、模型为 `deepseek-v4-flash`、Prompt 为 `outline.v1`，耗时 14446ms、上游调用 1 次。5 个场景均保存独立元数据，类型为 4 个 slide 和 1 个 quiz，成功请求耗时依次为 7759、14219、18071、11979、11143ms；其中第 3 个 slide 与第 5 个 quiz 使用一次模型修复并记录 `upstreamCalls=2`，其余场景为 1 次调用。验收记录只保留运行元数据，不记录主题、Key、Prompt 正文或模型原文。
 
 课堂长讲解布局使用现有 1344 字真实场景完成浏览器检查：左侧 stage、Grid 行和右侧调度栏均为 1263px，讲解窗口随剩余空间扩展到 `clientHeight=793`，实际内容 `scrollHeight=3093` 且 `overflow-y=auto`。左右栏动态同高，浏览器控制台 0 error / 0 warning。
 
-## 4. 当前明确未实现
+## 4. 当前非阻塞限制与可选扩展
 
-- 尚未用有效 Key 实际调用 DeepSeek 或阿里百炼，因此不能宣称双 Provider 远端联调完成；
+- 百炼兼容配置尚未用有效 Key 联调；该能力不属于当前 MVP，后续有双 Provider 对比需求时再验收；
 - 超时租约可以被下一次显式生成请求接管，但尚无后台扫描器主动恢复遗留操作；
-- 尚未在另一台干净机器仅按文档完成安装与启动；当前 CI 临时环境和本机 production 测试只能作为自动证据；
+- 尚未在另一台机器复现部署；当前项目只承诺本机或受信任网络运行，异机交付按需扩展；
 - BrowserSpeech 的回退与控制已自动测试，实际系统音色和听感仍需目标演示机器人工确认。
 
-M6 的代码与 mock 验收已完成，但完整交付退出门不能用配置解析代替真实 Provider，也不能用本机测试代替异机复现。
+上述项目均不阻塞当前 MVP。M6 已依据 v0.3 范围完成，不再保留外部 Provider 或异机前置条件。
 
-## 5. 下一步：补齐 M6 外部证据，再选择 M7 论文问题
+## 5. 已确认的质量差距
 
-按 [08-deployment-and-acceptance.md](08-deployment-and-acceptance.md) 分别完成 DeepSeek、百炼三场景真实 smoke test，并在另一台干净机器执行生产启动和 mock E2E。补齐这些证据后再从 M7 候选中选择一个可度量研究问题；不要同时加入 RAG、多智能体和 interactive HTML。
+M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表课程内容已达到 OpenMAIC 的表现力。当前实现的限制已经从代码与真实课程中确认：
+
+- 创建请求只有 topic 和 3～5 场景数，没有学习者水平、明确学习目标、先修知识、时长或教学风格；
+- outline.v1 只要求“概念、机制到应用”，SceneOutline 没有场景角色、常见误区、案例/练习意图或互动计划；
+- slide 只有 paragraph、bullet_list、callout、code，quiz 只有 single_choice；
+- 场景上下文只有课程标题计划和前一 ready 场景摘要，不能显式追踪已覆盖/待覆盖目标；
+- Action 由程序装配为 speech/pause，没有页面元素动作或互动协议；
+- 当前 repair 与质量门主要保证 JSON/Schema/领域结构，不评价事实正确性、教学深度和案例价值。
+
+DeepSeek 已验收课程的 5 个场景为 4 个 slide + 1 个 quiz，适合作为 v0.3 工程基线样本，但单个样本不能证明平均课程质量。后续必须在固定主题集和同一模型配置下比较 Prompt/契约版本。
+
+## 6. 下一步：M7 课程质量与互动能力
+
+M6 保持关闭，不重新打开其范围。M7 已完成文档设计但**尚未实现任何 v0.4 代码**，按以下顺序推进：
+
+```text
+M7.0 固定评价集、人工量表和 Prompt v1 基线
+  → M7.1 CourseBrief、schemaVersion 2、迁移和 outline.v2
+  → M7.2 steps/comparison/table、slide/quiz v2 与课程记忆
+  → M7.3 interactive/diagram 生成、MySQL、sandbox iframe 与 E2E
+  → M7.4 ready 场景再生成、成对质量报告和 v0.4 验收
+```
+
+当前下一项可执行工作是 M7.0：先建立 6 个主题的开发评价集和评分说明，再用现有 DeepSeek + Prompt v1 生成基线。此时不修改生产 Prompt，避免没有对照就宣称质量提高。完整任务和止损规则见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+
+M7 不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。M7 完成后，毕业论文选题进入 M8，并从已经形成的质量、成本、失败和互动运行数据中只选择一个主要研究变量。

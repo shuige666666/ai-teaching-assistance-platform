@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    // Playwright 的报告、trace 和截图是生成产物，不能作为项目源码参与 lint。
+    "output/**",
     "next-env.d.ts",
   ]),
 ]);

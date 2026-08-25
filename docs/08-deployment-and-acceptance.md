@@ -1,6 +1,6 @@
 # 08. 部署、恢复与验收手册
 
-> 适用范围：M6 本机或受信任网络交付。当前版本没有账户与权限系统，不允许直接暴露到公网。
+> 适用范围：第 1～7 节记录已完成的 M6 本机或受信任网络交付；第 8 节是 M7/v0.4 的计划验收，不代表当前已经实现。当前版本没有账户与权限系统，不允许直接暴露到公网。
 
 ## 1. 最小生产启动
 
@@ -25,7 +25,7 @@ pnpm start
 
 ## 2. 配置档验收
 
-mock 是 CI 和答辩演示的默认配置，不访问模型网络。DeepSeek 与百炼各自只检查当前启用档位，切换后必须重启应用。
+mock 是 CI 和答辩演示的默认配置，不访问模型网络。MVP 的 remote 档位使用 DeepSeek，切换配置后必须重启应用；百炼兼容变量仅供后续扩展。
 
 ```env
 AI_MODE=remote
@@ -35,7 +35,7 @@ DEEPSEEK_BASE_URL=<服务端地址>
 DEEPSEEK_MODEL=<当前可用模型>
 ```
 
-百炼使用对应的 `BAILIAN_*` 变量。每次远端 smoke test 应完成一门 3 场景课程，并从 MySQL 中核对 outline 与每个 scene 的 `provider`、`model`、`requestId`、`promptVersion`、`durationMs` 和 `upstreamCalls`。只有 HTTP 200、健康接口成功或配置解析成功都不能单独证明真实生成完成。
+DeepSeek smoke test 应完成一门至少 3 场景的课程，并从 MySQL 中核对 outline 与每个 scene 的 `provider`、`model`、`requestId`、`promptVersion`、`durationMs` 和 `upstreamCalls`。只有 HTTP 200、健康接口成功或配置解析成功都不能单独证明真实生成完成。百炼若在后续启用，沿用同一证据要求，但不影响当前验收。
 
 ## 3. 自动化质量门
 
@@ -45,7 +45,7 @@ pnpm verify                            # lint + unit/API contract + build
 pnpm verify:full                       # 再加 MySQL integration + production E2E
 ```
 
-`verify:full` 要求 MySQL 已启动且 `.env.local` 有效。E2E 使用唯一主题创建测试课程，覆盖创建、大纲、三个场景、播放/暂停/继续、quiz、刷新恢复和配置健康检查，并在 `finally` 中删除课程。失败 trace 和截图位于 `output/playwright/`，该目录不会进入 Git。
+`verify:full` 要求 MySQL 已启动且 `.env.local` 有效。E2E 使用唯一主题创建测试课程，覆盖创建、大纲、三个场景、播放/暂停/继续、quiz、刷新恢复和配置健康检查，并在 `finally` 中删除课程。Playwright 启动的 production server 显式覆盖为 `AI_MODE=mock` 且不复用既有端口服务，因此即使 `.env.local` 当前配置为 remote，也不会由自动验收触发付费模型调用。失败 trace 和截图位于 `output/playwright/`，该目录不会进入 Git，也不会参与 ESLint。
 
 GitHub Actions 使用临时 MySQL 和 `AI_MODE=mock` 执行相同质量门，不保存真实 Key，也不调用付费 Provider。
 
@@ -95,16 +95,31 @@ pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
 
 如果首页停在“正在打开工作台”，先复制 requestId，然后直接刷新首页检查“最近课程”。看到课程说明草稿已经写入 MySQL，可点击该课程继续，不应再次创建。客户端保存草稿超过 15 秒会停止等待并显示同样的排障提示；服务端可能已完成提交，因此重试前仍应刷新核对。
 
-## 6. AC-01～AC-12 证据矩阵
+## 6. DeepSeek 真实 Provider 验收记录
+
+2026-08-25 已完成一门 5 场景 DeepSeek 真实课程，超过本手册要求的 3 场景最低 smoke test。MySQL 脱敏核验结果如下：
+
+| 对象 | Provider / 模型 | Prompt | 耗时 | 上游调用 / 修复 | 请求编号 |
+| --- | --- | --- | ---: | --- | --- |
+| 大纲 | `deepseek` / `deepseek-v4-flash` | `outline.v1` | 14446ms | 1 / 否 | `82bf9e49-f2ea-4982-9378-c2f4b61926de` |
+| slide 1 | `deepseek` / `deepseek-v4-flash` | `scene-slide.v1` | 7759ms | 1 / 否 | `1a92ef86-8ddb-48d6-be93-bf54ac4a10b0` |
+| slide 2 | `deepseek` / `deepseek-v4-flash` | `scene-slide.v1` | 14219ms | 1 / 否 | `13ea832b-e1da-45f5-af50-70754be0efd6` |
+| slide 3 | `deepseek` / `deepseek-v4-flash` | `scene-slide.v1` | 18071ms | 2 / 是 | `5f310590-5184-47c3-8527-8e2e0d0fc61b` |
+| slide 4 | `deepseek` / `deepseek-v4-flash` | `scene-slide.v1` | 11979ms | 1 / 否 | `229af453-f352-47b5-b8fe-63a22606d7e7` |
+| quiz 5 | `deepseek` / `deepseek-v4-flash` | `scene-quiz.v1` | 11143ms | 2 / 是 | `ded5339d-339e-48f4-86b0-573d4c678641` |
+
+课程 `40e63cea-8afd-462c-b888-300e4ddee3d9` 最终为 `ready`、`REV.16`、`5/5` 场景完成。生成过程中两个场景曾因 `INVALID_MODEL_OUTPUT` 失败，其他完成场景保持不变；用户从失败场景右侧逐项重试后成功，因而同时形成了真实 Provider 的失败隔离和恢复证据。记录不包含主题、API Key、数据库连接串、Prompt 正文或模型原文。
+
+## 7. AC-01～AC-12 证据矩阵
 
 | 条件 | 当前证据 | 状态 |
 | --- | --- | --- |
-| AC-01 全新环境启动 | 本手册、`.env.example`、幂等迁移与 CI 临时环境 | 需再做一台异机人工复现 |
+| AC-01 本机生产启动 | 本手册、`.env.example`、幂等迁移、本机 production build 与 E2E | 通过 |
 | AC-02 mock 无 Key 完整流程 | `e2e/mock-course-flow.spec.ts` | 自动通过 |
-| AC-03 生成 3～5 项大纲 | outline 单元测试与 3 场景 E2E | 自动通过 |
+| AC-03 生成 3～5 项大纲 | outline 单元测试、3 场景 E2E 与 DeepSeek 5 场景实测 | 自动 + DeepSeek 人工通过 |
 | AC-04 slide/quiz 与代码块 | scene 装配、renderer 安全测试与 E2E | 自动通过 |
 | AC-05 非法模型 JSON 不持久化 | outline/scene pipeline repair 与失败测试 | 自动通过 |
-| AC-06 中间失败隔离和重试 | SceneGenerationService 故障注入测试 | 自动通过 |
+| AC-06 中间失败隔离和重试 | SceneGenerationService 故障注入测试与 DeepSeek 两场景失败后逐项重试 | 自动 + DeepSeek 人工通过 |
 | AC-07 播放、暂停、继续和导航 | playback reducer 与 Chromium E2E | 自动通过 |
 | AC-08 quiz 提交和解析 | 服务端判分、MySQL integration 与 E2E | 自动通过 |
 | AC-09 刷新后恢复 | MySQL 新仓储实例测试与 E2E `page.reload()` | 自动通过 |
@@ -112,4 +127,63 @@ pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
 | AC-11 密钥不进入客户端 | 服务端配置边界、bundle/仓库扫描与 storage 检查 | 自动 + 人工审计通过 |
 | AC-12 质量命令 | `pnpm verify:full` 与 GitHub Actions | 自动通过 |
 
-M6 代码和 mock 验收完成后仍有三项外部证据不能伪造：DeepSeek 真实生成、百炼真实生成、另一台干净机器按本文复现。获得 Key 或异机环境后补充记录，才跨过完整远端交付退出门。
+M6 已按本机、MySQL、mock 与 DeepSeek 的 v0.3 边界完成。百炼真实生成和另一台机器部署不属于当前退出门，后续只有在双 Provider 对比或异机交付确有需要时才补充相应证据。
+
+## 8. M7/v0.4 计划验收
+
+M7 不能用现有 AC-01～AC-12 自动继承完成结论。实施后必须新增 AC-Q01～AC-Q11 证据，并且 M6 证据继续有效。详细范围见 [01-scope.md](01-scope.md)，开发顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+
+### 8.1 自动化质量门增量
+
+计划在原有 `verify:full` 之上加入但不混淆以下测试：
+
+| 测试层 | M7 必须覆盖 |
+| --- | --- |
+| Domain | Course v1/v2 判别、v1 → v2 迁移、CourseBrief 默认值、互动数量规则 |
+| Renderer | steps、comparison、table 的边界、转义、桌面/窄屏布局 |
+| Interactive security | HTML 大小与禁用标签、CSP、sandbox、消息来源和消息 Schema |
+| MySQL | brief_json、新旧行读取、互动内容恢复、再生成原位替换和 conflict |
+| API | Prompt v2 上下文、interactive 失败分类、ready 场景再生成 |
+| Playwright | required diagram 的生成、操作、重置、完成、刷新、fallback 和迟到事件 |
+| Regression | 原 M6 创建、slide/quiz、播放、作答、删除和 mock E2E 全部保持通过 |
+
+mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。恶意 fixture 至少覆盖外部 fetch、读写父页面、`eval`、子 iframe、meta refresh 和伪造 postMessage。
+
+### 8.2 DeepSeek 互动 smoke test
+
+M7 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `interactionMode=required` 的 5 场景课程。验收必须核对：
+
+- MySQL 中存在且只存在一个 interactive/diagram，保存 promptVersion、耗时、upstreamCalls 和修复标记；
+- iframe 在 production Chromium 中报告 ready，核心节点/步骤可操作，reset 恢复初始状态，completed 可以解除 learner pause；
+- 页面刷新后重新读取同一 HTML，不依赖生成页内存；
+- 控制台没有未处理错误，iframe 没有成功发起外部网络请求；
+- 若首次 HTML 不合法，记录修复或失败，不手工改数据库伪造成功。
+
+### 8.3 课程质量验收
+
+M7.0 先冻结主题集、评分说明和阈值。M7.4 使用同一 DeepSeek 模型、温度、场景数量和主题，分别生成 v0.3 与 v0.4 课程，隐藏版本后成对评分。报告至少包含：
+
+- 事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、quiz 对齐；
+- 互动页的教学必要性、控件可理解性、重置和完成反馈；
+- 课程完成率、首次结构通过率、修复次数、请求耗时、token 和关键事实错误；
+- 每个失败样本的保留/排除规则，不能只展示成功课程。
+
+建议初始退出阈值为目标匹配、教学组织、案例/练习价值三项平均提升至少 0.5/5，事实正确性不下降，至少 70% 的课程对更偏好 v0.4。正式阈值必须在看到 v0.4 结果前由 M7.0 冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
+
+### 8.4 M7 证据矩阵模板
+
+| 条件 | 预期证据 | 当前状态 |
+| --- | --- | --- |
+| AC-Q01 CourseBrief 保存恢复 | Schema + MySQL integration | 未实现 |
+| AC-Q02 v1 → v2 兼容 | migration fixture + 旧库读取 | 未实现 |
+| AC-Q03 Prompt v2 使用完整上下文 | golden + 生成元数据 | 未实现 |
+| AC-Q04 新 Block 安全渲染 | component + E2E | 未实现 |
+| AC-Q05 required diagram 数量 | domain + API | 未实现 |
+| AC-Q06 HTML 安全门 | validator 恶意 fixture | 未实现 |
+| AC-Q07 iframe 协议 | Playwright + network/console 记录 | 未实现 |
+| AC-Q08 fallback 与失败隔离 | 故障注入 + E2E | 未实现 |
+| AC-Q09 ready 场景再生成 | application + MySQL conflict | 未实现 |
+| AC-Q10 成对质量提升 | 固定量表报告 | 未实现 |
+| AC-Q11 M6 全量回归 | `pnpm verify:full` | 待 M7 完成时复跑 |
+
+只有表中所有“未实现”都被真实证据替换后，才能把 [07-development-status.md](07-development-status.md) 更新为“M7 完成”。
