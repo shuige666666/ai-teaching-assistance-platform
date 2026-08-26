@@ -34,12 +34,15 @@ export class SceneGenerationService {
 
   /** 独立生成一个大纲场景；失败只更新对应进度，不删除其他已完成场景。 */
   async generate(courseId: string, outlineId: string, expectedRevision: number, requestId: string, requestSignal?: AbortSignal): Promise<Course> {
+    // 1. 从数据库读取这门课程。
     const current = await this.repository.get(courseId);
     if (!current) throw new SceneApplicationError("COURSE_NOT_FOUND", "课程不存在，请返回首页重新创建");
     if (current.revision !== expectedRevision) throw new CourseConflictError();
+    // 2. 找到本次要生成的那一项大纲。
     const outline = current.outlines.find((item) => item.id === outlineId);
     if (!outline) throw new SceneApplicationError("OUTLINE_NOT_FOUND", "场景大纲不存在或不属于当前课程");
     const progress = current.sceneProgress.find((item) => item.outlineId === outlineId);
+    // 3. 检查这一场是否处于可以生成或重试的状态。
     const expiredOperation = current.activeOperation?.stage === "scene" && current.activeOperation.outlineId === outlineId && current.activeOperation.expiresAt <= this.now();
     if (!progress || (!["pending", "failed"].includes(progress.status) && !(progress.status === "generating" && expiredOperation))) {
       throw new SceneApplicationError("INVALID_COURSE_STATE", "当前场景不是待生成或可重试状态");
@@ -53,6 +56,7 @@ export class SceneGenerationService {
 
     const operationId = randomUUID();
     const startedAt = this.now();
+    // 4. 先把这一场标记为 generating，并记录本次操作 ID。
     const registeredProgress = current.sceneProgress.map((item) => item.outlineId === outlineId ? {
       ...item,
       status: "generating" as const,
@@ -68,18 +72,22 @@ export class SceneGenerationService {
       updatedAt: startedAt,
     }), expectedRevision);
 
+    // 5. 设置模型请求的取消和超时条件。
     const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
     const signal = requestSignal ? AbortSignal.any([requestSignal, timeoutSignal]) : timeoutSignal;
     try {
-      // 远端模型调用发生在两个 save 之间，数据库连接已经释放。
+      // 6. 调用 generateScene()，让模型生成这一场的内容和 Action。
       const scene = await generateScene(this.adapter, { course: registered, outline, requestId, signal });
+      // 7. 再次读取课程，确认这次操作仍然有效。
       const latest = await this.repository.get(courseId);
       if (!latest || latest.revision !== registered.revision || latest.activeOperation?.id !== operationId) throw new CourseConflictError();
       const now = this.now();
       const nextProgress = latest.sceneProgress.map((item) => item.outlineId === outlineId ? { ...item, status: "ready" as const, lastError: undefined, updatedAt: now } : item);
+      // 8. 把新场景放进 scenes，并按大纲顺序排列。
       const nextScenes = [...latest.scenes.filter((item) => item.outlineId !== outlineId), scene].sort((a, b) => a.order - b.order);
       const allReady = nextProgress.every((item) => item.status === "ready");
       const hasFailure = nextProgress.some((item) => item.status === "failed");
+      // 9. 如果全部场景都完成，课程状态改为 ready；否则保持生成中或部分失败。
       return await this.repository.save(CourseSchema.parse({
         ...latest,
         status: allReady ? "ready" : hasFailure ? "partial_failed" : "generating",
@@ -90,7 +98,7 @@ export class SceneGenerationService {
         updatedAt: now,
       }), latest.revision);
     } catch (error) {
-      // 只有本操作仍持有 revision 与 operation id 时，才把目标场景标记为失败。
+      // 10. 如果本次操作仍有效，就把这一场标记为失败并保存错误原因。
       const latest = await this.repository.get(courseId);
       if (latest?.revision === registered.revision && latest.activeOperation?.id === operationId) {
         const failure = asDomainError(error);

@@ -50,10 +50,12 @@ export async function generateScene(
   const successfulResults: GenerateTextResult[] = [];
   let upstreamCalls = 0;
   const maxCalls = 4;
+  // 1. 读取上一场的摘要，作为本场的上下文。
   const previousSummary = previousSceneSummary(input.course, input.outline);
   const isSlide = input.outline.type === "slide";
   const promptVersion = isSlide ? SLIDE_PROMPT_VERSION : QUIZ_PROMPT_VERSION;
   const systemPrompt = isSlide ? SLIDE_SYSTEM_PROMPT : QUIZ_SYSTEM_PROMPT;
+  // 2. 根据大纲类型选择 slide 或 quiz 提示词。
   const userPrompt = isSlide
     ? buildSlideUserPrompt(input.course, input.outline, previousSummary)
     : buildQuizUserPrompt(input.course, input.outline, previousSummary);
@@ -63,6 +65,7 @@ export async function generateScene(
     for (let attempt = 0; attempt < 3 && upstreamCalls < maxCalls; attempt += 1) {
       upstreamCalls += 1;
       try {
+        // 3. 调用当前配置的模型，并拿到它返回的文本。
         const result = await adapter.generateText({ ...call, requestId: input.requestId, signal: input.signal, maxOutputTokens: 3_500 });
         successfulResults.push(result);
         return result;
@@ -72,20 +75,24 @@ export async function generateScene(
         if (!mapped.retryable || attempt === 2 || upstreamCalls >= maxCalls) {
           throw new SceneGenerationError(mapped.code, mapped.message, mapped.retryable, upstreamCalls, undefined, { cause: mapped });
         }
+        // 4. 网络或限流错误可以等待后重试。
         await delay(100 * (2 ** attempt), input.signal);
       }
     }
     throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次场景调用已达到预算上限", true, upstreamCalls, undefined, { cause: lastError });
   }
 
+  // 5. 第一次调用模型，得到本场的内容文本。
   const first = await callAI({ stage: "scene", systemPrompt, userPrompt });
   let output;
   let repaired = false;
   try {
     output = validateSceneOutput(parseModelJson(first.text), input.outline);
   } catch (error) {
+    // 6. 把文本解析成 JSON，并检查它是否符合当前 slide 或 quiz 的格式。
     const invalid = error instanceof InvalidSceneError ? error : new InvalidSceneError([{ path: "", message: "无法验证场景输出" }], { cause: error });
     if (upstreamCalls >= maxCalls) throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "场景输出无效且已没有修复预算", true, upstreamCalls, invalid.issues);
+    // 7. 第一次结果不合格时，把错误原因交给模型，请它修正一次。
     const repair = await callAI({ stage: "repair", systemPrompt: SCENE_REPAIR_SYSTEM_PROMPT, userPrompt: buildSceneRepairPrompt(userPrompt, first.text, invalid.issues) });
     repaired = true;
     try {
@@ -97,6 +104,7 @@ export async function generateScene(
     }
   }
 
+  // 8. 记录本次生成使用的模型、耗时和调用次数。
   const successful = successfulResults.at(-1) ?? first;
   const now = Date.now();
   const metadata: GenerationMetadata = {
@@ -110,5 +118,6 @@ export async function generateScene(
     usage: mergeUsage(successfulResults),
     generatedAt: now,
   };
+  // 9. 把模型 JSON 组装成 Scene：补齐 ID、内容块和播放 Action。
   return assembleScene({ output, courseId: input.course.id, outline: input.outline, metadata, now });
 }

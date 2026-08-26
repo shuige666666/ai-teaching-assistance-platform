@@ -21,6 +21,7 @@ const statusLabels: Record<CourseSummary["status"], string> = {
 
 export function HomeWorkspace({ initialCourses, initialError = null }: { initialCourses: CourseSummary[]; initialError?: string | null }) {
   const router = useRouter();
+  // 1. 状态
   const [topic, setTopic] = useState("TCP 拥塞控制");
   const [sceneCount, setSceneCount] = useState(4);
   const [submitting, setSubmitting] = useState(false);
@@ -35,8 +36,11 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
     return () => window.clearInterval(timer);
   }, [creationProgress]);
 
+
+  // 2. 业务逻辑
   /** 创建成功后只携带 courseId 跳转，生成页从仓储重新读取课程事实。 */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    // 创建课程
     event.preventDefault();
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();
@@ -71,8 +75,10 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
     }
   }
 
+
   /** 显式确认后删除课程；成功响应后再从当前列表移除。 */
   async function deleteCourse(course: CourseSummary) {
+    // 删除课程
     if (!window.confirm(`确认删除“${course.title}”吗？该操作会同时删除相关测验记录。`)) return;
     setError(null);
     try {
@@ -88,6 +94,7 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
     }
   }
 
+  // 3. 页面 UI
   return (
     <main className="home-shell">
       <header className="site-header">

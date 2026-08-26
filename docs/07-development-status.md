@@ -144,18 +144,23 @@ M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表�
 
 DeepSeek 已验收课程的 5 个场景为 4 个 slide + 1 个 quiz，适合作为 v0.3 工程基线样本，但单个样本不能证明平均课程质量。后续必须在固定主题集和同一模型配置下比较 Prompt/契约版本。
 
-## 6. 下一步：M7 课程质量与互动能力
+## 6. 下一步：M6.5 远端响应韧性与可观测性
 
-M6 保持关闭，不重新打开其范围。M7 已完成文档设计但**尚未实现任何 v0.4 代码**，按以下顺序推进：
+M6 保持关闭，不重新打开其范围。真实 DeepSeek 调用新暴露了 HTTP 2xx 下的空体、非 JSON、异常 envelope 或空 content 会被统一标记为不可重试 `AI_UPSTREAM_ERROR` 的缺口。该问题不扩展为新产品功能，放入独立 M6.5 工程加固里程碑。
 
 ```text
-M7.0 固定评价集、人工量表和 Prompt v1 基线
+M6.5.0 冻结远端故障 fixture 与诊断契约
+  → M6.5.1 分层解码 OpenAI-compatible 响应
+  → M6.5.2 受限重试、调用预算与安全日志
+  → M6.5.3 生成页恢复进度与一致操作
+  → M6.5.4 mock 故障注入、全量回归与 DeepSeek smoke
+  → M7.0 固定评价集、人工量表和 Prompt v1 基线
   → M7.1 CourseBrief、schemaVersion 2、迁移和 outline.v2
   → M7.2 steps/comparison/table、slide/quiz v2 与课程记忆
   → M7.3 interactive/diagram 生成、MySQL、sandbox iframe 与 E2E
   → M7.4 ready 场景再生成、成对质量报告和 v0.4 验收
 ```
 
-当前下一项可执行工作是 M7.0：先建立 6 个主题的开发评价集和评分说明，再用现有 DeepSeek + Prompt v1 生成基线。此时不修改生产 Prompt，避免没有对照就宣称质量提高。完整任务和止损规则见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+当前下一项可执行工作是 M6.5.0：先为正常响应、空体、非 JSON、异常 envelope、空 content、429/5xx、401/403 和 AbortError 建立脱敏、确定性测试，再修改生产分类。完整任务与退出门见 [10-m6.5-remote-response-resilience-plan.md](10-m6.5-remote-response-resilience-plan.md)。
 
-M7 不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。M7 完成后，毕业论文选题进入 M8，并从已经形成的质量、成本、失败和互动运行数据中只选择一个主要研究变量。
+M6.5 不修改 Prompt v1 教学策略或 Course Schema。M6.5 完成后，M7 仍按已冻结的 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md) 原序执行，不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。M7 完成后，毕业论文选题仍进入 M8。

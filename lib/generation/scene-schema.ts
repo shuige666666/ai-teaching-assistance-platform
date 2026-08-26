@@ -90,10 +90,12 @@ export function assembleScene(input: {
   now: number;
 }): Scene {
   const { output, courseId, outline, metadata, now } = input;
+  // 1. 根据场景类型创建播放动作。
   const actions = output.type === "quiz"
     ? [{ id: randomUUID(), type: "speech" as const, text: output.narration }, { id: randomUUID(), type: "pause" as const, reason: "learner" as const }]
     : [{ id: randomUUID(), type: "speech" as const, text: output.narration }];
   if (output.type === "slide") {
+    // 2. 给 slide 的每个内容块生成 ID。
     return SceneSchema.parse({
       id: randomUUID(), courseId, outlineId: outline.id, type: "slide", title: output.title, summary: output.summary, order: outline.order,
       content: { type: "slide", subtitle: output.content.subtitle, blocks: output.content.blocks.map((block) => ({ ...block, id: randomUUID() })) },
@@ -105,6 +107,7 @@ export function assembleScene(input: {
     content: {
       type: "quiz",
       questions: output.content.questions.map((question) => {
+        // 3. 给每个选项生成 ID，再根据下标找到正确选项。
         const options = question.options.map((option) => ({ id: randomUUID(), label: option.label }));
         return {
           id: randomUUID(), type: "single_choice", prompt: question.prompt, options,
@@ -112,6 +115,7 @@ export function assembleScene(input: {
         };
       }),
     },
+    // 4. 保存题目、播放动作和本次生成记录。
     actions, generation: metadata, createdAt: now, updatedAt: now,
   });
 }

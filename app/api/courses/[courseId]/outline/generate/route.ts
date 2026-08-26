@@ -9,21 +9,46 @@ type RouteContext = { params: Promise<{ courseId: string }> };
 
 /** 通过正式模型管线生成大纲；成功响应只返回已经提交到 MySQL 的课程。 */
 export async function POST(request: Request, context: RouteContext) {
+  // 1. 读取本次请求编号，用于查看日志。
   const requestId = resolveRequestId(request);
+  // 2. 从 URL 读取要生成大纲的课程 ID。
   const { courseId } = await context.params;
+  // 3. 开始记录本次生成日志。
   const operation = startServerOperation("outline.generate", { requestId, courseId, stage: "outline" });
   try {
+    // 4. 读取课程当前版本号。
     const input = GenerateOutlineInputSchema.parse(await readLimitedJson(request));
+    // 5. 创建模型调用对象：mock 或远端模型由服务端配置决定。
     const { adapter, timeoutMs } = createAIAdapter();
-    const course = await new OutlineGenerationService(getCourseRepository(), adapter, timeoutMs).generate(courseId, input.expectedRevision, requestId, request.signal);
+    // 6. 调用 generate()：读取课程、生成大纲、校验内容，然后保存到 MySQL。
+    const course = await new OutlineGenerationService(getCourseRepository(), adapter, timeoutMs).generate(
+      courseId,
+      input.expectedRevision,
+      requestId,
+      request.signal,
+    );
     const metadata = course.outlineGeneration!;
-    operation.success({ provider: metadata.provider, model: metadata.model, upstreamCalls: metadata.upstreamCalls });
+    // 7. 记录成功日志，并把已保存的课程返回给浏览器。
+    operation.success({
+      provider: metadata.provider,
+      model: metadata.model,
+      upstreamCalls: metadata.upstreamCalls,
+    });
     return NextResponse.json({
       success: true,
       data: { course },
-      meta: { requestId, provider: metadata.provider, model: metadata.model, attempts: metadata.upstreamCalls, upstreamCalls: metadata.upstreamCalls, repaired: metadata.repaired, durationMs: metadata.durationMs },
+      meta: {
+        requestId,
+        provider: metadata.provider,
+        model: metadata.model,
+        attempts: metadata.upstreamCalls,
+        upstreamCalls: metadata.upstreamCalls,
+        repaired: metadata.repaired,
+        durationMs: metadata.durationMs,
+      },
     });
   } catch (error) {
+    // 8. 记录失败日志，并返回页面可以显示的错误信息。
     operation.failure(error);
     const mapped = mapOutlineError(error, requestId);
     return NextResponse.json(mapped.body, { status: mapped.status });

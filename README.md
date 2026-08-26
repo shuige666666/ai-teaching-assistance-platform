@@ -17,7 +17,7 @@
 
 大纲和场景阶段共用 `MockAIAdapter` 与 OpenAI-compatible 远端适配器，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 可在讲解前直接作答；自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。DeepSeek 已完成一门 5 场景真实课程的大纲、场景、修复与失败后重试验证。代码中保留百炼兼容配置，但百炼联调和异机部署均属于后续可选扩展，不再作为第一阶段完成条件。
 
-下一阶段已经设计为 **M7 / v0.4：课程质量与互动能力**，但尚未开始代码实现。顺序是先冻结当前质量基线，再增加 CourseBrief、Prompt v2 和丰富固定内容块，随后完成一种 `interactive/diagram` 自包含脚本与 sandbox iframe 纵向闭环，最后进行单场景再生成和 v0.3/v0.4 成对质量验收。毕业论文研究选题顺延到 M8；M7 不引入 LangGraph、多智能体、多模态或 RAG。
+下一步调整为 **M6.5：远端响应韧性与可观测性**，用于补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、日志和用户恢复反馈。M6.5 不增加新课程能力，完成后再执行原定 **M7 / v0.4：课程质量与互动能力**。M7 仍按“质量基线 → CourseBrief/Prompt v2 → 丰富固定内容块 → `interactive/diagram` → 单场景再生成与成对质量验收”推进，范围与退出门不变；毕业论文研究选题仍顺延到 M8。
 
 ## v0.3 MVP 已实现什么
 
@@ -48,8 +48,9 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 | [07. 当前开发状态](docs/07-development-status.md) | 哪些代码已进入调用链、通过了什么验证、下一步是什么 |
 | [08. 部署、恢复与验收手册](docs/08-deployment-and-acceptance.md) | 如何生产启动、备份恢复、排障并复现 AC-01～AC-12 |
 | [09. v0.4 课程质量与互动能力开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | CourseBrief、Prompt v2、互动沙箱、质量评价和推荐提交顺序 |
+| [10. M6.5 远端响应韧性与可观测性开发方案](docs/10-m6.5-remote-response-resilience-plan.md) | DeepSeek 响应分类、受限重试、安全日志和验收证据 |
 
-01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，09 是 M7 的可执行开发方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
+01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，09 是 M7 的可执行开发方案，10 是插入 M6 与 M7 之间的 M6.5 工程加固方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
 
 ## 目标架构
 
@@ -161,8 +162,9 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 4. **M4（已完成）**：DeepSeek 逐场景生成、事务保存、失败隔离和单场景重试已验收；
 5. **M5（已完成）**：Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
 6. **M6（已完成）**：本机自动化测试、故障注入、生产构建、恢复和 DeepSeek 真实生成证据均已通过。
-7. **M7（计划）**：质量基线 → CourseBrief/Prompt v2 → 丰富固定 Block → diagram 互动沙箱 → 单场景再生成与成对质量验收；
-8. **M8（未选题）**：从 M7 数据中只选择一个可度量的毕业论文研究问题。
+7. **M6.5（计划）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
+8. **M7（计划）**：质量基线 → CourseBrief/Prompt v2 → 丰富固定 Block → diagram 互动沙箱 → 单场景再生成与成对质量验收；
+9. **M8（未选题）**：从 M7 数据中只选择一个可度量的毕业论文研究问题。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。
 

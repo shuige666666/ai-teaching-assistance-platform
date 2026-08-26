@@ -34,6 +34,7 @@ function decodeJson<T>(value: unknown): T {
 /** 将数据库行恢复成 Course，并在返回业务层之前重新执行完整 Schema。 */
 function mapCourseRow(row: CourseRow): Course {
   try {
+    // 1. 把数据库中的 JSON 还原成课程对象，并检查字段是否完整。
     return CourseSchema.parse({
       schemaVersion: Number(row.schema_version),
       id: row.id,
@@ -57,6 +58,7 @@ function mapCourseRow(row: CourseRow): Course {
 }
 
 function valuesForCourse(course: Course): Array<string | number | null> {
+  // 2. 把课程中的数组和对象转成 MySQL 可以保存的 JSON。
   return [
     course.id,
     course.schemaVersion,
@@ -91,6 +93,7 @@ export class MySQLCourseRepository implements CourseRepository {
 
   /** 将通过 CourseSchema 的完整聚合写入 courses 主表。 */
   async create(course: Course): Promise<Course> {
+    // 3. 写入前先检查课程数据。
     const parsed = CourseSchema.parse(course);
     try {
       await this.pool.execute<ResultSetHeader>(
@@ -141,6 +144,7 @@ export class MySQLCourseRepository implements CourseRepository {
   /** 在短事务中用 revision 条件更新完整聚合，防止迟到响应覆盖新结果。 */
   async save(course: Course, expectedRevision: number): Promise<Course> {
     if (course.revision !== expectedRevision) throw new CourseConflictError();
+    // 4. 保存时把课程版本号加一。
     const nextCourse = CourseSchema.parse({
       ...course,
       revision: expectedRevision + 1,
@@ -150,6 +154,7 @@ export class MySQLCourseRepository implements CourseRepository {
     try {
       connection = await this.pool.getConnection();
       await connection.beginTransaction();
+      // 5. 只有数据库版本号仍等于 expectedRevision 时才更新。
       const [result] = await connection.execute<ResultSetHeader>(
         `UPDATE courses SET
           schema_version = ?, revision = ?, topic = ?, title = ?, status = ?, requested_scene_count = ?,

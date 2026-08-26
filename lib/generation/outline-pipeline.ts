@@ -47,6 +47,7 @@ export async function generateOutline(
   const successfulResults: GenerateTextResult[] = [];
   let upstreamCalls = 0;
   const maxCalls = 4;
+  // 1. 用课程主题和场景数量拼出发给模型的提示词。
   const userPrompt = buildOutlineUserPrompt(input.topic, input.sceneCount);
 
   async function callAI(call: Omit<GenerateTextInput, "requestId" | "signal" | "maxOutputTokens">): Promise<GenerateTextResult> {
@@ -54,6 +55,7 @@ export async function generateOutline(
     for (let attempt = 0; attempt < 3 && upstreamCalls < maxCalls; attempt += 1) {
       upstreamCalls += 1;
       try {
+        // 2. 调用当前配置的模型，并拿到它返回的文本。
         const result = await adapter.generateText({ ...call, requestId: input.requestId, signal: input.signal, maxOutputTokens: 2_000 });
         successfulResults.push(result);
         return result;
@@ -63,20 +65,24 @@ export async function generateOutline(
         if (!mapped.retryable || attempt === 2 || upstreamCalls >= maxCalls) {
           throw new OutlineGenerationError(mapped.code, mapped.message, mapped.retryable, upstreamCalls, undefined, { cause: mapped });
         }
+        // 3. 网络或限流错误可以等待后重试；内容格式错误在后面单独处理。
         await delay(100 * (2 ** attempt), input.signal);
       }
     }
     throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次模型调用已达到预算上限", true, upstreamCalls, undefined, { cause: lastError });
   }
 
+  // 4. 第一次调用模型，得到大纲文本。
   const first = await callAI({ stage: "outline", systemPrompt: OUTLINE_SYSTEM_PROMPT, userPrompt });
   let output;
   let repaired = false;
   try {
     output = validateAndNormalizeOutline(parseModelJson(first.text), input.sceneCount);
   } catch (error) {
+    // 5. 把文本解析成 JSON，并检查大纲数量、测验数量、标题等是否正确。
     const invalid = error instanceof InvalidOutlineError ? error : new InvalidOutlineError([{ path: "", message: "无法验证模型输出" }], { cause: error });
     if (upstreamCalls >= maxCalls) throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "模型输出无效且已没有修复预算", true, upstreamCalls, invalid.issues);
+    // 6. 第一次结果不合格时，把错误原因交给模型，请它修正一次。
     const repair = await callAI({ stage: "repair", systemPrompt: REPAIR_SYSTEM_PROMPT, userPrompt: buildRepairUserPrompt(userPrompt, first.text, invalid.issues) });
     repaired = true;
     try {
@@ -87,10 +93,12 @@ export async function generateOutline(
       throw new OutlineGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合课程大纲契约", true, upstreamCalls, finalError.issues, { cause: repairError });
     }
   }
+  // 7. 记录本次生成使用的模型、耗时和调用次数。
   const successful = successfulResults.at(-1) ?? first;
   const now = Date.now();
   return {
     courseTitle: output.courseTitle,
+    // 8. 给每一项大纲生成系统 ID，供后续生成场景时引用。
     outlines: assembleSceneOutlines(output),
     metadata: {
       provider: successful.provider,

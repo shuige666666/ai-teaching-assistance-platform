@@ -22,13 +22,15 @@ export function ClassroomRuntime({ course }: { course: Course }) {
   const [continuousPlay, setContinuousPlay] = useState(false);
   const [browserSpeechEnabled, setBrowserSpeechEnabled] = useState(false);
   const [browserSpeechSupported, setBrowserSpeechSupported] = useState(false);
+  // 1. 根据 sceneIndex 取出当前要显示的场景。
   const scene = course.scenes[sceneIndex];
+  // 2. 把当前场景交给播放控制器执行语音和暂停动作。
   const playback = usePlaybackController(scene, browserSpeechEnabled, continuousPlay);
   const speech = scene.actions.find((action) => action.type === "speech");
   const courseProgress = ((sceneIndex + playback.progress / 100) / course.scenes.length) * 100;
 
   useEffect(() => {
-    // localStorage 与浏览器能力只在挂载后读取，避免服务端渲染访问 window。
+    // 3. 页面加载后再读取浏览器是否支持语音。
     const timeout = window.setTimeout(() => {
       const supported = isBrowserSpeechAvailable();
       setBrowserSpeechSupported(supported);
@@ -38,6 +40,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
   }, []);
 
   useEffect(() => {
+    // 4. 当前场景播放完成后，连续播放模式自动切到下一场。
     if (playback.state.status !== "completed" || !continuousPlay) return;
     if (sceneIndex >= course.scenes.length - 1) {
       const timeout = window.setTimeout(() => setContinuousPlay(false), 0);
@@ -49,6 +52,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
 
   /** 手工切页会停止连续播放，旧 Action 由 controller 在 scene 变化时取消。 */
   function moveTo(index: number) {
+    // 5. 手动切页时，停止连续播放。
     setContinuousPlay(false);
     setSceneIndex(Math.max(0, Math.min(course.scenes.length - 1, index)));
   }
@@ -61,12 +65,14 @@ export function ClassroomRuntime({ course }: { course: Course }) {
 
   /** 只提交题目和选择项；正确答案由服务端从当前 Course 读取并计算。 */
   async function submitQuiz(questionId: string, selectedOptionId: string) {
+    // 6. 把用户选择的选项发送给服务端判分并保存。
     const response = await fetch(`/api/courses/${course.id}/quiz-attempts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sceneId: scene.id, questionId, selectedOptionId }),
     });
     const payload = await response.json() as { attempt?: { correct: boolean }; error?: { message?: string } };
+    // 7. 保存成功后，把服务端判分结果交给测验组件。
     if (!response.ok || !payload.attempt) throw new Error(payload.error?.message ?? "作答记录保存失败，请重试");
     return { correct: payload.attempt.correct };
   }
