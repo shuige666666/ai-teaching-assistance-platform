@@ -17,7 +17,7 @@
 
 大纲和场景阶段共用 `MockAIAdapter` 与 OpenAI-compatible 远端适配器，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 可在讲解前直接作答；自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。DeepSeek 已完成一门 5 场景真实课程的大纲、场景、修复与失败后重试验证。代码中保留百炼兼容配置，但百炼联调和异机部署均属于后续可选扩展，不再作为第一阶段完成条件。
 
-M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部场景完成。下一步回到原定 **M7 / v0.4：课程质量与互动能力**；M7 范围与退出门不变。
+M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部场景完成。下一步回到原定 **M7 / v0.4：课程质量与互动能力**：先冻结当前 Prompt v1 与纵向讲义式页面的质量基线，再依次实现 Prompt 归一化 CourseBrief、大纲角色、幻灯片表达系统 v2 和受控互动页。
 
 ## v0.3 MVP 已实现什么
 
@@ -44,10 +44,10 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 | [03. 系统架构设计](docs/03-architecture.md) | OpenMAIC 实际如何运行，目标系统如何分层和调用 |
 | [04. 领域模型与数据契约](docs/04-domain-model.md) | Course、Scene、Action、状态和 DTO 如何定义 |
 | [05. AI 生成管线设计](docs/05-generation-pipeline.md) | Prompt、解析、校验、修复、重试和预算如何控制 |
-| [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M8 如何分阶段，每阶段用什么证据退出 |
+| [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M7 与暂存 MX 如何分阶段，每阶段用什么证据退出 |
 | [07. 当前开发状态](docs/07-development-status.md) | 哪些代码已进入调用链、通过了什么验证、下一步是什么 |
 | [08. 部署、恢复与验收手册](docs/08-deployment-and-acceptance.md) | 如何生产启动、备份恢复、排障并复现 AC-01～AC-12 |
-| [09. v0.4 课程质量与互动能力开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | CourseBrief、Prompt v2、互动沙箱、质量评价和推荐提交顺序 |
+| [09. v0.4 课程质量与互动能力开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | CourseBrief、幻灯片模板/Prompt v2、视觉质量门、互动沙箱和推荐提交顺序 |
 | [10. M6.5 远端响应韧性与可观测性开发方案](docs/10-m6.5-remote-response-resilience-plan.md) | DeepSeek 响应分类、受限重试、安全日志和验收证据 |
 
 01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，09 是 M7 的可执行开发方案，10 是插入 M6 与 M7 之间的 M6.5 工程加固方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
@@ -102,7 +102,7 @@ e2e/                             # [M6 已实现] production mock 完整浏览�
 
 M2 选用 `mysql2/promise`，直接使用连接池、参数化 SQL 和事务，不引入 ORM；数据库差异仍封装在 `MySQLCourseRepository` 中。Vitest 分别运行无数据库单元测试和真实 MySQL 集成测试，Playwright CLI 用于跨进程恢复验证。
 
-LangGraph 不是 M7 前置依赖。OpenMAIC 的主课程生成和自包含互动页面本身不依赖多智能体；只有 M8 的单一研究问题确实需要有状态图编排并且能够设计对照实验时，再考虑引入。
+LangGraph 不是 M7 前置依赖。OpenMAIC 的主课程生成和自包含互动页面本身不依赖多智能体；只有暂存的 MX 单一研究问题确实需要有状态图编排并且能够设计对照实验时，再考虑引入。
 
 ## 本地运行
 
@@ -163,8 +163,8 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 5. **M5（已完成）**：Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
 6. **M6（已完成）**：本机自动化测试、故障注入、生产构建、恢复和 DeepSeek 真实生成证据均已通过。
 7. **M6.5（已完成）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
-8. **M7（计划）**：质量基线 → CourseBrief/Prompt v2 → 丰富固定 Block → diagram 互动沙箱 → 单场景再生成与成对质量验收；
-9. **M8（未选题）**：从 M7 数据中只选择一个可度量的毕业论文研究问题。
+8. **M7（计划）**：质量与双视口截图基线 → Prompt 归一化 CourseBrief/outline v2（字段来源、默认值与冲突处理）→ 幻灯片表达系统 v2（模板、Block、Prompt、密度/溢出门）→ diagram 互动沙箱 → 单场景再生成与成对质量验收；
+9. **MX（暂时搁置）（未选题）**：待基础程序完成后选择一个可度量的毕业论文研究问题。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。
 

@@ -710,35 +710,83 @@ MySQL row
   → 应用服务
 ```
 
-MySQL 增加可空的 `brief_json` 列以兼容已有行。新建 v2 Course 必须写入非空 brief；旧 v1 行在迁移函数中获得确定性默认值，并在下一次明确保存时升级 schema_version。迁移不得重新生成大纲或场景，也不得改变已有 id、order、revision、生成元数据和测验引用。
+MySQL 增加可空的 `brief_json` 列以兼容已有行。该列存储 `{ brief, resolution }`，而不是只存表单值。新建 v2 Course 必须写入非空 provisional brief；`outline.v2` 成功后在保存大纲的同一事务中写入 resolved brief 和来源信息。旧 v1 行在纯迁移函数中获得确定性默认值，并在下一次明确保存时升级 schema_version。迁移不得调用模型、重新生成大纲或场景，也不得改变已有 topic、id、order、revision、生成元数据和测验引用。
 
 ### 16.2 CourseBrief
 
 ```ts
 export interface CourseBrief {
+  audience: string;
   learnerLevel: 'beginner' | 'intermediate' | 'advanced';
   learningGoal: string;
   prerequisites: string[];
   durationMinutes: 10 | 15 | 20;
   teachingStyle: 'structured' | 'case_based' | 'practice_oriented';
   interactionMode: 'off' | 'auto' | 'required';
+  additionalRequirements: string[];
+}
+
+export type CourseBriefOverrides = Partial<CourseBrief>;
+export type CourseBriefField = keyof CourseBrief;
+export type BriefValueSource = 'explicit_setting' | 'prompt' | 'default';
+
+export interface BriefResolutionWarning {
+  code: 'SETTING_PROMPT_CONFLICT' | 'PROMPT_AMBIGUOUS' | 'SCOPE_TOO_BROAD' | 'LEGACY_DEFAULT_APPLIED';
+  field?: CourseBriefField;
+  message: string;
+}
+
+export interface CourseBriefResolution {
+  status: 'provisional' | 'resolved';
+  sources: Record<CourseBriefField, BriefValueSource>;
+  warnings: BriefResolutionWarning[];
+  resolvedAt?: string;
+}
+
+export interface StoredCourseBriefV2 {
+  brief: CourseBrief;
+  resolution: CourseBriefResolution;
 }
 
 export interface CourseV2 extends Omit<CourseV1, 'schemaVersion' | 'outlines' | 'scenes'> {
   schemaVersion: 2;
   brief: CourseBrief;
+  briefResolution: CourseBriefResolution;
   outlines: SceneOutlineV2[];
   scenes: SceneV2[];
 }
 ```
 
+`Course.topic` 保留用户提交的原始课程描述，`CourseBrief` 保存系统最终采用的结构化解释，两者不能互相覆盖。`audience` 回答“讲给谁”，`learnerLevel` 回答“已有知识到什么程度”；例如 audience 可以是“大一非计算机专业学生”，learnerLevel 可以是 beginner。`additionalRequirements` 只收纳用户明确写出的跨字段要求，不把模型建议伪装成用户要求。
+
 约束：
 
+- audience 为 1～120 个字符；
 - learningGoal 为 2～300 个字符；
 - prerequisites 为 0～5 项，每项 1～120 个字符，规范化后不能重复；
-- 只有 topic 仍为必填用户输入，其余字段由服务端补齐并持久化有效值；
-- v1 → v2 默认值为 beginner、15 分钟、case_based、auto、空先修知识，并从 topic 构造不超过 300 字的通用学习目标；
-- 生成接口不得接受另一份 brief 覆盖 Course.brief。
+- additionalRequirements 为 0～5 项，每项 1～160 个字符，规范化后不能重复；
+- 只有 topic 仍为必填用户输入；`briefOverrides` 中字段缺失表示“未显式设置”，显式 `[]` 表示用户确认列表为空，两者不能在请求解析时合并；
+- 默认值为“无特定专业背景的学习者”、beginner、15 分钟、case_based、auto、空先修知识和空附加要求，并从 topic 构造不超过 300 字的通用学习目标；
+- 字段来源优先级固定为 `explicit_setting > prompt > default`，模型只能报告 Prompt 中能定位到的明确要求；
+- 创建成功时 resolution 为 provisional；outline.v2 成功后变为 resolved，并和大纲使用同一个 Course revision；
+- 场景生成接口不得接受另一份 brief 覆盖 Course.brief；它只使用仓储加载的 resolved Brief。
+
+解析生命周期如下：
+
+```text
+CreateCourseRequest(topic, briefOverrides?)
+  → applyDefaults(briefOverrides)                       // provisional
+  → INSERT Course(topic 原文, brief_json)
+  → outline.v2(topic, explicit settings, defaults)
+  → detectedPromptFields + warnings + resolvedBrief + outlines
+  → resolveBrief(explicit settings, detected fields, defaults)
+  → 校验模型 resolvedBrief 与服务端复算结果一致
+  → 同事务保存 brief + resolution + outlines          // resolved
+```
+
+Prompt 已经写明的字段使用 `prompt` 来源，未写明的字段逐项回落到 `default`，不能把一次“部分解析”当成整份 Brief 都来自 Prompt。描述与高级设置冲突时保留高级设置并记录 `SETTING_PROMPT_CONFLICT`；相同值不产生冲突警告。用户在确认大纲前通过 Brief 编辑接口修改字段时，这些字段改为 `explicit_setting`，旧 outlines 被清空或标记失效，Course 返回可重新生成大纲的状态。场景已开始生成后 M7.1 拒绝直接修改整课 Brief。
+
+v1 → v2 迁移为保证纯函数和旧内容可读，直接写入全字段 `default` 来源、`status=resolved` 和 `LEGACY_DEFAULT_APPLIED`，但不填写依赖当前时间的 `resolvedAt`。这里的 resolved 只表示旧课程不会再等待 Prompt 解析，不宣称默认 Brief 与历史生成内容完全一致。
 
 ### 16.3 SceneOutlineV2
 
@@ -779,19 +827,33 @@ export interface SceneOutlineV2 {
 - interactive 不能是第一场，且其 teachingObjective 必须引用课程中已引入的概念；
 - requestedSceneCount 在 v2 仍为 3～5，至少一个 quiz、最多两个 quiz 的规则不变。
 
-### 16.4 SlideBlockV2
+### 16.4 SlideContentV2 与 SlideBlockV2
 
 ```ts
-export interface StepItem {
+export type SlideTemplate =
+  | 'key_points'
+  | 'card_grid'
+  | 'process'
+  | 'comparison'
+  | 'code_explainer'
+  | 'summary';
+
+export interface CardGridBlock {
   id: string;
-  title: string;
-  text: string;
+  type: 'card_grid';
+  cards: Array<{
+    title: string;
+    points: string[];
+  }>;
 }
 
 export interface StepsBlock {
   id: string;
   type: 'steps';
-  items: StepItem[];
+  steps: Array<{
+    title: string;
+    description: string;
+  }>;
 }
 
 export interface ComparisonBlock {
@@ -799,20 +861,47 @@ export interface ComparisonBlock {
   type: 'comparison';
   leftTitle: string;
   rightTitle: string;
-  rows: Array<{ id: string; dimension: string; left: string; right: string }>;
+  rows: Array<{
+    dimension: string;
+    left: string;
+    right: string;
+  }>;
 }
 
 export interface TableBlock {
   id: string;
   type: 'table';
+  caption?: string;
   headers: string[];
-  rows: Array<{ id: string; cells: string[] }>;
+  rows: string[][];
 }
 
-export type SlideBlockV2 = SlideBlockV1 | StepsBlock | ComparisonBlock | TableBlock;
+export type SlideBlockV2 =
+  | SlideBlockV1
+  | CardGridBlock
+  | StepsBlock
+  | ComparisonBlock
+  | TableBlock;
+
+export interface SlideContentV2 {
+  type: 'slide';
+  template: SlideTemplate;
+  subtitle?: string;
+  blocks: SlideBlockV2[];
+}
 ```
 
-约束：steps 为 2～6 步；comparison 为 2～5 行且每行必须同时有左右内容；table 为 2～5 列、1～6 行，每行 cells 数量必须等于 headers 数量；所有可见单元都设置短文本上限。模型 DTO 不包含任何 id，装配器递归生成 Block、Step 和 Row id。
+约束：
+
+- card_grid 为 2～4 张卡片，每张包含 1～3 个短要点；
+- steps 为 2～6 步，每步包含短标题和一句说明；
+- comparison 为 2～5 行，每行必须同时提供 dimension、left 和 right，不能使用两个独立数组造成左右错位；
+- table 为 2～5 列、1～6 行，每行单元格数量必须等于 headers 数量；
+- paragraph 在 v2 每页最多一个，只承担短定义或结论；code 仍只作为转义后的源码文本；
+- 模型 DTO 不包含任何 id，装配器只为 Block 生成 id；静态嵌套项不承担跨请求身份或 Action 目标，因此不额外生成实体 ID；
+- template 与主 Block 组合由语义门校验；读取旧 SlideContent 时使用 `legacy_stack` 兼容分支，`legacy_stack` 不属于模型可输出的 SlideTemplate。
+
+SlideContent v2 的 Scene 标题继续使用 `Scene.title`，不在 content 中重复保存。SceneRenderer 将 title 与 content 一起交给新版 SlideRenderer，避免标题副本在再生成后发生漂移。
 
 ### 16.5 InteractiveScene
 
@@ -874,4 +963,4 @@ export type HostToWidgetMessage =
 
 ### 16.8 v2 完成门
 
-schemaVersion 2 只有在以下内容同时进入正式调用链后才能成为 `CURRENT_SCHEMA_VERSION`：v1/v2 读取与迁移、MySQL 列迁移、CourseBrief 表单/API、三种 Block、interactive Schema/生成器/Renderer、消息协议、fixture、仓储契约测试和 production E2E。仅提前修改联合类型或数据库版本号会让旧数据不可读，因此禁止分离发布。
+schemaVersion 2 只有在以下内容同时进入正式调用链后才能成为 `CURRENT_SCHEMA_VERSION`：v1/v2 读取与迁移、MySQL 列迁移、CourseBrief Prompt 归一/API/来源展示、SlideContent v2、六种受控模板、card_grid/steps/comparison/table 四种 Block、旧 slide 的 `legacy_stack` 恢复、interactive Schema/生成器/Renderer、消息协议、fixture、仓储契约测试和 production E2E。仅提前修改联合类型或数据库版本号会让旧数据不可读，因此禁止分离发布。

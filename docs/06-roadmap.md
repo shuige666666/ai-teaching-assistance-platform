@@ -8,9 +8,9 @@
 
 复刻不按 OpenMAIC 的目录逐项照搬，而按纵向闭环推进：**固定课程可浏览 → MySQL 可恢复 → 真实大纲 → 真实场景 → 播放与测验 → 完整验收**。数据库现在是基础能力，因此必须在真实模型接入前完成，不能等课程已经生成后再补持久化。
 
-M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7 不直接做论文创新，而是把当前工程基线提升为“课程要求更明确、静态内容更丰富、至少一种互动场景可安全运行、质量改进有证据”的 v0.4 产品基线。M8 才选择一个可度量研究问题。
+M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7 不直接做论文创新，而是把当前工程基线提升为“课程要求更明确、幻灯片表达更清晰、至少一种互动场景可安全运行、质量改进有证据”的 v0.4 产品基线。暂存的 MX 才选择一个可度量研究问题。
 
-**当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7 方案已冻结但尚未进入代码。下一步先执行 M7.0 质量基线，再依次实现 CourseBrief/Prompt v2、丰富静态内容、diagram 互动闭环和单场景再生成。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7 方案已细化但尚未进入代码。下一步先执行 M7.0 质量与截图基线，再依次实现 Prompt 归一化 CourseBrief/outline v2、幻灯片表达系统 v2、diagram 互动闭环和单场景再生成。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
@@ -41,7 +41,7 @@ M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。
 | M5 课堂运行时（已完成） | 自动播放、单选测验和可选浏览器语音 | 手工翻页 | 4～6 天 |
 | M6 本机验收交付（已完成） | mock 自动回归、生产构建与 DeepSeek 实测 | 开发态系统 | 5～7 天 |
 | M7 课程质量与互动能力（计划） | Prompt v2、丰富内容、一个 diagram 互动页和成对质量报告 | v0.3 通用静态课程 | 分四个可独立验收的小阶段 |
-| M8 毕业论文延展 | 基于 M7 数据完成一个可度量研究问题 | 无 | 视选题而定 |
+| MX 毕业论文延展（暂存） | 基于 M7 数据完成一个可度量研究问题 | 无 | 视选题而定 |
 
 建议投入是专注开发日。延期时先减少视觉装饰和扩展能力，不压缩 Schema、事务、错误恢复和测试。
 
@@ -276,31 +276,33 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 ### M7.0：质量基线与评价协议
 
-冻结覆盖概念、机制和编程实践的 6 个开发评价主题；使用当前 Prompt v1 生成基线，记录结构完成率、修复次数、耗时、token 和人工六维评分。先确定评分说明和阈值，之后不得根据候选结果临时修改。
+冻结覆盖概念、机制和编程实践的 6 个开发评价主题；使用当前 Prompt v1 生成基线，记录结构完成率、修复次数、耗时、token 和人工七维评分。除事实、目标、连贯性、案例价值和测验对齐外，单独评价可见内容可读性、视觉层级与版式适配；为每个 slide 保存 `1280×720` 与 `390×844` 截图、密度数据和当前溢出情况。先确定评分说明、`slide-density.v1` 和阈值，之后不得根据候选结果临时修改。
 
-**退出门**：评价数据、量表版本、模型/Prompt 配置和基线报告可复现；不修改生产 Prompt。
+**退出门**：评价数据、量表版本、密度规则、截图视口、模型/Prompt 配置和基线报告可复现；不修改生产 Prompt、Schema、Renderer 或 CSS。
 
 ### M7.1：CourseBrief、Schema v2 与大纲质量
 
-增加 CourseBrief、服务端默认值、MySQL `brief_json`、v1 → v2 迁移和 outline.v2。大纲增加场景角色、误区/评估意图和可选 diagram 计划；旧课程无需清库即可恢复。
+把 CourseBrief 定义为“原始描述 + 可选高级设置 + 服务端默认值”的结构化归一结果，而不是新增一张必填表单。创建接口原样保存 topic，并先写入 provisional Brief；原有一次 `outline.v2` 调用同时返回 Prompt 中明确检测到的字段、警告、resolved Brief 和 outlines，服务端按 `explicit_setting > prompt > default` 复算并同事务保存。MySQL `brief_json` 同时保存有效值、每字段来源和解析状态；大纲页展示系统理解和冲突警告，确认前修改 Brief 会使旧大纲失效。
 
-**退出门**：同一主题按初学者/进阶目标生成的计划有可解释差异；v1 fixture、MySQL 恢复和 M6 E2E 均通过。
+本阶段同时完成 Course v1/v2 判别、确定性 v1 → v2 迁移、受众/水平/目标/先修/时长/风格/互动/附加要求契约，以及 SceneRole、误区/评估意图和可选 diagram 计划。旧课程无需清库、无需重新调用模型即可恢复；正常大纲路径不因 Brief 解析固定增加一次 LLM 调用。
 
-### M7.2：丰富静态场景与课程连贯性
+**退出门**：只有主题、信息完整 Prompt、部分信息 Prompt 和设置冲突四类 fixture 均能得到可解释的字段值、来源与警告；同一原始描述按默认值和显式受众/目标生成的计划有可解释差异；Brief 与大纲同 revision 恢复，修改 Brief 不会遗留旧大纲；Prompt 注入不能越过 System Prompt/Schema；v1 fixture、MySQL 恢复和 M6 E2E 均通过。
 
-增加 steps、comparison、table 固定 Block，升级 slide/quiz Prompt；使用受限课程记忆传递已覆盖关键点、待覆盖目标和前文摘要；增加密度、重复、覆盖和 quiz 对齐报告。
+### M7.2：幻灯片表达系统 v2 与课程连贯性
 
-**退出门**：三种 Block 在桌面和窄屏安全渲染；候选课程不是靠增加长段落提高信息量；原 slide/quiz/code 回归全部通过。
+建立 `key_points/card_grid/process/comparison/code_explainer/summary` 六种受控模板，增加 card_grid、steps、comparison、table 固定 Block，并保留旧 SlideContent 的 `legacy_stack` 读取路径。桌面端采用有限 16:9 slide surface，重新划分标题、subtitle、卡片标题和正文层级；窄屏按语义重排而不是把文字缩小到不可读。升级 slide/quiz Prompt，在同一次 scene 调用中选择模板，严格区分可见短内容与 narration；使用受限课程记忆传递已覆盖关键点、待覆盖目标和前文摘要。增加模板组合、密度、重复、覆盖、DOM 溢出和 quiz 对齐报告，repair 继续受现有四次上游调用总预算约束。
+
+**退出门**：四种新增 Block 与六种模板在标准桌面和窄屏安全渲染，最终保存的 v2 slide 不存在未声明溢出；v1 课程仍可打开，原 slide/quiz/code 与 M6 全量回归全部通过。候选课程不能靠增加长段落、把关键正文或要点缩小到 16px 以下，或把所有内容包装成卡片提高表面信息量。完整内部顺序、内容预算和测试见文档 09 的 M7.2。
 
 ### M7.3：interactive/diagram 纵向闭环
 
-只实现 `interactive/diagram`：专用 Prompt 生成自包含 HTML/CSS/JavaScript，服务端进行大小、结构、危险能力和运行协议校验；课堂使用无 `allow-same-origin`、无外部网络的 sandbox iframe，支持 ready、reset、completed、error 和固定 fallback。
+M7.2 通过退出门后只实现 `interactive/diagram`：专用 Prompt 生成自包含 HTML/CSS/JavaScript，服务端进行大小、结构、危险能力和运行协议校验；课堂使用无 `allow-same-origin`、无外部网络的 sandbox iframe，支持 ready、reset、completed、error 和固定 fallback。若静态 slide 仍频繁溢出或只能人工挑选好样本，不进入互动开发。
 
 **退出门**：`interactionMode=required` 的课程完成“生成 → MySQL 保存 → 课堂操作 → 重置 → 完成 → 刷新恢复”的 production Chromium E2E；恶意 fixture 不能访问主页面身份、存储或网络；失败不影响其他场景。
 
 ### M7.4：单场景再生成与 v0.4 验收
 
-允许 ready 场景携带 500 字以内意见进行事务化再生成。候选生成期间不改变 ready Course；提交前保留旧结果，失败、取消和 conflict 均不破坏课程。quiz 再生成经用户确认后，在替换场景的同一事务清理旧作答。最后在固定模型配置下完成 v0.3/v0.4 成对人工评价，并报告质量、成本、延迟和修复率。
+允许 ready 场景携带 500 字以内意见进行事务化再生成。候选生成期间不改变 ready Course；提交前保留旧结果，失败、取消和 conflict 均不破坏课程。slide 再生成继续经过模板、密度和溢出质量门；quiz 再生成经用户确认后，在替换场景的同一事务清理旧作答。最后在相同主题、Provider、模型、请求设置和截图视口下完成 v0.3/v0.4 成对人工评价，并报告内容质量、视觉可读性、成本、延迟、首次通过率、修复率和模板分布。
 
 **退出门**：AC-Q01～AC-Q11 全部有证据；M6 `pnpm verify:full` 继续通过；质量达到 M7.0 预先冻结的阈值。达到此门后才宣布 v0.4 完成。
 
@@ -308,17 +310,15 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 M7 不加入 LangGraph、多智能体、多模态、RAG、媒体、自由坐标画布、code/simulation/game/3D widget 或任意学习者代码执行。diagram 未稳定前不得增加第二类互动场景。
 
-## 12. M8：毕业论文延展
+## 12. MX：毕业论文延展
 
-M8 从 M7 已收集的数据中只选择一个主问题，例如教学策略 Prompt 的成对实验、互动脚本运行错误检测与修复、双 Provider 质量—成本比较，或整课重生成与单场景恢复的效率比较。实验必须写清基线、唯一主要变量、评价指标、样本、重复次数和失败处理。
 
-若引入 LangGraph、多智能体、多模态或 RAG，它必须是该研究问题的必要变量并有消融对照；“使用了某个框架”本身不是研究贡献。
 
 ## 13. 风险登记与止损规则
 
 | 风险 | 早期信号 | 止损措施 |
 | --- | --- | --- |
-| 范围膨胀 | diagram 未稳定就加入 RAG、Agent 或第二种 widget | 严格按 M7.0～M7.4，额外能力移入 M8 |
+| 范围膨胀 | diagram 未稳定就加入 RAG、Agent 或第二种 widget | 严格按 M7.0～M7.4，额外能力移入 MX |
 | 数据库先于领域模型扩张 | 页面和 API 直接拼 SQL | 强制 CourseRepository 与契约测试 |
 | 长事务 | 模型调用期间占用数据库事务 | 使用登记操作和结果提交两个短事务 |
 | 并发覆盖 | 迟到响应覆盖重试结果 | operation id + expectedRevision |
@@ -327,11 +327,13 @@ M8 从 M7 已收集的数据中只选择一个主问题，例如教学策略 Pro
 | 语音拖慢主线 | 调试集中在音色或兼容性 | TextOnly 为默认，BrowserSpeech 可关闭 |
 | 生成脚本越权 | iframe 可访问网络、主页面或存储 | 关闭 interactive 入口，先修复 sandbox/CSP/消息边界 |
 | 旧课程无法读取 | schemaVersion 2 直接替换 v1 | 停止 UI/Prompt 开发，先完成迁移与 fixture 回归 |
+| 模板与 Prompt 脱节 | Prompt 要求并列/流程，但 JSON 和 Renderer 仍只能纵向堆叠 | 先补齐 SlideContent v2 和固定模板，再升级生产 Prompt |
+| 用视觉手段掩盖超载 | 依赖小字体、隐藏或内部滚动才不溢出 | 回退内容预算或模板组合，不接受低于 16px 的正文 |
 | 质量提升不可证 | 只展示一个好看的课程 | M7.0 先冻结数据集、量表与阈值，再做成对评价 |
-| 论文成为功能堆砌 | 延展没有唯一变量 | M8 一次只选择一个主问题 |
+| 论文成为功能堆砌 | 延展没有唯一变量 | MX 一次只选择一个主问题 |
 
 当前主分支无法启动、迁移不可重复、CourseSchema 可被绕过、密钥进入客户端、失败只能清库恢复或测试连续失效时，停止增加功能并先恢复基线。
 
 ## 14. 推荐的下一次开发迭代
 
-下一批提交回到既定 M7.0：建立评价集、评分量表、基线生成清单和报告模板，选择 6 个无隐私主题，用当前 DeepSeek 配置生成可追踪基线；不直接改 Prompt 或加 iframe。M7.0 退出后再开始 Course v2 和迁移；迁移通过前不修改当前 Scene 联合。
+下一批提交回到既定 M7.0：建立评价集、七维评分量表、`slide-density.v1`、双视口截图清单和报告模板，选择 6 个无隐私主题，用当前 DeepSeek + Prompt v1 生成可追踪基线；不直接改 Prompt、Schema、Renderer、CSS 或 iframe。M7.0 退出后再开始 Course v2 和迁移；迁移通过前不修改当前 Scene 联合，幻灯片模板优化集中在 M7.2 实施。

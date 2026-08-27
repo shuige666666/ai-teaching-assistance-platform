@@ -136,9 +136,12 @@ M6 可观测性补强回归进一步故意延迟课程创建响应，确认首�
 
 M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表课程内容已达到 OpenMAIC 的表现力。当前实现的限制已经从代码与真实课程中确认：
 
-- 创建请求只有 topic 和 3～5 场景数，没有学习者水平、明确学习目标、先修知识、时长或教学风格；
+- 创建请求只有 topic 和 3～5 场景数；即使用户把受众、难度和学习结果写进 topic，当前系统也只把它当作一段不透明文本，没有逐字段归一、默认补全、来源记录或冲突处理，后续调用无法证明使用的是同一份教学要求；
 - outline.v1 只要求“概念、机制到应用”，SceneOutline 没有场景角色、常见误区、案例/练习意图或互动计划；
 - slide 只有 paragraph、bullet_list、callout、code，quiz 只有 single_choice；
+- scene-slide.v1 主要约束 JSON 字段和宽松长度上限，paragraph 最多 500 字符、列表单项最多 180 字符、callout 最多 400 字符，没有“屏幕摘要与讲解稿分工”或整页密度预算；
+- SlideRenderer 将全部 Block 放入单列文档流，正文继续使用 21～30px 的展示型衬线字体；长段落因此获得接近标题的视觉重量，结构合法但容易呈现为纵向讲义；
+- 当前 JSON 没有 card/process/comparison 等内容关系和模板字段，即使只修改 Prompt，Renderer 也无法稳定生成类似幻灯片的并列、流程或对比布局；
 - 场景上下文只有课程标题计划和前一 ready 场景摘要，不能显式追踪已覆盖/待覆盖目标；
 - Action 由程序装配为 speech/pause，没有页面元素动作或互动协议；
 - 当前 repair 与质量门主要保证 JSON/Schema/领域结构，不评价事实正确性、教学深度和案例价值。
@@ -155,6 +158,6 @@ M6.5 主验收时 62 个单元测试、9 个 MySQL 集成测试、production bui
 
 ## 7. 下一步：M7.0 质量基线与评价协议
 
-当前下一项可执行工作回到既定 M7.0：先建立 6 个主题的开发评价集和评分说明，再用现有 DeepSeek + Prompt v1 生成基线。此时不修改生产 Prompt，避免没有对照就宣称质量提高。
+当前下一项可执行工作回到既定 M7.0：先建立 6 个主题的开发评价集、七维评分说明、`slide-density.v1` 和 `1280×720`/`390×844` 截图清单，再用现有 DeepSeek + Prompt v1 生成基线。此时不修改生产 Prompt、Schema、Renderer 或 CSS，避免没有对照就宣称质量提高。模板、字体层级、可见内容预算和 Prompt v2 的主要实现统一进入 M7.2，完成其退出门后才开始 interactive/diagram。
 
-M6.5 不修改 Prompt v1 教学策略或 Course Schema。M6.5 完成后，M7 仍按已冻结的 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md) 原序执行，不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。M7 完成后，毕业论文选题仍进入 M8。
+M6.5 不修改 Prompt v1 教学策略或 Course Schema。M6.5 完成后，M7 仍按 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md) 的 M7.0 → M7.4 原序执行，不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。M7 完成后，毕业论文选题仍进入暂存的 MX。

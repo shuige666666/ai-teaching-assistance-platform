@@ -143,12 +143,13 @@ M7 不能用现有 AC-01～AC-12 自动继承完成结论。实施后必须新�
 
 | 测试层 | M7 必须覆盖 |
 | --- | --- |
-| Domain | Course v1/v2 判别、v1 → v2 迁移、CourseBrief 默认值、互动数量规则 |
-| Renderer | steps、comparison、table 的边界、转义、桌面/窄屏布局 |
+| Domain | Course v1/v2 判别、v1 → v2 迁移、CourseBrief 默认值/字段来源/合并优先级/冲突警告、SlideContent v2/旧 slide 联合读取、模板组合和互动数量规则 |
+| Renderer | 六种模板与 card_grid、steps、comparison、table 的边界、转义、字体层级和响应式布局 |
+| Slide quality | 可见字符、最长单项、代码行数、重复信号、模板预算以及 `1280×720`/`390×844` DOM 溢出断言和截图 |
 | Interactive security | HTML 大小与禁用标签、CSP、sandbox、消息来源和消息 Schema |
-| MySQL | brief_json、新旧行读取、互动内容恢复、再生成原位替换和 conflict |
-| API | Prompt v2 上下文、interactive 失败分类、ready 场景再生成 |
-| Playwright | required diagram 的生成、操作、重置、完成、刷新、fallback 和迟到事件 |
+| MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、新旧行读取、互动内容恢复、再生成原位替换和 conflict |
+| API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 模板/密度失败分类、interactive 失败分类、ready 场景再生成 |
+| Playwright | 双视口 slide 布局，以及 required diagram 的生成、操作、重置、完成、刷新、fallback 和迟到事件 |
 | Regression | 原 M6 创建、slide/quiz、播放、作答、删除和 mock E2E 全部保持通过 |
 
 mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。恶意 fixture 至少覆盖外部 fetch、读写父页面、`eval`、子 iframe、meta refresh 和伪造 postMessage。
@@ -165,23 +166,23 @@ M7 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `i
 
 ### 8.3 课程质量验收
 
-M7.0 先冻结主题集、评分说明和阈值。M7.4 使用同一 DeepSeek 模型、温度、场景数量和主题，分别生成 v0.3 与 v0.4 课程，隐藏版本后成对评分。报告至少包含：
+M7.0 先冻结主题集、七维评分说明、`slide-density.v1`、截图视口和阈值。M7.4 使用同一 DeepSeek 模型、温度、场景数量和主题，分别生成 v0.3 与 v0.4 课程，使用相同视口截图并隐藏版本后成对评分。报告至少包含：
 
-- 事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、quiz 对齐；
+- 事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配、quiz 对齐；
 - 互动页的教学必要性、控件可理解性、重置和完成反馈；
-- 课程完成率、首次结构通过率、修复次数、请求耗时、token 和关键事实错误；
+- 课程完成率、首次结构/密度通过率、修复次数、请求耗时、token、模板分布、硬溢出和关键事实错误；
 - 每个失败样本的保留/排除规则，不能只展示成功课程。
 
-建议初始退出阈值为目标匹配、教学组织、案例/练习价值三项平均提升至少 0.5/5，事实正确性不下降，至少 70% 的课程对更偏好 v0.4。正式阈值必须在看到 v0.4 结果前由 M7.0 冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
+建议初始退出阈值为目标匹配、教学组织、案例/练习价值、可见内容可读性、视觉层级与版式适配五项平均提升至少 0.5/5，事实正确性不下降，标准视口不存在硬溢出，至少 70% 的课程对更偏好 v0.4。正式阈值必须在看到 v0.4 结果前由 M7.0 冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
 
 ### 8.4 M7 证据矩阵模板
 
 | 条件 | 预期证据 | 当前状态 |
 | --- | --- | --- |
-| AC-Q01 CourseBrief 保存恢复 | Schema + MySQL integration | 未实现 |
+| AC-Q01 CourseBrief 解析、来源、警告与同 revision 保存恢复 | Schema + API + MySQL integration | 未实现 |
 | AC-Q02 v1 → v2 兼容 | migration fixture + 旧库读取 | 未实现 |
-| AC-Q03 Prompt v2 使用完整上下文 | golden + 生成元数据 | 未实现 |
-| AC-Q04 新 Block 安全渲染 | component + E2E | 未实现 |
+| AC-Q03 outline.v2 同调用解析与大纲生成，场景 Prompt 使用完整上下文 | golden + 调用计数 + 生成元数据 | 未实现 |
+| AC-Q04 SlideContent v2、模板、新 Block 与双视口安全渲染 | Schema + component + DOM 断言 + 截图 | 未实现 |
 | AC-Q05 required diagram 数量 | domain + API | 未实现 |
 | AC-Q06 HTML 安全门 | validator 恶意 fixture | 未实现 |
 | AC-Q07 iframe 协议 | Playwright + network/console 记录 | 未实现 |

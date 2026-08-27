@@ -157,13 +157,19 @@ slide 可以包含 code block，其中 HTML、JSX、TSX 只作为源码字符串
 
 **AD-09～AD-13 是 v0.4/M7 增量决策，尚未实现。**
 
-### AD-09：先持久化 CourseBrief，再升级 Prompt
+### AD-09：原始描述可追溯，CourseBrief 在 outline.v2 中一次定稿
 
-学习者水平、学习目标、先修知识、时长、教学风格和互动偏好属于 Course 事实，必须在创建草稿时由服务端规范化并进入 MySQL。大纲、场景和再生成只读取这份事实，不能让不同请求各自猜测上下文。首页保持主题必填，其余设置折叠并提供默认值。
+CourseBrief 是系统最终采用的教学上下文，不等同于一张必填表单。原始 topic 按用户提交内容保存；受众、学习者水平、学习目标、先修知识、时长、教学风格、互动偏好和附加要求则记录为 Course 事实，并为每个字段保存 `explicit_setting`、`prompt` 或 `default` 来源。首页保持 topic 必填，其余设置折叠且可选。
 
-### AD-10：丰富内容仍使用判别联合和固定 React Renderer
+创建草稿时不增加模型调用。服务端先用显式设置覆盖确定性默认值，保存 `provisional` Brief。原有 `outline.v2` 调用同时输出原文检测字段、解析警告、模型采用的 resolved Brief 和大纲；服务端再按 `explicit_setting > prompt > default` 复算。模型结果与复算结果不一致时按结构化大纲错误处理，不能让模型自行改变高级设置或字段来源。最终 Brief、Resolution 和 Outline 在同一 expectedRevision 短事务中提交，之后场景生成和再生成只读取这份 `resolved` CourseBrief。
 
-steps、comparison 和 table 分别拥有严格 Schema 与固定组件；不采用自由坐标 PPT 画布，也不让模型生成 React/CSS。这样能够提高教学表达力，同时保留现有可校验、响应式和可测试优势。
+该设计让“用户在 Prompt 中已经说明要求”和“用户只写主题”共用一条链：前者只为未说明字段补默认值，后者全部使用可解释默认值；正常路径不会增加独立的 Prompt 解析调用。描述与高级设置冲突时设置优先并保存警告。用户在确认大纲前修改 Brief 会使旧大纲失效并要求重新生成；场景生成后直接修改整课 Brief 不属于 M7.1。
+
+### AD-10：幻灯片表达能力仍使用判别联合和固定 React Renderer
+
+SlideContent v2 以 `key_points/card_grid/process/comparison/code_explainer/summary` 表达受控布局意图，card_grid、steps、comparison 和 table 分别拥有严格 Schema 与固定组件。模型只选择内容关系和短文本，Renderer 使用 CSS Grid/Flex 决定空间布局；不采用自由坐标 PPT 画布，也不让模型生成 React/CSS。旧 SlideContent 继续走 `legacy_stack` 兼容路径。这样能够提高教学表达力，同时保留现有可校验、响应式和可测试优势。
+
+桌面课堂使用有限 16:9 slide surface，关键正文和要点不低于 16px；窄屏按 DOM 语义顺序重排，允许课堂页面纵向滚动但不允许模板内部横向裁切。服务端负责模板组合、可见字符、重复和代码行数等确定性门，浏览器负责真实换行和 DOM 溢出断言。两类结果分别记录，不能用结构通过代替视觉或教学质量结论。
 
 ### AD-11：互动脚本只能在无同源权限的 iframe 中执行
 
@@ -171,7 +177,7 @@ steps、comparison 和 table 分别拥有严格 Schema 与固定组件；不采�
 
 ### AD-12：M7 不引入 LangGraph、多智能体和多模态
 
-CourseBrief、Prompt v2、三种 Block 和 diagram HTML 都是现有两阶段生成管线的普通类型分支。LangGraph 只在未来出现多角色、有状态、跨请求编排问题时评估；多模态只在材料/图片输入成为范围时评估。未出现这些需求前，引入框架只会增加状态、费用和测试矩阵。
+CourseBrief、Prompt v2、SlideContent v2/固定模板、四种新 Block 和 diagram HTML 都是现有两阶段生成管线的普通类型分支。LangGraph 只在未来出现多角色、有状态、跨请求编排问题时评估；多模态只在材料/图片输入成为范围时评估。未出现这些需求前，引入框架只会增加状态、费用和测试矩阵。
 
 ### AD-13：在线质量门与离线教学评价分开
 
@@ -234,11 +240,19 @@ v0.4 不替换上图，只增加下面的受控分支：
 
 ```mermaid
 flowchart LR
-    Brief["CourseBrief 表单"] --> CourseAPI["Course API"]
-    CourseAPI --> Repo["CourseRepository + v1/v2 Migrator"]
+    Input["原始描述 + 可选高级设置"] --> CourseAPI["Course API"]
+    CourseAPI --> Provisional["BriefResolver<br/>设置 > 默认值"]
+    Provisional --> Repo["CourseRepository + v1/v2 Migrator"]
     Repo --> DB[(MySQL)]
 
-    Generation["GenerationService"] --> PromptV2["Outline/Scene Prompt v2"]
+    DB --> Generation["GenerationService"]
+    Generation --> OutlineV2["outline.v2<br/>检测字段 + resolvedBrief + outlines"]
+    OutlineV2 --> Resolve["BriefResolver<br/>设置 > Prompt > 默认值"]
+    Resolve --> OutlineGate["Brief/Outline Schema + 一致性门"]
+    OutlineGate --> AtomicSave["同 revision 保存 Brief + Resolution + Outline"]
+    AtomicSave --> Repo
+
+    Generation --> PromptV2["Scene Prompt v2"]
     PromptV2 --> Quality["Deterministic Quality Report"]
     PromptV2 --> InteractiveGen["Interactive Diagram Generator"]
     InteractiveGen --> HtmlGate["HTML Validator + CSP Patcher"]
@@ -277,8 +291,8 @@ flowchart LR
 
 | 路由 | 职责 |
 |---|---|
-| `/` | 创建课程，显示历史课程和状态；M7 增加折叠 CourseBrief 设置 |
-| `/generation/[courseId]` | 加载草稿、生成/编辑大纲、生成场景、失败重试；M7 增加 ready 场景再生成 |
+| `/` | 创建课程，显示历史课程和状态；M7 保持 topic 必填，增加可选折叠高级设置 |
+| `/generation/[courseId]` | 加载草稿、生成/编辑大纲、展示 Brief 字段来源和警告；确认前修改 Brief 时使旧大纲失效；M7 增加 ready 场景再生成 |
 | `/classroom/[courseId]` | 至少一个 ready 场景时加载成功场景并提示部分预览；整课 ready 时进入正式课堂；M7 增加互动 iframe 宿主 |
 
 courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢复，不能把 React state、sessionStorage 或 localStorage 作为课程事实来源。
@@ -292,6 +306,7 @@ courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢
 | `GET /api/courses/{courseId}` | 返回完整 CourseDTO | 读 |
 | `DELETE /api/courses/{courseId}` | 删除课程及关联作答 | 是 |
 | `POST /api/courses/{courseId}/outline/generate` | 生成、校验并保存大纲 | 是 |
+| `PATCH /api/courses/{courseId}/brief`（M7） | 在大纲确认前保存显式设置，并使已有大纲失效 | 是 |
 | `PATCH /api/courses/{courseId}/outline` | 保存用户编辑或确认的大纲 | 是 |
 | `POST /api/courses/{courseId}/scenes/{outlineId}/generate` | 生成、校验并保存一个场景 | 是 |
 | `POST /api/courses/{courseId}/scenes/{outlineId}/regenerate`（M7） | 按用户意见生成候选并原位替换 ready 场景 | 是 |
@@ -310,19 +325,20 @@ sequenceDiagram
     participant R as MySQLCourseRepository
     participant M as AI Adapter
 
-    U->>H: 输入主题并创建
+    U->>H: 输入描述，可选填写高级设置
     H->>C: POST /api/courses
-    C->>A: createCourse(topic, sceneCount)
-    A->>R: INSERT draft
+    C->>A: createCourse(topic, sceneCount, briefOverrides?)
+    A->>A: 默认值 + 显式设置 → provisional Brief
+    A->>R: INSERT draft + 原始 topic + provisional Brief
     R-->>H: CourseDTO
     H->>G: /generation/{courseId}
     G->>C: POST /api/courses/{id}/outline/generate
     C->>A: generateOutline(id)
     A->>R: load + mark outlining
-    A->>M: generate outline
-    M-->>A: raw model text
-    A->>A: parse + Zod + normalize
-    A->>R: transaction save outline_ready
+    A->>M: outline.v2(topic, settings, defaults)
+    M-->>A: detectedBrief + warnings + resolvedBrief + outlines
+    A->>A: parse + Zod + 服务端复算 + 一致性门
+    A->>R: transaction save resolved Brief + Resolution + outline_ready
     A-->>G: updated CourseDTO
     U->>G: 编辑并确认大纲
     G->>C: PATCH outline + expectedRevision
@@ -442,7 +458,7 @@ Next.js Server
 
 ## 13. 已选 v0.4 扩展与更远期边界
 
-M7 已选择 CourseBrief、Prompt v2、丰富 Block、diagram 互动和单场景再生成，按接口扩展而不重写主链。以下能力仍属于 M8 或更远期候选：
+M7 已选择 CourseBrief、Prompt v2、幻灯片表达系统 v2、diagram 互动和单场景再生成，按接口扩展而不重写主链。以下能力仍属于 MX 或更远期候选：
 
 - 文档输入：在 outline 请求前增加 DocumentExtractor；
 - 生成优化：替换 GenerationPolicy，不改变已持久化身份和恢复语义；

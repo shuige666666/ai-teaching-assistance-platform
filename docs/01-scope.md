@@ -138,9 +138,10 @@ MVP 只有一个本地用户角色，可以同时扮演课程创建者和学习�
 
 v0.4 以“课程质量与互动能力”为唯一主题，详细任务和验收见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。本阶段必须交付：
 
-- 在 MySQL 持久化学习者水平、学习目标、先修知识、时长、教学风格和互动偏好；只有主题仍为必填项，其余使用推荐默认值；
+- 原样保存用户的主题/自然语言课程描述，并将其中明确写出的要求与可选高级设置、服务端默认值归一为 CourseBrief；在 MySQL 持久化受众、学习者水平、学习目标、先修知识、时长、教学风格、互动偏好、附加要求、每字段来源和解析警告；只有主题仍为必填项；
 - 升级大纲和场景 Prompt，使目标、场景角色、案例/练习、常见误区和测验之间具有可追踪关系；
-- 增加 steps、comparison、table 三种受控内容块，继续使用固定 React Renderer；
+- 建立 `key_points/card_grid/process/comparison/code_explainer/summary` 六种受控幻灯片模板，增加 card_grid、steps、comparison、table 四种内容块，继续使用固定 React Renderer；
+- 明确区分可见短内容与 narration，增加页面密度、模板组合、双视口 DOM 溢出和截图证据，禁止用长段落或过小字号伪造内容丰富度；
 - 增加一种 `interactive/diagram` 场景，生成自包含 HTML/CSS/JavaScript，并在无同源权限、无外部网络的 sandbox iframe 中运行；
 - 支持 ready 场景按用户简短意见单独再生成，失败时保留原场景；
 - 建立固定质量集、人工量表、成本/延迟记录和 v0.3/v0.4 成对比较。
@@ -174,9 +175,9 @@ M7 的“完成”同时要求产品链路、运行安全和课程质量三类�
 
 | 编号 | 验收条件 | 验证方式 |
 |---|---|---|
-| AC-Q01 | CourseBrief 使用服务端默认值并可从 MySQL 恢复 | Schema + MySQL 集成 |
+| AC-Q01 | CourseBrief 按“显式设置 > Prompt > 默认值”解析，字段来源、警告和大纲可从 MySQL 同 revision 恢复 | Schema + API + MySQL 集成 |
 | AC-Q02 | v1 课程无需清库即可读取并迁移到 v2 | 迁移 fixture + MySQL 集成 |
-| AC-Q03 | Prompt v2 实际使用受众、目标、时长、风格和课程记忆 | Prompt golden + 生成测试 |
+| AC-Q03 | outline.v2 在同一次正常调用中解析描述并生成大纲；场景 Prompt 实际使用已保存的受众、目标、时长、风格和课程记忆 | Prompt golden + 调用计数 + 生成测试 |
 | AC-Q04 | 新 Block 使用固定组件安全渲染，未知类型不会白屏 | 组件测试 + E2E |
 | AC-Q05 | `interactionMode=required` 生成且只生成一个 diagram 场景 | Schema + API 集成 |
 | AC-Q06 | 互动 HTML 经过大小、结构和危险能力校验后才能持久化 | validator 测试 |
@@ -230,7 +231,7 @@ M7.0 先用当前 Prompt v1 建立基线，再冻结具体阈值，防止看到�
 
 ## 10. 与毕业论文的关系
 
-v0.3 是可运行工程基线，v0.4/M7 是课程质量和互动能力的产品基线；两者可支撑需求分析、系统设计、实现和测试章节，但都不自动等于研究创新。M7 通过后才进入 M8 论文选题，并在同一基线上定义：
+v0.3 是可运行工程基线，v0.4/M7 是课程质量和互动能力的产品基线；两者可支撑需求分析、系统设计、实现和测试章节，但都不自动等于研究创新。M7 通过后才进入暂存的 MX 论文选题，并在同一基线上定义：
 
 - 明确的问题与输入输出；
 - 可复现的基线方法；

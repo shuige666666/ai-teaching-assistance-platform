@@ -15,7 +15,7 @@ v0.3 使用两层结构化生成：
 第二层：一个 SceneOutline + 紧凑课程上下文 → GeneratedSceneDTO
 ```
 
-第二层按场景串行执行。模型生成可见内容和 narration，程序负责生成所有 id、引用、状态、时间戳和 Action。v0.4 保留两层与串行恢复边界，只把 CourseBrief、课程记忆、丰富 Block 和 interactive 作为类型化输入/输出加入，不改成 Agent 图或无限评审循环。
+第二层按场景串行执行。模型生成可见内容和 narration，程序负责生成所有 id、引用、状态、时间戳和 Action。v0.4 保留两层与串行恢复边界，只把第一层扩展为 `原始 topic + provisional Brief → detectedBrief + resolvedBrief + CourseOutlineDTO`，再把 CourseBrief、课程记忆、丰富 Block 和 interactive 作为第二层的类型化输入/输出加入，不改成 Agent 图或无限评审循环。
 
 ## 2. 与 OpenMAIC 的对应关系
 
@@ -82,9 +82,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Brief["MySQL Course.brief"] --> OutlineV2["outline.v2"]
-    OutlineV2 --> OutlineGate["Schema + 教学结构门"]
-    OutlineGate --> Review["用户审核"]
+    Draft["MySQL: 原始 topic + provisional Brief"] --> OutlineV2["outline.v2<br/>一次返回解析结果与大纲"]
+    OutlineV2 --> BriefResolver["服务端复算<br/>设置 > Prompt > 默认值"]
+    BriefResolver --> OutlineGate["Brief/Outline Schema + 一致性门"]
+    OutlineGate --> PersistOutline["同事务保存 resolved Brief + Resolution + Outline"]
+    PersistOutline --> Review["用户审核"]
     Review --> Route{"Scene type"}
 
     Route -->|slide| SlideV2["scene-slide.v2"]
@@ -395,13 +397,31 @@ prompts/
 
 所有 v2 User Prompt 都从 MySQL Course 构造，至少包含：
 
-- topic 与规范化 CourseBrief；
+- 作为不可信数据传入的原始 topic；
+- 已校验的显式高级设置、确定性默认值、字段合并优先级，以及当前 provisional/resolved CourseBrief；
 - 完整但紧凑的课程计划和目标；
 - 当前 SceneOutline 的 role、objective、keyPoints、misconceptions/assessmentFocus；
 - 有上限的 `coveredKeyPoints`、`remainingObjectives` 和前文摘要；
 - 当前场景的可见内容密度、允许类型和禁止字段。
 
-outline.v2 应要求模型先围绕学习结果安排 hook、概念/机制、案例或练习和评估，但不能把固定模板强加给所有主题。slide.v2 明确“页面是视觉提示，不是讲稿”，细节进入 narration；quiz.v2 必须说明每题对应哪个 objective，并生成可机械验证的答案与解析。
+`outline.v2` 的输出契约增加以下包裹层：
+
+```ts
+export interface OutlineGenerationV2DTO {
+  detectedBrief: Partial<CourseBrief>;
+  warnings: BriefResolutionWarning[];
+  resolvedBrief: CourseBrief;
+  outlines: SceneOutlineV2[];
+}
+```
+
+模型只能把原始描述中明确出现的内容放入 `detectedBrief`，不能按主题难度猜测受众或偏好；缺失字段必须从 Prompt 中给定的默认值补齐。Prompt 同时要求模型按 `explicit_setting > prompt > default` 得到 `resolvedBrief`，并完全依据该结果设计 outlines。服务端不信任这个合并结果，会用显式设置、detectedBrief 和默认值重新计算；两者不相等、检测字段越界或大纲数量/角色非法时，统一进入大纲失败/受限 repair，不能分别保存。
+
+正常路径仍只有一次 `outline.v2` 上游调用，不先调用一个“Prompt 解析模型”再调用一个“大纲模型”。若结构或一致性失败，repair 与传输重试继续共享单请求最多四次上游调用预算。校验通过后，resolved Brief、字段来源、合并后的警告和 outlines 使用一个 expectedRevision 短事务落库；后续 `scene-*.v2` 只读取这个已保存版本。
+
+原始 topic 在 User Prompt 中使用清晰的数据边界和 JSON 转义传入。描述中即使包含“忽略此前规则”等文本，也只是课程需求数据，不能改变 System Prompt、字段优先级、输出 Schema、安全门或调用预算。Prompt 边界降低误遵循风险，严格解析、服务端复算和领域校验才是最终约束。
+
+大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定模板强加给所有主题。slide.v2 明确“页面是视觉提示，不是讲稿”，细节进入 narration；quiz.v2 必须说明每题对应哪个 objective，并生成可机械验证的答案与解析。
 
 diagram Prompt 只生成一个完整 HTML 文档和 fallback DTO，不使用 Markdown。它必须遵守宿主提供的元素 ID、reset、ready/completed/error 协议和无网络限制；生成器不得要求 CDN、外部字体或第三方库。完整脚本仍须经过服务端安全门，Prompt 约束不能替代运行时隔离。
 
@@ -591,6 +611,7 @@ MockAIAdapter 根据 stage 和 outline.type 返回固定响应，并可通过测
 - 类型与 content 匹配；
 - quiz 答案索引；
 - 文本长度和数组数量；
+- slide 模板与主 Block 组合、可见内容预算、代码行数和明显重复；
 - 不允许字段与危险内容；
 - 调用预算、超时和重试分类。
 
@@ -599,7 +620,7 @@ MockAIAdapter 根据 stage 和 outline.type 返回固定响应，并可通过测
 - Prompt golden test：关键规则和 JSON 示例未丢失；
 - parser test：纯 JSON、代码围栏、截断和多对象；
 - Schema test：每个字段边界；
-- semantic gate test：重复标题、缺少 quiz、索引越界；
+- semantic gate test：重复标题、非法 slide 模板组合、内容密度超限、缺少 quiz、索引越界；
 - retry test：429/5xx 重试，401 不重试，Abort 立即停止；
 - assembler test：模型无法控制 id，type/content 绑定正确；
 - fixture contract test：所有 valid fixture 永远通过；
@@ -616,7 +637,7 @@ Schema 通过只表示“数据形状合法且满足可机械检查的规则”�
 - 测验答案在现实学科中没有争议；
 - 内容不存在模型偏见。
 
-M7 必须建立小型固定人工评价集来判断产品质量是否改善；若 M8 选择内容质量作为论文问题，再扩大样本、重复生成并补充一致性分析。LLM-as-judge 只能作为辅助信号，并报告 Judge 自身局限。
+M7 必须建立小型固定人工评价集来判断产品质量是否改善；若 MX 选择内容质量作为论文问题，再扩大样本、重复生成并补充一致性分析。LLM-as-judge 只能作为辅助信号，并报告 Judge 自身局限。
 
 ### 14.4 v0.4 规则质量报告（计划）
 
@@ -625,15 +646,16 @@ M7 必须建立小型固定人工评价集来判断产品质量是否改善；�
 - requiredObjectiveCoverage：要求目标是否有对应场景；
 - keyPointCoverage：规范化关键点的弱覆盖率；
 - duplicateSignals：跨页标题、摘要和高相似内容；
-- visibleDensity：页面字符、列表项、表格单元和代码长度；
+- slideTemplate：模板是否合法、必需主 Block 是否存在、组合是否在白名单内；
+- visibleDensity：标题、subtitle、页面字符、最长单项、卡片/步骤/表格数量、代码行数和模板预算；
 - quizAlignment：题目是否引用已教学目标、答案索引和选项是否一致；
 - interactiveSafety：HTML 大小、禁止能力、必需元素和消息协议结果。
 
-可以确定性判错的项目进入硬门；只能提供启发的关键词覆盖和相似度进入报告，不得仅凭一个分数拒绝事实正确但措辞不同的内容。
+可以确定性判错的项目进入硬门；只能提供启发的关键词覆盖和相似度进入报告，不得仅凭一个分数拒绝事实正确但措辞不同的内容。服务端报告不能推断浏览器真实换行，M7.2 另在 `1280×720` 与 `390×844` 对 slide surface 和关键子容器执行 DOM 溢出断言并保存截图。
 
 ### 14.5 人工成对评价（M7 退出门）
 
-使用同一主题集、Provider、模型、温度和场景数量分别生成 v0.3 与 v0.4 课程，隐藏版本后评价事实正确性、目标匹配、结构连贯、解释/案例价值、可读性和测验对齐。互动页另评教学必要性、控件可理解性、重置和完成反馈。报告同时给出生成完成率、修复率、耗时、token 和关键事实错误，禁止只展示改善的维度。
+使用同一主题集、Provider、模型、温度和场景数量分别生成 v0.3 与 v0.4 课程，隐藏版本后评价事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配和测验对齐。截图使用相同视口；互动页另评教学必要性、控件可理解性、重置和完成反馈。报告同时给出生成完成率、首次通过率、修复率、耗时、token、模板分布和关键事实错误，禁止只展示改善的维度。
 
 ## 15. 再生成管线（M7 计划）
 
@@ -649,7 +671,7 @@ M7 必须建立小型固定人工评价集来判断产品质量是否改善；�
 
 再生成调用期间不修改 Course.status、SceneProgress 或持久化 activeOperation，新候选提交前旧 Scene 始终保留。模型不能决定 courseId、outlineId、type、order、状态或 ID；失败、取消、HTML 安全错误和 revision conflict 都只结束本次操作，不把原场景改成 failed。quiz 再生成要求用户确认旧作答失效；最终事务同时替换 Scene 并删除旧 sceneId 的 QuizAttempt，任一步失败则回滚。
 
-## 16. M8 研究接口
+## 16. MX 研究接口
 
 生成管线预留但不提前实现：
 
@@ -664,4 +686,4 @@ export interface QualityGate<T> {
 }
 ```
 
-这些接口不要求在 M7 全部实现。M8 可以从 M7 已产生的数据中选择错误感知修复、质量—成本约束模型路由、教学策略 Prompt 对比或互动运行错误修复中的一个问题。实验必须与固定模型、固定 Prompt 版本和明确调用预算的基线比较；LangGraph、多智能体或多模态只有在成为该单一问题的必要变量时才评估。
+这些接口不要求在 M7 全部实现。MX 可以从 M7 已产生的数据中选择错误感知修复、质量—成本约束模型路由、教学策略 Prompt 对比或互动运行错误修复中的一个问题。实验必须与固定模型、固定 Prompt 版本和明确调用预算的基线比较；LangGraph、多智能体或多模态只有在成为该单一问题的必要变量时才评估。

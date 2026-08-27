@@ -97,12 +97,14 @@ MVP 只有一个逻辑参与者：本地用户。
 **前置条件**：用户正在创建新课程。
 **主流程**：
 
-1. 用户填写必需的教学主题；
-2. 系统提供学习者水平、学习目标、先修知识、预计时长、教学风格和互动偏好；
-3. 用户不展开设置时，服务端使用推荐默认值；
-4. 系统把规范化后的 CourseBrief 与草稿一起保存，后续大纲、场景和再生成都从 MySQL 读取同一份要求。
+1. 用户填写必需的教学主题或自然语言课程描述；
+2. 系统提供可折叠的受众、学习者水平和学习目标等高级设置，用户可以完全不填写；
+3. 创建接口原样保存用户描述，并以“显式设置 + 服务端默认值”保存 provisional CourseBrief，不为解析描述增加独立模型调用；
+4. `outline.v2` 在原有一次大纲调用中识别描述里明确出现的受众、难度、学习结果和附加约束，并按“显式设置 > 描述字段 > 默认值”生成 resolved CourseBrief 与大纲；
+5. 服务端复算合并结果，把有效 Brief、每字段来源、警告和大纲在同一事务中保存；后续场景和再生成只从 MySQL 读取这份已解析要求；
+6. 大纲页展示“系统理解的课程要求”，用户可在确认前纠正；修改后旧大纲失效并重新生成。
 
-**异常流程**：非法枚举、超长目标或先修知识被请求 Schema 拒绝；客户端不能在大纲生成接口临时覆盖已保存的 CourseBrief。
+**异常流程**：非法枚举、超长目标或先修知识被请求 Schema 拒绝；描述与高级设置冲突时高级设置生效并显示警告；含糊描述只补确定性默认值，不允许模型伪造字段来源；客户端不能在大纲生成接口临时覆盖已保存的 CourseBrief。
 
 ### UC-08 学习互动场景（v0.4 计划）
 
@@ -227,24 +229,37 @@ MVP 只有一个逻辑参与者：本地用户。
 
 | 编号 | 需求 |
 |---|---|
-| FR-Q101 | `POST /api/courses` 必须接受可选 CourseBrief；缺省字段由服务端补齐推荐值并持久化。 |
-| FR-Q102 | CourseBrief 必须包含 learnerLevel、learningGoal、prerequisites、durationMinutes、teachingStyle 和 interactionMode。 |
-| FR-Q103 | 首页仍只要求 topic；高级设置必须可折叠，不能增加首次使用阻力。 |
-| FR-Q104 | 大纲和场景生成只能使用 MySQL 中已校验的 CourseBrief，客户端不得在生成请求中覆盖。 |
+| FR-Q101 | `POST /api/courses` 必须接受原始 `topic` 和可选 `briefOverrides`；`topic` 必须按用户提交内容原样持久化，不能被模型解析结果覆盖。 |
+| FR-Q102 | CourseBrief 必须包含 audience、learnerLevel、learningGoal、prerequisites、durationMinutes、teachingStyle、interactionMode 和 additionalRequirements。 |
+| FR-Q103 | 首页仍只要求 topic；高级设置必须可折叠且字段可选，未出现的字段不能被标记为用户显式设置。 |
+| FR-Q104 | 创建阶段必须以显式设置和服务端默认值保存 provisional CourseBrief；大纲解析完成后，场景生成与再生成只能使用 MySQL 中同 revision 的 resolved CourseBrief。 |
 | FR-Q105 | SceneOutline v2 必须包含教学场景角色；误区、评估重点和 widgetType 按场景需要出现。 |
 | FR-Q106 | 场景 Prompt 必须接收有长度上限的已覆盖关键点、待覆盖目标和前文摘要，不能无限累计整课原文。 |
 | FR-Q107 | slide 必须继续区分可见短内容和 narration，不得通过生成长段落伪造课程深度。 |
 | FR-Q108 | 系统必须生成可机器检查的密度、重复、关键点覆盖和 quiz—objective 对齐报告；该报告不宣称事实正确。 |
+| FR-Q109 | `scene-slide.v2` 必须根据 SceneRole 和内容关系从受控模板集合中选择一个模板，不得生成自由坐标、CSS、React 或模板外字段。 |
+| FR-Q110 | 模板组合、可见内容硬上限和明显重复失败可以进入现有一次 repair，但 repair 与传输重试仍共享单请求最多四次上游调用预算。 |
+| FR-Q111 | `outline.v2` 只能提取原始描述中明确出现的教学要求，不能仅按学科难度推断受众、水平或用户偏好。 |
+| FR-Q112 | CourseBrief 字段合并优先级必须固定为 `explicit_setting > prompt > default`；显式空数组与字段缺失必须保持不同语义。 |
+| FR-Q113 | 正常路径下，Prompt 字段检测、解析警告、resolved CourseBrief 和 outlines 必须由同一次 `outline.v2` 结构化响应返回，不增加独立 LLM 解析调用。 |
+| FR-Q114 | 服务端必须按固定优先级复算模型返回的 resolved CourseBrief；不一致时不得持久化，最终 Brief、来源、警告和大纲必须同事务提交。 |
+| FR-Q115 | 每个 Brief 字段必须持久化 `explicit_setting`、`prompt` 或 `default` 来源；设置冲突、描述含糊和范围过宽必须形成可展示的结构化警告。 |
+| FR-Q116 | 用户在大纲确认前修改 resolved Brief 时，新值必须作为显式设置保存并使旧大纲失效；M7.1 不支持场景生成后直接修改整课 Brief。 |
+| FR-Q117 | 原始 topic 只能作为待解析数据进入 User Prompt，其中的指令不得覆盖 System Prompt、输出 Schema、字段优先级或安全校验。 |
 
 ### 4.10 丰富固定渲染（v0.4 计划）
 
 | 编号 | 需求 |
 |---|---|
-| FR-Q201 | SlideBlock 在保留现有类型的基础上增加 steps、comparison 和 table。 |
-| FR-Q202 | steps 包含 2～6 个有序步骤；comparison 只比较两个对象的同维度项目；table 限制为短文本小表格。 |
+| FR-Q201 | SlideBlock 在保留现有类型的基础上增加 card_grid、steps、comparison 和 table。 |
+| FR-Q202 | card_grid 包含 2～4 张短文本卡片；steps 包含 2～6 个有序步骤；comparison 只比较两个对象的同维度项目；table 限制为短文本小表格。 |
 | FR-Q203 | 新 Block 必须由固定 React 组件渲染，不能包含模型 CSS、React、HTML 或可执行代码。 |
-| FR-Q204 | 渲染器必须分别在桌面和窄屏保持可读，长内容有明确折行或滚动策略。 |
-| FR-Q205 | 未知 Block 或版本不兼容时必须显示可诊断 fallback，不能导致整个课堂白屏。 |
+| FR-Q204 | 桌面 Renderer 必须以有限 16:9 slide surface 展示完整主要内容；窄屏按 DOM 语义顺序重排，可由课堂页面纵向滚动，但模板内部不得横向裁切或隐藏关键内容。 |
+| FR-Q205 | 旧 SlideContent 必须通过 `legacy_stack` 兼容路径恢复；未知 Block、非法模板组合或版本不兼容时显示可诊断 fallback，不能导致整个课堂白屏。 |
+| FR-Q206 | SlideContent v2 的 template 只能是 key_points、card_grid、process、comparison、code_explainer 或 summary，并按模板语义限制主 Block 组合。 |
+| FR-Q207 | 展示字体只用于短标题或关键结论，关键正文和要点使用无衬线字体且不得低于 16px；不能靠缩小、隐藏或内部滚动规避内容超载。 |
+| FR-Q208 | 系统必须对标题、subtitle、单项、整页可见字符、代码行数和重复信号生成确定性 SlideQualityReport。 |
+| FR-Q209 | 浏览器测试必须在 `1280×720` 和 `390×844` 检查关键容器的水平/垂直溢出并保存截图；DOM 溢出断言阻塞合并，首版截图由人工审查。 |
 
 ### 4.11 互动场景（v0.4 计划）
 
@@ -371,7 +386,19 @@ MVP 只有一个逻辑参与者：本地用户。
 
 **Given** 用户只填写“TCP 拥塞控制”且不展开课程设置<br>
 **When** 系统创建草稿并生成大纲<br>
-**Then** MySQL 中保存规范化 CourseBrief，Prompt v2 使用初学者、15 分钟、案例式和自动互动默认值，刷新后这些值不改变。
+**Then** 原始 topic 不变；MySQL 中保存初学者、15 分钟、案例式和自动互动等确定性默认值，所有缺省字段来源为 `default`，刷新后这些值不改变。
+
+### 场景 G-2：描述已经包含教学要求（v0.4）
+
+**Given** 用户填写“面向大一零基础学生，用 15 分钟讲清 TCP 拥塞控制，学完能够解释慢启动与拥塞避免的切换条件，并包含一个对比案例”且不展开高级设置<br>
+**When** 系统执行 `outline.v2`<br>
+**Then** audience、learnerLevel、durationMinutes、learningGoal 和附加案例要求来自 `prompt`，未出现的字段使用 `default`；字段解析与大纲生成在同一次正常模型调用中完成。
+
+### 场景 G-3：描述与高级设置冲突（v0.4）
+
+**Given** 原始描述写“面向零基础学习者”，但用户在高级设置中选择 advanced<br>
+**When** 系统解析并保存大纲<br>
+**Then** learnerLevel 最终为 advanced、来源为 `explicit_setting`，同时保存并展示 `SETTING_PROMPT_CONFLICT`；用户确认前修改 Brief 时旧大纲失效。
 
 ### 场景 H：互动脚本异常（v0.4）
 
@@ -395,9 +422,9 @@ MVP 只有一个逻辑参与者：本地用户。
 | 逐场景生成与失败隔离 | FR-201～209 | M4 |
 | 课堂、测验和可选语音 | FR-401～408 | M5 |
 | 可验收交付 | 全部 NFR、AC-01～12 | M6 |
-| 质量上下文、Prompt v2 与丰富静态内容 | FR-Q101～205 | M7.1～M7.2 |
+| 质量上下文、Prompt v2 与幻灯片表达系统 | FR-Q101～117、FR-Q201～209 | M7.1～M7.2 |
 | 受控互动场景 | FR-I101～110、NFR-SEC-08～10 | M7.3 |
 | 单场景再生成与质量验收 | FR-Q301～307 | M7.4 |
-| 单一可度量研究问题 | 从 M7 数据中另行立项 | M8 |
+| 单一可度量研究问题 | 从 M7 数据中另行立项 | MX |
 
 当需求编号或范围发生变化时，必须同步更新 [01-scope.md](01-scope.md)、[03-architecture.md](03-architecture.md)、[06-roadmap.md](06-roadmap.md) 和 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
