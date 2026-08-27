@@ -39,7 +39,7 @@ scene-outlines-stream
 | 按阶段/类型模型路由 | MVP 固定 DeepSeek；一次运行固定一个 Provider/模型 |
 | 多种 JSON 修复策略 | 精确解析 + 代码围栏提取 + 一次模型修复 |
 | 默认最多多次传输重试 | 有类型分类、总调用硬上限 |
-| 首场景完成即进课堂 | MVP 全部场景结束后进入正式课堂 |
+| 首场景完成即自动切入课堂 | MVP 串行生成；全部完成才标记正式 ready，已有成功场景可手动部分预览 |
 | 图片、视频、云 TTS | 不进入生成管线 |
 
 v0.4 只追加 OpenMAIC 中最接近当前质量问题的三点：更完整的教学要求、专用场景 Prompt，以及一个自包含 diagram 互动页面。自由坐标画布、媒体、多智能体和五类 widget 仍不复刻。
@@ -335,7 +335,7 @@ coursePlan 只取大纲标题和类型；previousSummary 最多取数据库中�
 - narration 非空且长度受限；
 - summary 非空且长度受限；
 - 可见内容不能为空；
-- 输出不包含 HTML/script、外部 URL 或未定义字段。
+- 除 `slide.code.code` 的只读源码外，输出普通文本不包含 HTML/script、外部 URL 或未定义字段。
 
 slide 检查：
 
@@ -343,7 +343,7 @@ slide 检查：
 - 总字符量不超过页面上限；
 - 至少覆盖大纲关键点中的大部分，MVP 可以用规范化关键词命中率作弱门；
 - 不允许连续多个完全相同 Block。
-- code block 的 language、code、caption 满足长度约束；代码只作为文本，不允许 HTML、外部脚本或执行指令。
+- code block 的 language、code、caption 满足长度约束；`code` 可包含 HTML/JSX/TSX 教学源码，但只按文本转义，不允许产生外部脚本加载或任何执行路径。
 
 quiz 检查：
 
@@ -374,7 +374,7 @@ Prompt 要求：
 - 明确“只返回一个 JSON 对象，不要 Markdown”；
 - 给出完整但最小的 JSON 示例；
 - 明确字段长度、数量和枚举；
-- 明确不要生成 id、Action、HTML、链接和额外字段；
+- 明确不要生成 id、Action、可执行 HTML、链接和额外字段；只读 HTML/JSX/TSX 示例只能放在 `slide.code.code`；
 - quiz 明确 correctOptionIndex 的语义；
 - 不把 Zod Schema 原样无限展开到 Prompt，可维护一份紧凑格式说明；
 - 不能依赖“模型应该懂”来代替运行时校验。
@@ -446,10 +446,11 @@ MVP 不进行大量正则替换和猜测性字段补全。过度“修好”JSON
 | 限流/临时上游 | 408、429、5xx | 最多 2 次 |
 | 网络 | timeout、连接重置、DNS 临时失败 | 最多 2 次 |
 | 用户取消 | AbortError | 否，立即终止 |
+| 2xx 响应不可用 | 空体、非 JSON、异常 envelope、空 content | 最多 2 次 |
 | 输出不合法 | JSON/Schema/语义门失败 | 仅 1 次 repair |
 | 内部编程错误 | 未知异常 | 否，记录并返回内部错误 |
 
-退避采用 `baseDelay * 2^attempt + jitter`，同时尊重 AbortSignal。
+退避采用 `baseDelay * 2^attempt + jitter`，同时尊重 AbortSignal。Adapter 对 2xx 响应先读取文本，再区分 `empty_body`、`invalid_json`、`invalid_envelope` 和 `empty_content`；这些内部诊断只进入脱敏结构化日志，对外仍使用稳定的 `AI_UPSTREAM_ERROR`。Adapter 只分类，outline/scene pipeline 是唯一的自动重试和预算决策者。
 
 ### 9.2 调用硬上限
 
@@ -463,6 +464,8 @@ MVP 不进行大量正则替换和猜测性字段补全。过度“修好”JSON
 一次自动运行只允许 1 个 outline 请求和 N 个 scene 请求，因此业务请求上限为 `1 + sceneCount`，最多 6 个。单个 API 请求设置 `MAX_UPSTREAM_CALLS_PER_REQUEST = 4`，初次调用、网络重试和 repair 全部计入；到达上限后立即返回 `GENERATION_BUDGET_EXHAUSTED`。由此一次自动运行的上游调用理论硬上限为 24，而正常值仍为 4～6。
 
 每个 Route Handler 独立限制本请求，数据库中的 Course 状态、activeOperation 和 revision 保证同一个 pending outline 在一次自动运行中只提交一次。手动重试是用户明确触发的新请求，仍受单请求上限控制；Course.sceneProgress.attempts 持续累计。响应和持久化 GenerationMetadata 都记录 upstreamCalls，不能只用 HTTP 请求数估算模型成本。
+
+M6.5 日志事件 `ai.upstream.retrying` / `ai.upstream.rejected` 记录 `requestId`、stage、upstreamAttempt、willRetry、retryDelayMs、providerStatus、responseKind、contentType、responseBytes 和 finishReason。日志不记录 Prompt、主题、API Key、数据库 URL 或原始模型响应。
 
 建议超时：
 

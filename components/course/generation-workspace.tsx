@@ -52,6 +52,13 @@ function requiresServerConfiguration(error?: { code: string }) {
   return error?.code === "AI_NOT_CONFIGURED" || error?.code === "AI_AUTH_FAILED";
 }
 
+/** 根据服务端分类告诉用户下一步，不暴露 Provider 原始响应。 */
+function recoveryGuidance(error: ErrorNotice) {
+  if (requiresServerConfiguration(error)) return "请修正服务端 Provider 配置后再试。";
+  if (error.retryable) return "服务端已在单请求预算内完成自动重试；仍失败时可在对应场景手动重试。";
+  return "该错误不会自动重试，请根据 requestId 检查终端日志。";
+}
+
 export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }) {
   const router = useRouter();
   const [course, setCourse] = useState(initialCourse);
@@ -585,7 +592,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
             </div>
           </div>
           <div className="boundary-card">
-            <span>M6 RECOVERABLE PIPELINE</span>
+            <span>M6.5 RESILIENT PIPELINE</span>
             <h3>
               {readyCount > 0
                 ? `${String(readyCount).padStart(2, "0")} 个场景已独立提交`
@@ -617,7 +624,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
               <code>requestId: {operationView.requestId}</code>
               <small>
                 {operationView.status === "running"
-                  ? "终端每 10 秒输出一次 running 心跳"
+                  ? "终端每 10 秒输出 running 心跳；临时远端异常会在 4 次总预算内自动重试"
                   : "可用 requestId 对照终端中的结束日志"}
               </small>
             </div>
@@ -630,15 +637,21 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
           {error ? (
             <div className="form-error error-notice" role="alert">
               <span>
-                {error.code} · {error.retryable ? "可重试" : "需人工处理"}
+                {error.code} · {requiresServerConfiguration(error) ? "需修正配置" : error.retryable ? "可手动重试" : "需人工处理"}
               </span>
               <p>{error.message}</p>
+              <small>{recoveryGuidance(error)}</small>
             </div>
           ) : null}
           {busy ? (
             <button className="cancel-request" type="button" onClick={cancelCurrentRequests}>
               取消当前请求
             </button>
+          ) : null}
+          {course.status !== "ready" && readyCount > 0 && busy === null ? (
+            <Link className="button button--dark button--wide" href={`/classroom/${course.id}`}>
+              预览已生成的 {readyCount} 个场景 <span>→</span>
+            </Link>
           ) : null}
           {course.status === "ready" ? (
             <Link className="button button--accent button--wide" href={`/classroom/${course.id}`}>

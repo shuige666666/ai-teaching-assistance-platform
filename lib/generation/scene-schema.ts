@@ -55,6 +55,34 @@ export class InvalidSceneError extends Error {
 function normalizedText(value: string): string { return value.trim().toLocaleLowerCase("zh-CN").replace(/\s+/g, " "); }
 function containsForbiddenMarkup(value: string): boolean { return /<\/?[a-z][^>]*>|https?:\/\/|www\./i.test(value); }
 
+/** 收集会直接显示为普通文本的字段；代码块源码由 React 转义展示，不按可执行 HTML 处理。 */
+function collectVisibleText(output: SceneModelOutput): Array<{ path: string; value: string }> {
+  const fields = [
+    { path: "title", value: output.title },
+    { path: "narration", value: output.narration },
+    { path: "summary", value: output.summary },
+  ];
+  if (output.type === "quiz") {
+    output.content.questions.forEach((question, questionIndex) => {
+      fields.push({ path: `content.questions.${questionIndex}.prompt`, value: question.prompt });
+      question.options.forEach((option, optionIndex) => fields.push({ path: `content.questions.${questionIndex}.options.${optionIndex}.label`, value: option.label }));
+      fields.push({ path: `content.questions.${questionIndex}.explanation`, value: question.explanation });
+    });
+    return fields;
+  }
+  if (output.content.subtitle) fields.push({ path: "content.subtitle", value: output.content.subtitle });
+  output.content.blocks.forEach((block, blockIndex) => {
+    if (block.type === "paragraph") fields.push({ path: `content.blocks.${blockIndex}.text`, value: block.text });
+    if (block.type === "bullet_list") block.items.forEach((item, itemIndex) => fields.push({ path: `content.blocks.${blockIndex}.items.${itemIndex}`, value: item }));
+    if (block.type === "callout") {
+      if (block.title) fields.push({ path: `content.blocks.${blockIndex}.title`, value: block.title });
+      fields.push({ path: `content.blocks.${blockIndex}.text`, value: block.text });
+    }
+    if (block.type === "code" && block.caption) fields.push({ path: `content.blocks.${blockIndex}.caption`, value: block.caption });
+  });
+  return fields;
+}
+
 /** 校验场景 DTO 的类型一致性、可见内容、安全文本和测验索引等课程语义。 */
 export function validateSceneOutput(value: unknown, outline: SceneOutline): SceneModelOutput {
   const parsed = SceneModelOutputSchema.safeParse(value);
@@ -64,7 +92,8 @@ export function validateSceneOutput(value: unknown, outline: SceneOutline): Scen
   const output = parsed.data;
   const issues: SceneIssue[] = [];
   if (output.type !== outline.type) issues.push({ path: "type", message: `场景类型必须与大纲的 ${outline.type} 一致` });
-  if (containsForbiddenMarkup(JSON.stringify(output))) issues.push({ path: "content", message: "场景内容不能包含 HTML 标签或外部 URL" });
+  const unsafeField = collectVisibleText(output).find((field) => containsForbiddenMarkup(field.value));
+  if (unsafeField) issues.push({ path: unsafeField.path, message: "非代码内容不能包含 HTML 标签或外部 URL" });
 
   if (output.type === "slide") {
     if (JSON.stringify(output.content).length > 8_000) issues.push({ path: "content", message: "幻灯片可见内容超过页面上限" });

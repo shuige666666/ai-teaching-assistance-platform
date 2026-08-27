@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Next.js：服务端生成调试",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm dev:inspect",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Next.js：浏览器前端调试",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}"
+    }
+  ]
+}

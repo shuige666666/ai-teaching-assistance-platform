@@ -31,14 +31,43 @@ export type AIErrorCode =
   | "AI_TIMEOUT"
   | "AI_UPSTREAM_ERROR";
 
+export type AIResponseKind =
+  | "aborted"
+  | "network_error"
+  | "http_error"
+  | "response_read_error"
+  | "empty_body"
+  | "invalid_json"
+  | "invalid_envelope"
+  | "empty_content";
+
+export interface AIAdapterDiagnostics {
+  providerStatus?: number;
+  responseKind: AIResponseKind;
+  contentType?: string;
+  responseBytes?: number;
+  finishReason?: string;
+}
+
+interface AIAdapterErrorOptions extends ErrorOptions {
+  diagnostics?: AIAdapterDiagnostics;
+  automaticRetryable?: boolean;
+}
+
 export class AIAdapterError extends Error {
+  public readonly diagnostics?: AIAdapterDiagnostics;
+  public readonly automaticRetryable: boolean;
+
   constructor(
     public readonly code: AIErrorCode,
     message: string,
     public readonly retryable: boolean,
-    options?: ErrorOptions,
+    options?: AIAdapterErrorOptions,
   ) {
     super(message, options);
     this.name = "AIAdapterError";
+    this.diagnostics = options?.diagnostics;
+    // 用户可手动重试不等于当前已取消的请求还应自动重试。
+    this.automaticRetryable = options?.automaticRetryable ?? retryable;
   }
 }

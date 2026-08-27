@@ -1,6 +1,6 @@
 # 08. 部署、恢复与验收手册
 
-> 适用范围：第 1～7 节记录已完成的 M6 本机或受信任网络交付；第 8 节是 M7/v0.4 的计划验收，不代表当前已经实现。当前版本没有账户与权限系统，不允许直接暴露到公网。
+> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节是 M7/v0.4 的计划验收，不代表当前已经实现。当前版本没有账户与权限系统，不允许直接暴露到公网。
 
 ## 1. 最小生产启动
 
@@ -75,7 +75,7 @@ pnpm db:migrate
 | `AI_NOT_CONFIGURED` | remote 当前档位缺 Key、Base URL、Model 或超时非法 | 修正当前 Provider 变量并重启；不要反复点击不可重试按钮 |
 | `AI_AUTH_FAILED` | Key 无效、无权限或地域/Base URL 不匹配 | 在 Provider 控制台确认权限和地域，不自动切换 mock |
 | `AI_RATE_LIMITED` / 5xx | 上游限流或短暂故障 | 等待后重试；系统最多自动传输重试两次 |
-| `INVALID_MODEL_OUTPUT` | 首次输出和一次修复仍未通过场景契约 | 已完成场景不会丢失；在失败场景右侧点击“重试”，新请求会重新采样 |
+| `INVALID_MODEL_OUTPUT` | 首次输出和一次修复仍未通过场景契约 | 已完成场景不会丢失且可从生成页进入部分预览；在失败场景右侧点击“重试”，新请求会重新采样。若旧日志提示 HTML 且主题要求 React/JSX，更新到已收窄 `code.code` 校验的版本后再试 |
 | 页面显示生成中但进程已重启 | 数据库保留未过期 activeOperation | 等租约到期，在对应场景点击“恢复” |
 | `COURSE_CONFLICT` | 页面 revision 落后于服务器 | 刷新课程后重新操作，禁止覆盖新版本 |
 | Playwright 缺浏览器 | 首次机器没有对应 Chromium | 运行 `pnpm exec playwright install chromium` |
@@ -91,7 +91,7 @@ pnpm dev          # 页面热更新 + 结构化业务日志
 pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
 ```
 
-一次课程创建或生成操作会使用相同 `requestId` 贯穿浏览器操作台、请求头、API 响应/错误和服务端日志。日志事件为 `course.create.*`、`outline.generate.*`、`scene.generate.*`；持续操作每 10 秒输出 `running` 和 `elapsedMs`。排障时先复制页面 requestId，再在终端搜索该值，不要通过反复点击制造重复草稿。日志刻意不记录主题、Prompt、模型返回、Key 和数据库连接串。
+一次课程创建或生成操作会使用相同 `requestId` 贯穿浏览器操作台、请求头、API 响应/错误和服务端日志。日志事件为 `course.create.*`、`outline.generate.*`、`scene.generate.*`；持续操作每 10 秒输出 `running` 和 `elapsedMs`。M6.5 另增 `ai.upstream.retrying` 与 `ai.upstream.rejected`，用 `upstreamAttempt`、`responseKind`、`providerStatus`、`responseBytes`、`finishReason` 和 `willRetry` 说明远端响应状态。排障时先复制页面 requestId，再在终端搜索该值，不要通过反复点击制造重复草稿。日志刻意不记录主题、Prompt、模型返回、Key 和数据库连接串。
 
 如果首页停在“正在打开工作台”，先复制 requestId，然后直接刷新首页检查“最近课程”。看到课程说明草稿已经写入 MySQL，可点击该课程继续，不应再次创建。客户端保存草稿超过 15 秒会停止等待并显示同样的排障提示；服务端可能已完成提交，因此重试前仍应刷新核对。
 
@@ -110,6 +110,10 @@ pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
 
 课程 `40e63cea-8afd-462c-b888-300e4ddee3d9` 最终为 `ready`、`REV.16`、`5/5` 场景完成。生成过程中两个场景曾因 `INVALID_MODEL_OUTPUT` 失败，其他完成场景保持不变；用户从失败场景右侧逐项重试后成功，因而同时形成了真实 Provider 的失败隔离和恢复证据。记录不包含主题、API Key、数据库连接串、Prompt 正文或模型原文。
 
+### 6.1 M6.5 远端响应自动恢复记录
+
+2026-08-26 用 `deepseek-v4-flash` 生成一门临时 3 场景课程。outline 使用 1 次上游调用；三个 scene 分别使用 2、4、2 次。第 2 场 requestId 为 `1d5aa4c2-438b-4189-afbe-126ff07e5834`，repair 在第 2、3 次调用均收到 HTTP 200、`responseKind=empty_content`、`finishReason=length`，系统输出两条 `ai.upstream.retrying` 后在第 4 次调用成功。最终课程为 `3/3 ready`，说明响应异常与内容 repair 共享同一 4 次调用硬上限且可真实恢复。临时课程验收后已删除。
+
 ## 7. AC-01～AC-12 证据矩阵
 
 | 条件 | 当前证据 | 状态 |
@@ -117,9 +121,9 @@ pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
 | AC-01 本机生产启动 | 本手册、`.env.example`、幂等迁移、本机 production build 与 E2E | 通过 |
 | AC-02 mock 无 Key 完整流程 | `e2e/mock-course-flow.spec.ts` | 自动通过 |
 | AC-03 生成 3～5 项大纲 | outline 单元测试、3 场景 E2E 与 DeepSeek 5 场景实测 | 自动 + DeepSeek 人工通过 |
-| AC-04 slide/quiz 与代码块 | scene 装配、renderer 安全测试与 E2E | 自动通过 |
+| AC-04 slide/quiz 与代码块 | scene 装配、只读 JSX 契约、renderer 转义安全测试与 E2E | 自动通过 |
 | AC-05 非法模型 JSON 不持久化 | outline/scene pipeline repair 与失败测试 | 自动通过 |
-| AC-06 中间失败隔离和重试 | SceneGenerationService 故障注入测试与 DeepSeek 两场景失败后逐项重试 | 自动 + DeepSeek 人工通过 |
+| AC-06 中间失败隔离、部分预览和重试 | SceneGenerationService 故障注入、partial classroom 渲染测试与 DeepSeek 两场景失败后逐项重试 | 自动 + DeepSeek 人工通过 |
 | AC-07 播放、暂停、继续和导航 | playback reducer 与 Chromium E2E | 自动通过 |
 | AC-08 quiz 提交和解析 | 服务端判分、MySQL integration 与 E2E | 自动通过 |
 | AC-09 刷新后恢复 | MySQL 新仓储实例测试与 E2E `page.reload()` | 自动通过 |
@@ -127,7 +131,7 @@ pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
 | AC-11 密钥不进入客户端 | 服务端配置边界、bundle/仓库扫描与 storage 检查 | 自动 + 人工审计通过 |
 | AC-12 质量命令 | `pnpm verify:full` 与 GitHub Actions | 自动通过 |
 
-M6 已按本机、MySQL、mock 与 DeepSeek 的 v0.3 边界完成。百炼真实生成和另一台机器部署不属于当前退出门，后续只有在双 Provider 对比或异机交付确有需要时才补充相应证据。
+M6/M6.5 已按本机、MySQL、mock 与 DeepSeek 的 v0.3 边界完成。百炼真实生成和另一台机器部署不属于当前退出门，后续只有在双 Provider 对比或异机交付确有需要时才补充相应证据。
 
 ## 8. M7/v0.4 计划验收
 

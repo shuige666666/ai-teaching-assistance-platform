@@ -5,6 +5,7 @@ import { parseModelJson } from "./parse-json";
 import { assembleSceneOutlines, InvalidOutlineError, validateAndNormalizeOutline } from "./outline-schema";
 import { buildOutlineUserPrompt, OUTLINE_PROMPT_VERSION, OUTLINE_SYSTEM_PROMPT } from "./prompts/outline.v1";
 import { buildRepairUserPrompt, REPAIR_SYSTEM_PROMPT } from "./prompts/repair.v1";
+import { logUpstreamFailure, retryDelayMs, waitForRetry } from "./retry-policy";
 
 export class OutlineGenerationError extends Error {
   constructor(
@@ -26,16 +27,6 @@ function mergeUsage(results: GenerateTextResult[]) {
   const inputTokens = results.reduce((sum, result) => sum + (result.usage?.inputTokens ?? 0), 0);
   const outputTokens = results.reduce((sum, result) => sum + (result.usage?.outputTokens ?? 0), 0);
   return results.some((result) => result.usage) ? { inputTokens, outputTokens } : undefined;
-}
-
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      reject(new AIAdapterError("AI_TIMEOUT", "模型请求超时或被取消", true));
-    }, { once: true });
-  });
 }
 
 /** 执行大纲调用、受限传输重试、解析、语义门和最多一次模型修复。 */
@@ -62,11 +53,21 @@ export async function generateOutline(
       } catch (error) {
         const mapped = error instanceof AIAdapterError ? error : new AIAdapterError("AI_UPSTREAM_ERROR", "模型调用失败", false, { cause: error });
         lastError = mapped;
-        if (!mapped.retryable || attempt === 2 || upstreamCalls >= maxCalls) {
+        const willRetry = mapped.automaticRetryable && attempt < 2 && upstreamCalls < maxCalls;
+        if (!willRetry) {
+          logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: false });
           throw new OutlineGenerationError(mapped.code, mapped.message, mapped.retryable, upstreamCalls, undefined, { cause: mapped });
         }
-        // 3. 网络或限流错误可以等待后重试；内容格式错误在后面单独处理。
-        await delay(100 * (2 ** attempt), input.signal);
+        const delayMs = retryDelayMs(input.requestId, attempt);
+        logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: true, retryDelayMs: delayMs });
+        // 3. 网络、限流或偶发响应错误可以等待后重试。
+        try {
+          await waitForRetry(delayMs, input.signal);
+        } catch (abortError) {
+          const aborted = abortError instanceof AIAdapterError ? abortError : mapped;
+          logUpstreamFailure(aborted, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: false });
+          throw new OutlineGenerationError(aborted.code, aborted.message, aborted.retryable, upstreamCalls, undefined, { cause: aborted });
+        }
       }
     }
     throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次模型调用已达到预算上限", true, upstreamCalls, undefined, { cause: lastError });

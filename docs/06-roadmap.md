@@ -10,7 +10,7 @@
 
 M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7 不直接做论文创新，而是把当前工程基线提升为“课程要求更明确、静态内容更丰富、至少一种互动场景可安全运行、质量改进有证据”的 v0.4 产品基线。M8 才选择一个可度量研究问题。
 
-**当前进度：M1～M6 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7 方案已冻结但尚未进入代码。下一步先执行 M7.0 质量基线，再依次实现 CourseBrief/Prompt v2、丰富静态内容、diagram 互动闭环和单场景再生成。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7 方案已冻结但尚未进入代码。下一步先执行 M7.0 质量基线，再依次实现 CourseBrief/Prompt v2、丰富静态内容、diagram 互动闭环和单场景再生成。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
@@ -252,7 +252,7 @@ quiz 进入页面即可作答；自动播放到 learner pause 时进入 awaiting
 
 ## 10.5. M6.5：远端响应韧性与可观测性
 
-> 状态：方案已完成，代码尚未开始。完整分类、调用预算、验收矩阵和提交顺序见 [10-m6.5-remote-response-resilience-plan.md](10-m6.5-remote-response-resilience-plan.md)。
+> 状态：已完成实施与验收。完整分类、调用预算、验收矩阵和实测证据见 [10-m6.5-remote-response-resilience-plan.md](10-m6.5-remote-response-resilience-plan.md)。
 
 M6.5 是 M6 与 M7 之间的工程加固里程碑，不重新打开 M6 的交付范围，也不修改 M7 的质量与互动计划。它将 HTTP 2xx 下的空响应、非 JSON、异常 OpenAI-compatible envelope 和空 content 从“未知且不可重试”改为可诊断、可受限重试的上游响应错误，同时保留严格 Zod、领域语义门、一次 repair 和单请求 4 次上游调用硬上限。
 
@@ -268,7 +268,7 @@ M6.5.0 冻结脱敏故障 fixture 和分类契约
 
 ### 退出门
 
-AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 通过；可恢复响应异常在调用硬上限内自动或手动恢复；认证和明确配置错误不自动重试；结构化日志可用 `requestId` 追踪但不包含 Prompt、主题、Key 或原始模型响应。
+AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepSeek 课程中的连续两次 `empty_content` 已在第 4 次上游调用自动恢复，最终 3/3 ready。认证和明确配置错误不自动重试；结构化日志可用 `requestId` 追踪但不包含 Prompt、主题、Key 或原始模型响应。
 
 ## 11. M7：课程质量与互动能力
 
@@ -334,6 +334,4 @@ M8 从 M7 已收集的数据中只选择一个主问题，例如教学策略 Pro
 
 ## 14. 推荐的下一次开发迭代
 
-下一批提交先执行 M6.5.0，用脱敏 fixture 冻结远端响应异常的分类和重试契约，随后按 M6.5.1～M6.5.4 完成工程加固。
-
-M6.5 退出后，按既定方案执行 M7.0：建立评价集、评分量表、基线生成清单和报告模板，选择 6 个无隐私主题，用当前 DeepSeek 配置生成可追踪基线；不直接改 Prompt 或加 iframe。M7.0 退出后再开始 Course v2 和迁移；迁移通过前不修改当前 Scene 联合。
+下一批提交回到既定 M7.0：建立评价集、评分量表、基线生成清单和报告模板，选择 6 个无隐私主题，用当前 DeepSeek 配置生成可追踪基线；不直接改 Prompt 或加 iframe。M7.0 退出后再开始 Course v2 和迁移；迁移通过前不修改当前 Scene 联合。

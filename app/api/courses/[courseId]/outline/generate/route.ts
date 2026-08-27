@@ -21,6 +21,8 @@ export async function POST(request: Request, context: RouteContext) {
     // 5. 创建模型调用对象：mock 或远端模型由服务端配置决定。
     const { adapter, timeoutMs } = createAIAdapter();
     // 6. 调用 generate()：读取课程、生成大纲、校验内容，然后保存到 MySQL。
+    // 这里 OutlineGenerationService 的括号里面的参数主要是用于创建一个 OutlineGenerationService 对象，并把它依赖的工具传进去
+    // generate 后面的括号里的参数就是常规的方法调用要携带的参数
     const course = await new OutlineGenerationService(getCourseRepository(), adapter, timeoutMs).generate(
       courseId,
       input.expectedRevision,

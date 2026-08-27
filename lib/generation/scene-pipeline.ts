@@ -6,6 +6,7 @@ import { assembleScene, InvalidSceneError, validateSceneOutput } from "./scene-s
 import { buildQuizUserPrompt, QUIZ_PROMPT_VERSION, QUIZ_SYSTEM_PROMPT } from "./prompts/scene-quiz.v1";
 import { buildSceneRepairPrompt, SCENE_REPAIR_SYSTEM_PROMPT } from "./prompts/scene-repair.v1";
 import { buildSlideUserPrompt, SLIDE_PROMPT_VERSION, SLIDE_SYSTEM_PROMPT } from "./prompts/scene-slide.v1";
+import { logUpstreamFailure, retryDelayMs, waitForRetry } from "./retry-policy";
 
 export class SceneGenerationError extends Error {
   constructor(
@@ -19,16 +20,6 @@ export class SceneGenerationError extends Error {
     super(message, options);
     this.name = "SceneGenerationError";
   }
-}
-
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      reject(new AIAdapterError("AI_TIMEOUT", "模型请求超时或被取消", true));
-    }, { once: true });
-  });
 }
 
 function mergeUsage(results: GenerateTextResult[]) {
@@ -72,11 +63,21 @@ export async function generateScene(
       } catch (error) {
         const mapped = error instanceof AIAdapterError ? error : new AIAdapterError("AI_UPSTREAM_ERROR", "模型调用失败", false, { cause: error });
         lastError = mapped;
-        if (!mapped.retryable || attempt === 2 || upstreamCalls >= maxCalls) {
+        const willRetry = mapped.automaticRetryable && attempt < 2 && upstreamCalls < maxCalls;
+        if (!willRetry) {
+          logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: false });
           throw new SceneGenerationError(mapped.code, mapped.message, mapped.retryable, upstreamCalls, undefined, { cause: mapped });
         }
-        // 4. 网络或限流错误可以等待后重试。
-        await delay(100 * (2 ** attempt), input.signal);
+        const delayMs = retryDelayMs(input.requestId, attempt);
+        logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: true, retryDelayMs: delayMs });
+        // 4. 网络、限流或偶发响应错误可以等待后重试。
+        try {
+          await waitForRetry(delayMs, input.signal);
+        } catch (abortError) {
+          const aborted = abortError instanceof AIAdapterError ? abortError : mapped;
+          logUpstreamFailure(aborted, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: false });
+          throw new SceneGenerationError(aborted.code, aborted.message, aborted.retryable, upstreamCalls, undefined, { cause: aborted });
+        }
       }
     }
     throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次场景调用已达到预算上限", true, upstreamCalls, undefined, { cause: lastError });

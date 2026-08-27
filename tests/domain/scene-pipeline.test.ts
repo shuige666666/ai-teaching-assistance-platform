@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MockAIAdapter } from "@/lib/ai/mock-adapter";
+import { AIAdapterError, type AIAdapter } from "@/lib/ai/contracts";
 import { createFixtureCourse } from "@/lib/domain/fixture";
 import { generateScene } from "@/lib/generation/scene-pipeline";
 import { assembleScene, InvalidSceneError, validateSceneOutput } from "@/lib/generation/scene-schema";
@@ -70,6 +71,23 @@ describe("scene generation boundary", () => {
     expect(() => validateSceneOutput({ ...validSlide, narration: "请执行 <script>bad()</script>" }, course.outlines[0])).toThrowError(InvalidSceneError);
   });
 
+  it("允许 code 字段包含只读 JSX，同时继续拒绝普通文本中的标签和链接", () => {
+    const course = createFixtureCourse("React 场景契约测试", 3);
+    const output = validateSceneOutput({
+      ...validSlide,
+      content: { blocks: [{
+        type: "code",
+        language: "tsx",
+        code: "export function App() { return <main><h1>Hello</h1></main>; }",
+        caption: "只读 JSX 示例",
+      }] },
+    }, course.outlines[0]);
+
+    if (output.type !== "slide") throw new Error("slide expected");
+    expect(output.content.blocks[0]).toMatchObject({ type: "code", language: "tsx" });
+    expect(() => validateSceneOutput({ ...validSlide, summary: "访问 https://example.com" }, course.outlines[0])).toThrowError(InvalidSceneError);
+  });
+
   it("mock 场景也经过解析、校验、装配和一次修复", async () => {
     const course = createFixtureCourse("场景修复测试", 3);
     const scene = await generateScene(new MockAIAdapter(["{}", JSON.stringify(validSlide)]), {
@@ -79,5 +97,30 @@ describe("scene generation boundary", () => {
       signal: new AbortController().signal,
     });
     expect(scene.generation).toMatchObject({ repaired: true, upstreamCalls: 2, requestId: "scene-repair-request" });
+  });
+
+  it("场景首次返回空 content 时在预算内恢复", async () => {
+    const course = createFixtureCourse("场景远端恢复测试", 3);
+    let calls = 0;
+    const adapter: AIAdapter = {
+      async generateText() {
+        calls += 1;
+        if (calls === 1) {
+          throw new AIAdapterError("AI_UPSTREAM_ERROR", "模型服务本次没有返回可用内容", true, {
+            diagnostics: { providerStatus: 200, responseKind: "empty_content", responseBytes: 80 },
+          });
+        }
+        return { text: JSON.stringify(validSlide), provider: "deepseek", model: "test" };
+      },
+    };
+
+    const scene = await generateScene(adapter, {
+      course,
+      outline: course.outlines[0],
+      requestId: "scene-upstream-retry",
+      signal: new AbortController().signal,
+    });
+
+    expect(scene.generation).toMatchObject({ provider: "deepseek", upstreamCalls: 2, repaired: false });
   });
 });

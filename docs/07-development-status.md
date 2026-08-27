@@ -4,7 +4,7 @@
 
 ## 1. 当前结论
 
-项目已完成 **M1～M6 的代码实现、mock 自动验收与 DeepSeek 真实 smoke test**，达到当前“本机 + MySQL + mock + DeepSeek”的 MVP 交付范围。mock 下的大纲、场景、课堂、刷新恢复和自动清理均进入可重复 Chromium E2E；DeepSeek 已完成真实大纲、5 个场景、输出修复和失败后单场景重试。当前在无模型 Key、无模型网络的环境中可以完成：
+项目已完成 **M1～M6.5 的代码实现、mock 自动验收与 DeepSeek 真实 smoke test**，达到当前“本机 + MySQL + mock + DeepSeek”的工程基线。mock 下的大纲、场景、课堂、刷新恢复和自动清理均进入可重复 Chromium E2E；DeepSeek 已完成真实生成、输出修复、局部重试和偶发空 content 的自动恢复。当前在无模型 Key、无模型网络的环境中可以完成：
 
 ```text
 首页填写主题并选择 3～5 个场景
@@ -16,7 +16,8 @@
   → 按 outline 顺序逐个登记和生成 slide / quiz
   → 每场独立解析、语义校验、装配 Action 并短事务提交
   → 单场失败时保留其他结果、继续后续场景并显式重试
-  → 进入课堂按 Action 自动播放、暂停、继续和重播
+  → 至少一个场景成功后可进入部分课堂预览；全部完成才标记 ready
+  → 课堂按 Action 自动播放、暂停、继续和重播
   → quiz 停在 awaitingLearner，服务端判分并写入 quiz_attempts
   → 重启 Next.js 后从 MySQL 恢复课程
   → 显式删除课程及其关联测验记录
@@ -42,7 +43,7 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 - `/`：创建 MySQL 课程、显示重启后恢复的历史课程并显式确认删除；
 - `/generation/[courseId]`：从 MySQL 读取草稿，审核大纲，串行生成场景，展示逐项进度和失败重试；
-- `/classroom/[courseId]`：从 MySQL 恢复课程，固定渲染 slide/quiz/code；
+- `/classroom/[courseId]`：从 MySQL 恢复课程；至少一个成功场景即可部分预览，整课 ready 时正式播放；固定渲染 slide/quiz/code；
 - `POST /api/courses`、`GET /api/courses`、`GET/DELETE /api/courses/[courseId]`；
 - `POST /api/courses/[courseId]/outline/generate`：正式大纲生成与提交；
 - `PATCH /api/courses/[courseId]/outline`：人工编辑后的结构与语义复验；
@@ -74,7 +75,7 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 - 模型 Key、Base URL 与模型名只在服务端 Route Handler 调用链解析，没有 `NEXT_PUBLIC_` 模型配置；
 - 参数化 SQL 用于所有业务值；数据库名在迁移脚本中经过标识符白名单；
 - 数据库失败会返回 `DATABASE_UNAVAILABLE`，不会伪装成空课程列表；
-- 固定渲染与代码块纯文本安全边界继续保留。
+- 固定渲染与代码块纯文本安全边界继续保留；HTML/JSX/TSX 仅允许位于 `code.code` 并由 React 转义，普通文本中的标签和外链仍被拒绝。
 - 生成页离开或用户点击取消时会中止已登记的浏览器请求；迟到服务端事实通过刷新恢复；
 - failed 场景只有 `retryable=true` 才显示重试，认证/配置错误明确要求修正环境；
 - GitHub Actions 只使用 mock 与临时 MySQL，不读取或调用远端模型 Key。
@@ -97,7 +98,7 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 ```text
 pnpm db:migrate  # 首次 applied 001；复跑 skip 001
 pnpm lint
-pnpm test        # 14 个文件、45 项无数据库/API 契约测试
+pnpm test        # 15 个文件、64 项无数据库/API 契约测试
 pnpm test:db     # 1 个文件、9 项真实 MySQL 测试
 pnpm build
 pnpm test:e2e    # 1 项 production Chromium 完整流程
@@ -144,23 +145,16 @@ M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表�
 
 DeepSeek 已验收课程的 5 个场景为 4 个 slide + 1 个 quiz，适合作为 v0.3 工程基线样本，但单个样本不能证明平均课程质量。后续必须在固定主题集和同一模型配置下比较 Prompt/契约版本。
 
-## 6. 下一步：M6.5 远端响应韧性与可观测性
+## 6. M6.5 远端响应韧性与可观测性验收结果
 
-M6 保持关闭，不重新打开其范围。真实 DeepSeek 调用新暴露了 HTTP 2xx 下的空体、非 JSON、异常 envelope 或空 content 会被统一标记为不可重试 `AI_UPSTREAM_ERROR` 的缺口。该问题不扩展为新产品功能，放入独立 M6.5 工程加固里程碑。
+M6.5 已完成。`OpenAICompatibleAdapter` 现在分层读取 HTTP 2xx 响应，区分空体、非 JSON、异常 envelope 和空 content；outline/scene pipeline 作为唯一重试决策者，在单请求 4 次硬上限内执行最多 2 次指数退避重试。Abort 不会在已取消请求内继续调用，但保留用户之后手动恢复的语义。
 
-```text
-M6.5.0 冻结远端故障 fixture 与诊断契约
-  → M6.5.1 分层解码 OpenAI-compatible 响应
-  → M6.5.2 受限重试、调用预算与安全日志
-  → M6.5.3 生成页恢复进度与一致操作
-  → M6.5.4 mock 故障注入、全量回归与 DeepSeek smoke
-  → M7.0 固定评价集、人工量表和 Prompt v1 基线
-  → M7.1 CourseBrief、schemaVersion 2、迁移和 outline.v2
-  → M7.2 steps/comparison/table、slide/quiz v2 与课程记忆
-  → M7.3 interactive/diagram 生成、MySQL、sandbox iframe 与 E2E
-  → M7.4 ready 场景再生成、成对质量报告和 v0.4 验收
-```
+M6.5 主验收时 62 个单元测试、9 个 MySQL 集成测试、production build 和 1 条 Chromium 完整课程 E2E 已通过。真实 DeepSeek `deepseek-v4-flash` smoke 生成 3 场景课程：outline 使用 1 次上游调用，三个 scene 分别使用 2、4、2 次。第 2 场 repair 在第 2、3 次调用收到 `empty_content + finish_reason=length`，日志记录 `ai.upstream.retrying`，第 4 次恢复并完成 3/3 ready。临时课程已删除。
 
-当前下一项可执行工作是 M6.5.0：先为正常响应、空体、非 JSON、异常 envelope、空 content、429/5xx、401/403 和 AbortError 建立脱敏、确定性测试，再修改生产分类。完整任务与退出门见 [10-m6.5-remote-response-resilience-plan.md](10-m6.5-remote-response-resilience-plan.md)。
+2026-08-26 缺陷回归确认课程 `6648e038-c9df-4faa-b77f-f49bfc75f4d0` 的第 4 场连续失败并非远端 envelope 故障，而是 React 教学内容中的 JSX 被全对象 HTML 正则误判。校验现已只检查会作为普通文本展示的字段，排除始终被转义的 `code.code`；Prompt 与 repair Prompt 同步声明只读源码边界。同时课堂门禁从“Course.status 必须 ready”调整为“至少存在一个已保存 Scene”，partial preview 显示完成数、原始场景序号和返回生成页入口。修复后 `pnpm verify:full` 通过：15 个文件、64 项单元测试，1 个文件、9 项 MySQL 集成测试，production build 与 Chromium E2E 1/1 均成功。
+
+## 7. 下一步：M7.0 质量基线与评价协议
+
+当前下一项可执行工作回到既定 M7.0：先建立 6 个主题的开发评价集和评分说明，再用现有 DeepSeek + Prompt v1 生成基线。此时不修改生产 Prompt，避免没有对照就宣称质量提高。
 
 M6.5 不修改 Prompt v1 教学策略或 Course Schema。M6.5 完成后，M7 仍按已冻结的 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md) 原序执行，不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。M7 完成后，毕业论文选题仍进入 M8。

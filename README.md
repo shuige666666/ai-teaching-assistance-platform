@@ -13,11 +13,11 @@
 
 ## 当前状态
 
-项目的 **M1～M6 第一阶段 MVP 已完成**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建草稿，经正式管线生成并编辑 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂自动播放并从 MySQL 恢复课程。
+项目的 **M1～M6.5 工程基线已完成**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建草稿，经正式管线生成并编辑 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂自动播放并从 MySQL 恢复课程。
 
 大纲和场景阶段共用 `MockAIAdapter` 与 OpenAI-compatible 远端适配器，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 可在讲解前直接作答；自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。DeepSeek 已完成一门 5 场景真实课程的大纲、场景、修复与失败后重试验证。代码中保留百炼兼容配置，但百炼联调和异机部署均属于后续可选扩展，不再作为第一阶段完成条件。
 
-下一步调整为 **M6.5：远端响应韧性与可观测性**，用于补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、日志和用户恢复反馈。M6.5 不增加新课程能力，完成后再执行原定 **M7 / v0.4：课程质量与互动能力**。M7 仍按“质量基线 → CourseBrief/Prompt v2 → 丰富固定内容块 → `interactive/diagram` → 单场景再生成与成对质量验收”推进，范围与退出门不变；毕业论文研究选题仍顺延到 M8。
+M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部场景完成。下一步回到原定 **M7 / v0.4：课程质量与互动能力**；M7 范围与退出门不变。
 
 ## v0.3 MVP 已实现什么
 
@@ -27,7 +27,7 @@ MVP 面向“教师或学生输入一个主题，生成并运行一门微型课�
 - 大纲与场景分阶段生成，模型输出经过 Schema 和语义校验；
 - 固定渲染器展示 slide/quiz 和只读代码块，确定性播放引擎执行 speech/pause。
 
-v0.3 只支持 slide 与单选 quiz，代码块只显示和高亮、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 只从这份排除项中选择一种受控 diagram 互动页，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
+v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 只从这份排除项中选择一种受控 diagram 互动页，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
 
 ## 为什么不一比一照搬 OpenMAIC
 
@@ -73,8 +73,8 @@ lib/
   repository/                    # [M2 已实现] InMemory / MySQL 仓储与错误映射
   db/                            # [M2 已实现] MySQL 配置、连接池和健康检查
   application/                   # [M5 已实现] 生成用例与服务端测验判分
-  ai/                            # [M3 已实现] mock 与 OpenAI-compatible 适配器
-  generation/                    # [M4 已实现] 大纲/场景 Prompt、解析、装配、修复与重试
+  ai/                            # [M3/M6.5 已实现] mock、OpenAI-compatible 适配器与响应诊断
+  generation/                    # [M4/M6.5 已实现] Prompt、解析、修复、预算与受限重试
   playback/                      # [M5 已实现] 播放 reducer、Action executor 与语音适配器
   quality/                       # [M7 计划] 确定性质量报告与评价 DTO
   interactive/                   # [M7 计划] HTML 校验、CSP patch 与运行协议
@@ -84,7 +84,7 @@ e2e/                             # [M6 已实现] production mock 完整浏览�
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
-标记为 M1～M6 的目录已经进入正式调用链，标记为 M7 的目录只是计划结构，目前不应在开发状态中写成已实现。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M6.5 的目录已经进入正式调用链，标记为 M7 的目录只是计划结构，目前不应在开发状态中写成已实现。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 ## 技术栈
 
@@ -162,7 +162,7 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 4. **M4（已完成）**：DeepSeek 逐场景生成、事务保存、失败隔离和单场景重试已验收；
 5. **M5（已完成）**：Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
 6. **M6（已完成）**：本机自动化测试、故障注入、生产构建、恢复和 DeepSeek 真实生成证据均已通过。
-7. **M6.5（计划）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
+7. **M6.5（已完成）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
 8. **M7（计划）**：质量基线 → CourseBrief/Prompt v2 → 丰富固定 Block → diagram 互动沙箱 → 单场景再生成与成对质量验收；
 9. **M8（未选题）**：从 M7 数据中只选择一个可度量的毕业论文研究问题。
 

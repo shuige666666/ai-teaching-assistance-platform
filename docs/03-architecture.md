@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 状态说明：M1～M6 架构已经实现；标记为 v0.4/M7 的增量设计尚未进入代码。
+> 状态说明：M1～M6.5 架构已经实现；标记为 v0.4/M7 的增量设计尚未进入代码。
 
 ## 1. 架构结论
 
@@ -62,7 +62,7 @@ Stage
 9. `classroom/[id]` 从存储加载数据，并继续生成剩余场景和媒体；
 10. 每个场景完成后增量保存，失败场景单独记录和重试。
 
-“先生成首场景再进入课堂”降低了首屏等待时间，但也引入了恢复、并发、媒体任务和完成屏障等复杂状态。毕设 MVP 先等待全部 3～5 个场景生成完再进入正式课堂；生成页面仍可预览已完成场景。后续确有性能需求时再采用前台首场景切换。
+“先生成首场景再进入课堂”降低了首屏等待时间，但也引入了恢复、并发、媒体任务和完成屏障等复杂状态。毕设 MVP 仍串行生成全部 3～5 个场景，并只在全部成功时把课程标记为 `ready`；若中途失败但已有成功场景，生成页和课堂路由允许只读增量预览这些已持久化结果，不把部分预览伪装成正式完成。后续确有性能需求时再采用生成期间自动切换课堂。
 
 ### 2.4 服务端异步生成链
 
@@ -153,7 +153,7 @@ mock 和 DeepSeek 返回相同 DTO，并经过同一套 Zod/领域校验。代�
 
 ### AD-08：静态代码块属于内容，不属于执行环境
 
-slide 可以包含 code block，但渲染器只进行文本转义和语法高亮，不运行代码。v0.4 的 interactive iframe 是独立 Scene 类型和独立安全边界，不能借“代码块”绕过校验，也不能把任意 HTML 塞入普通 SlideBlock。
+slide 可以包含 code block，其中 HTML、JSX、TSX 只作为源码字符串保存，渲染器仅进行文本转义和语法高亮，不运行代码。标题、正文、提示块、讲解稿等普通字段仍拒绝 HTML 与外链。v0.4 的 interactive iframe 是独立 Scene 类型和独立安全边界，不能借“代码块”创建执行路径。
 
 **AD-09～AD-13 是 v0.4/M7 增量决策，尚未实现。**
 
@@ -279,7 +279,7 @@ flowchart LR
 |---|---|
 | `/` | 创建课程，显示历史课程和状态；M7 增加折叠 CourseBrief 设置 |
 | `/generation/[courseId]` | 加载草稿、生成/编辑大纲、生成场景、失败重试；M7 增加 ready 场景再生成 |
-| `/classroom/[courseId]` | 加载 ready 课程、固定渲染、测验和播放；M7 增加互动 iframe 宿主 |
+| `/classroom/[courseId]` | 至少一个 ready 场景时加载成功场景并提示部分预览；整课 ready 时进入正式课堂；M7 增加互动 iframe 宿主 |
 
 courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢复，不能把 React state、sessionStorage 或 localStorage 作为课程事实来源。
 
@@ -366,8 +366,8 @@ stateDiagram-v2
 2. `outlining`：刷新后先重新读取数据库；超过请求超时上限仍未更新时，允许恢复为可重试失败；
 3. `outline_ready`：恢复大纲编辑；
 4. `generating`：保留 ready 场景；只把超过生成租约的遗留 generating 重置为可重试状态；
-5. `partial_failed`：显示失败项和单项重试；
-6. `ready`：允许进入课堂。
+5. `partial_failed`：显示失败项和单项重试；已有 ready 场景时允许带缺失提示的部分课堂预览；
+6. `ready`：全部场景完成，允许进入正式课堂。
 
 浏览器刷新会中止客户端 fetch，但服务端请求可能已经提交结果。恢复时必须先读 MySQL，并用 operationId/revision 拒绝迟到响应；不能一刷新就覆盖仍在运行或刚完成的服务端操作。
 
@@ -417,7 +417,7 @@ Route Handler / 应用服务：状态转换、Prompt、输出校验、事务
 - 只有不含 `NEXT_PUBLIC_` 前缀的服务端环境变量保存模型 Key 和数据库凭据；
 - `lib/ai/server-*.ts` 只能被 Route Handler 或服务端模块导入；
 - 模型输出一律视为不可信；
-- v0.3 不支持模型生成 HTML；v0.4 只有 InteractiveRenderer 可以创建 script 执行路径，普通 slide/code 仍严格禁止；
+- v0.3 不支持模型生成可执行 HTML；`code.code` 可保存只读 HTML/JSX/TSX 源码并由 React 转义，v0.4 只有 InteractiveRenderer 可以创建 script 执行路径；
 - code block 始终按文本转义，不允许 `eval`、动态 import 或 `dangerouslySetInnerHTML`；
 - interactive HTML 只能进入无 `allow-same-origin` 的 sandbox iframe，并由 CSP 禁止外部连接、子 frame、对象和表单提交；
 - postMessage 只接受绑定 iframe 的 `event.source` 和严格消息联合，切页后拒绝旧 iframe 事件；

@@ -35,7 +35,16 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     courseId = interceptedCourseId;
     await expect(page).toHaveURL(new RegExp(`/generation/${courseId}$`));
 
+    // 暂存大纲成功响应，验证用户在等待远端调用时能看到心跳、预算和 requestId。
+    await page.route(`**/api/courses/${courseId}/outline/generate`, async (route) => {
+      const response = await route.fetch();
+      const body = await response.body();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await route.fulfill({ response, body });
+    });
     await page.getByRole("button", { name: "生成课程大纲" }).click();
+    await expect(page.getByText(/4 次总预算内自动重试/)).toBeVisible();
+    await expect(page.getByText(/requestId:/)).toBeVisible();
     await expect(page.getByRole("heading", { name: "审核课程大纲" })).toBeVisible();
     await expect(page.getByText("大纲已通过解析、Schema 与语义门")).toBeVisible();
 

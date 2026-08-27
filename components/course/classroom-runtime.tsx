@@ -28,6 +28,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
   const playback = usePlaybackController(scene, browserSpeechEnabled, continuousPlay);
   const speech = scene.actions.find((action) => action.type === "speech");
   const courseProgress = ((sceneIndex + playback.progress / 100) / course.scenes.length) * 100;
+  const isPartialPreview = course.status !== "ready" || course.scenes.length < course.requestedSceneCount;
 
   useEffect(() => {
     // 3. 页面加载后再读取浏览器是否支持语音。
@@ -89,7 +90,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
     <main className="classroom-shell">
       <header className="classroom-header">
         <Link className="brand brand--inverse" href="/"><span className="brand-mark">课</span><span><strong>课序</strong><small>CLASSROOM</small></span></Link>
-        <div className="classroom-course"><span>{course.title}</span><small>REV.{course.revision} · {(course.scenes[0]?.generation.provider ?? "unknown").toUpperCase()}</small></div>
+        <div className="classroom-course"><span>{course.title}</span><small>REV.{course.revision} · {(course.scenes[0]?.generation.provider ?? "unknown").toUpperCase()}{isPartialPreview ? " · PARTIAL PREVIEW" : ""}</small></div>
         <Link className="exit-link" href={`/generation/${course.id}`}>退出课堂</Link>
       </header>
 
@@ -99,14 +100,21 @@ export function ClassroomRuntime({ course }: { course: Course }) {
         <nav className="scene-rail" aria-label="课程场景">
           <p>SCENES</p>
           {course.scenes.map((item, index) => (
-            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} onClick={() => moveTo(index)} aria-label={`打开场景 ${index + 1}：${item.title}`}>
-              <span>{String(index + 1).padStart(2, "0")}</span><i /><small>{item.type === "quiz" ? "测验" : "讲解"}</small>
+            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} onClick={() => moveTo(index)} aria-label={`打开场景 ${item.order}：${item.title}`}>
+              <span>{String(item.order).padStart(2, "0")}</span><i /><small>{item.type === "quiz" ? "测验" : "讲解"}</small>
             </button>
           ))}
         </nav>
 
         <section className="classroom-stage">
-          <div className="scene-heading"><div><p className="eyebrow">{scene.type.toUpperCase()} · SCENE {String(sceneIndex + 1).padStart(2, "0")}</p><h1>{scene.title}</h1></div><span>{String(sceneIndex + 1).padStart(2, "0")} / {String(course.scenes.length).padStart(2, "0")}</span></div>
+          {isPartialPreview ? (
+            <div className="partial-course-notice" role="status">
+              <div><span>PARTIAL COURSE PREVIEW</span><strong>已生成 {course.scenes.length} / {course.requestedSceneCount} 个场景</strong></div>
+              <p>这里只显示已经校验并保存成功的场景；失败或待生成项仍需返回生成页处理。</p>
+              <Link href={`/generation/${course.id}`}>返回生成页 →</Link>
+            </div>
+          ) : null}
+          <div className="scene-heading"><div><p className="eyebrow">{scene.type.toUpperCase()} · SCENE {String(scene.order).padStart(2, "0")}</p><h1>{scene.title}</h1></div><span>{String(scene.order).padStart(2, "0")} / {String(course.requestedSceneCount).padStart(2, "0")}</span></div>
           <SceneRenderer
             scene={scene}
             quizSessionId={playback.state.runId}
@@ -131,7 +139,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
 
       <footer className="classroom-controls">
         <button className="control-button" type="button" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>
-        <div className="control-center"><span className="control-index">{String(sceneIndex + 1).padStart(2, "0")}</span><span className="control-divider" /><span>{statusLabels[playback.state.status]}</span></div>
+        <div className="control-center"><span className="control-index">{String(scene.order).padStart(2, "0")}</span><span className="control-divider" /><span>{statusLabels[playback.state.status]}</span></div>
         <button className="control-button" type="button" disabled={sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span> →</button>
       </footer>
     </main>
