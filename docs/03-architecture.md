@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 状态说明：M1～M6.5 架构已经实现；标记为 v0.4/M7 的增量设计尚未进入代码。
+> 状态说明：M1～M6.5 架构已经实现；M7.0 已冻结离线评价协议并留存 DeepSeek v0.3 自动基线，但没有改变生产架构；标记为 CourseBrief、Schema v2、模板或 interactive 的增量设计仍未进入正式调用链。
 
 ## 1. 架构结论
 

@@ -156,8 +156,14 @@ M6.5 主验收时 62 个单元测试、9 个 MySQL 集成测试、production bui
 
 2026-08-26 缺陷回归确认课程 `6648e038-c9df-4faa-b77f-f49bfc75f4d0` 的第 4 场连续失败并非远端 envelope 故障，而是 React 教学内容中的 JSX 被全对象 HTML 正则误判。校验现已只检查会作为普通文本展示的字段，排除始终被转义的 `code.code`；Prompt 与 repair Prompt 同步声明只读源码边界。同时课堂门禁从“Course.status 必须 ready”调整为“至少存在一个已保存 Scene”，partial preview 显示完成数、原始场景序号和返回生成页入口。修复后 `pnpm verify:full` 通过：15 个文件、64 项单元测试，1 个文件、9 项 MySQL 集成测试，production build 与 Chromium E2E 1/1 均成功。
 
-## 7. 下一步：M7.0 质量基线与评价协议
+## 7. 当前进行中：M7.0 质量基线与评价协议
 
-当前下一项可执行工作回到既定 M7.0：先建立 6 个主题的开发评价集、七维评分说明、`slide-density.v1` 和 `1280×720`/`390×844` 截图清单，再用现有 DeepSeek + Prompt v1 生成基线。此时不修改生产 Prompt、Schema、Renderer 或 CSS，避免没有对照就宣称质量提高。模板、字体层级、可见内容预算和 Prompt v2 的主要实现统一进入 M7.2，完成其退出门后才开始 interactive/diagram。
+M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` 固定概念解释、机制流程和编程实践三类共 6 个公开主题，`config/slide-density.v1.json` 固定密度、`1280×720`/`390×844` 视口和溢出规则，`README.md` 合并操作说明、七维量表和退出阈值，`scripts/` 保存采集工具，`runs/` 保存每次正式结果。上述协议已于 `2026-08-27T13:24:42.566Z` 冻结。
 
-M6.5 不修改 Prompt v1 教学策略或 Course Schema。M6.5 完成后，M7 仍按 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md) 的 M7.0 → M7.4 原序执行，不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。M7 完成后，毕业论文选题仍进入暂存的 MX。
+正式采集前，`pnpm eval:baseline` 会检查两份协议使用同一 `frozenAt`，且服务明确运行在 `remote + deepseek`。业务层不额外手动重试，生产管线内部受限重试和一次 repair 保持不变，失败样本不删除。mock 采集器 smoke 已形成 ready 课程、4 份 slide 报告和 8 张双视口截图，且自动删除临时课程。
+
+正式基线运行 ID 为 `2026-08-27T13-36-18-569Z`：4/6 课程为 `ready`，2/6 为 `partial_failed`，保存 28/30 个场景；共记录 50 次上游调用、31711 输入 token、62567 输出 token 和 44 张截图。两个第 5 场景在修复后仍不符合契约，以 `INVALID_MODEL_OUTPUT` 保留；22 个 slide 的密度 pass/warning/fail 为 0/6/16，6 张窄屏截图存在容器溢出。六门课程均已从 MySQL 重新读取并核对 ID、状态、revision 和场景数，失败样本未补跑。
+
+实施中还发现并修复了一个原有契约缺陷：用户 topic 允许 500 字符，而草稿 title 最多 120 字符，原实现直接复制会让长主题在创建阶段失败。现在保留完整 topic，只为草稿 title 派生 120 字符内摘要，并补充回归测试。完整回归为 16 个文件、69 项单元测试、9 项 MySQL 集成测试、ESLint 和 production build 通过。当前只剩人工七维评分，完成前不宣布 M7.0 退出。
+
+M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7 仍按 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md) 的 M7.0 → M7.4 原序执行，不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。

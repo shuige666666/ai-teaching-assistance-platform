@@ -13,6 +13,8 @@
 # testing
 /coverage
 /output/playwright/
+/eval/runs/
+/eval/.tmp/
 /playwright-report/
 /test-results/
 

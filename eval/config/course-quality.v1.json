@@ -1,0 +1,70 @@
+{
+  "version": "course-quality.v1",
+  "status": "frozen",
+  "frozenAt": "2026-08-27T13:24:42.566Z",
+  "sceneCount": 5,
+  "generationPolicy": {
+    "provider": "deepseek",
+    "outlinePromptVersion": "outline.v1",
+    "slidePromptVersion": "scene-slide.v1",
+    "quizPromptVersion": "scene-quiz.v1",
+    "manualRetryLimitPerStage": 0,
+    "notes": "每个大纲和场景只发起一次业务请求；管线内部受限重试与一次 repair 仍按生产规则执行。失败样本必须保留。"
+  },
+  "topics": [
+    {
+      "id": "concept-http-cache",
+      "category": "concept_explanation",
+      "title": "HTTP 缓存的核心概念",
+      "prompt": "面向学过基础 HTTP 的前端初学者，用一门 15 分钟微课解释 HTTP 缓存中的新鲜度、Cache-Control、ETag、强缓存与协商缓存。目标是让学习者能判断一次请求为什么使用缓存或重新验证，并包含一个常见误区和一道理解题。",
+      "evaluationFocus": ["概念边界是否准确", "强缓存与协商缓存是否区分", "响应头与实际行为是否对应"],
+      "publicTopic": true,
+      "containsPersonalData": false
+    },
+    {
+      "id": "concept-database-transaction",
+      "category": "concept_explanation",
+      "title": "数据库事务与隔离级别",
+      "prompt": "面向学过基础 SQL 的本科生，用一门 15 分钟微课解释事务的原子性、一致性、隔离性、持久性，以及读未提交、读已提交、可重复读、串行化之间的主要差异。目标是让学习者能为一个简单并发更新场景选择合理隔离级别，并包含一道理解题。",
+      "evaluationFocus": ["ACID 含义是否准确", "隔离现象与级别是否对应", "是否避免把数据库实现细节说成统一标准"],
+      "publicTopic": true,
+      "containsPersonalData": false
+    },
+    {
+      "id": "mechanism-browser-navigation",
+      "category": "mechanism_process",
+      "title": "浏览器导航到页面显示",
+      "prompt": "面向 Web 开发初学者，用一门 15 分钟微课讲清从地址栏输入 URL 到页面首次显示的主要过程，包括 URL 解析、DNS、建立连接、HTTP 请求响应、HTML 解析、关键资源加载与首次渲染。目标是让学习者能按因果顺序定位页面打开慢的大致阶段，并包含一道机制理解题。",
+      "evaluationFocus": ["流程顺序是否合理", "网络阶段与渲染阶段是否区分", "是否避免把并发过程错误描述成绝对串行"],
+      "publicTopic": true,
+      "containsPersonalData": false
+    },
+    {
+      "id": "mechanism-tcp-congestion",
+      "category": "mechanism_process",
+      "title": "TCP 拥塞控制机制",
+      "prompt": "面向理解 TCP 基础但未系统学习拥塞控制的本科生，用一门 15 分钟微课解释拥塞窗口、慢启动、拥塞避免和发生丢包后的窗口调整。目标是让学习者能根据一个简化的窗口变化过程说明发送速率如何响应网络反馈，并包含一道机制题。",
+      "evaluationFocus": ["拥塞窗口与接收窗口是否混淆", "慢启动和拥塞避免的变化关系", "是否说明实现与算法版本可能存在差异"],
+      "publicTopic": true,
+      "containsPersonalData": false
+    },
+    {
+      "id": "practice-react-state",
+      "category": "programming_practice",
+      "title": "React 状态更新实践",
+      "prompt": "面向刚学会 React 函数组件的学生，用一门 15 分钟微课解释一次事件处理中连续更新 state 时为什么应使用函数式更新，并通过一个计数器示例展示错误写法、正确写法和调试思路。目标是让学习者能独立修复一次丢失更新问题，并包含一道代码理解题。",
+      "evaluationFocus": ["是否准确解释批处理与状态快照", "示例代码是否可读且前后一致", "是否避免笼统宣称 setState 本身是异步函数"],
+      "publicTopic": true,
+      "containsPersonalData": false
+    },
+    {
+      "id": "practice-java-thread-pool",
+      "category": "programming_practice",
+      "title": "Java 线程池拒绝策略实践",
+      "prompt": "面向掌握 Java 基础并发语法的学生，用一门 15 分钟微课解释 ThreadPoolExecutor 在线程数达到上限且队列已满时如何触发拒绝策略，并通过一个最小代码示例比较 AbortPolicy、CallerRunsPolicy 及自定义记录策略。目标是让学习者能为有背压需求的任务提交场景选择并说明一种策略，并包含一道代码理解题。",
+      "evaluationFocus": ["触发拒绝的条件是否完整", "内置策略行为是否准确", "是否说明 CallerRunsPolicy 的背压效果与边界"],
+      "publicTopic": true,
+      "containsPersonalData": false
+    }
+  ]
+}

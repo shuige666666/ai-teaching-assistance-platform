@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-25）：大纲与逐场景 v1 链路均已进入正式调用路径，并在 mock + MySQL 下验证；slide/quiz DTO、装配、短事务、失败隔离与单场重试已经实现。DeepSeek 已完成真实大纲、5 场景生成、模型修复和局部失败后重试验收。本文标记为 v2、interactive 或 M7 的内容仍是计划，详细顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+> 实现状态（2026-08-27）：大纲与逐场景 v1 链路均已进入正式调用路径，并在 mock + MySQL 下验证；slide/quiz DTO、装配、短事务、失败隔离与单场重试已经实现。M7.0 已冻结固定评价协议，并通过只读使用正式 API 的离线采集器完成 6 主题 DeepSeek Prompt v1 自动基线；本文标记为 v2 或 interactive 的生产管线内容仍是计划。
 
 ## 1. 设计结论
 

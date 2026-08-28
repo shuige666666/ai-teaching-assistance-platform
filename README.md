@@ -17,7 +17,9 @@
 
 大纲和场景阶段共用 `MockAIAdapter` 与 OpenAI-compatible 远端适配器，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 可在讲解前直接作答；自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。DeepSeek 已完成一门 5 场景真实课程的大纲、场景、修复与失败后重试验证。代码中保留百炼兼容配置，但百炼联调和异机部署均属于后续可选扩展，不再作为第一阶段完成条件。
 
-M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部场景完成。下一步回到原定 **M7 / v0.4：课程质量与互动能力**：先冻结当前 Prompt v1 与纵向讲义式页面的质量基线，再依次实现 Prompt 归一化 CourseBrief、大纲角色、幻灯片表达系统 v2 和受控互动页。
+M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部完成。
+
+当前已进入 **M7.0 质量基线**：6 主题评价集、七维人工量表、`slide-density.v1`、双视口和退出阈值已于 2026-08-27 冻结，mock 采集 smoke 和 DeepSeek Prompt v1 自动基线已完成。基线得到 4/6 `ready`、28/30 场景保存、50 次上游调用、44 张双视口截图；两门课程的第 5 场景因 `INVALID_MODEL_OUTPUT` 保留为 `partial_failed`。M7.0 仍等待人工七维评分，本阶段没有修改生产 Prompt、Schema、Renderer 或 CSS。
 
 ## v0.3 MVP 已实现什么
 
@@ -81,6 +83,7 @@ lib/
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
 scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
 e2e/                             # [M6 已实现] production mock 完整浏览器回归
+eval/                            # [M7.0] 评测总说明、冻结配置、工具和正式运行结果
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
@@ -163,7 +166,7 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 5. **M5（已完成）**：Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
 6. **M6（已完成）**：本机自动化测试、故障注入、生产构建、恢复和 DeepSeek 真实生成证据均已通过。
 7. **M6.5（已完成）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
-8. **M7（计划）**：质量与双视口截图基线 → Prompt 归一化 CourseBrief/outline v2（字段来源、默认值与冲突处理）→ 幻灯片表达系统 v2（模板、Block、Prompt、密度/溢出门）→ diagram 互动沙箱 → 单场景再生成与成对质量验收；
+8. **M7（M7.0 进行中）**：质量协议已冻结，mock smoke 和 DeepSeek v0.3 双视口自动基线已留存，待开发者完成人工七维评分；随后进入 Prompt 归一化 CourseBrief/outline v2（字段来源、默认值与冲突处理）→ 幻灯片表达系统 v2（模板、Block、Prompt、密度/溢出门）→ diagram 互动沙箱 → 单场景再生成与成对质量验收；
 9. **MX（暂时搁置）（未选题）**：待基础程序完成后选择一个可度量的毕业论文研究问题。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。

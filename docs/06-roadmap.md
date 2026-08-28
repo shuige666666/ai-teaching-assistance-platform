@@ -10,7 +10,7 @@
 
 M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7 不直接做论文创新，而是把当前工程基线提升为“课程要求更明确、幻灯片表达更清晰、至少一种互动场景可安全运行、质量改进有证据”的 v0.4 产品基线。暂存的 MX 才选择一个可度量研究问题。
 
-**当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7 方案已细化但尚未进入代码。下一步先执行 M7.0 质量与截图基线，再依次实现 Prompt 归一化 CourseBrief/outline v2、幻灯片表达系统 v2、diagram 互动闭环和单场景再生成。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7.0 评价集、量表、密度协议和双视口已冻结，mock smoke 和 6 主题 DeepSeek Prompt v1 自动基线已完成，待人工七维评分。M7.1～M7.4 尚未进入代码，后续仍依次实现 CourseBrief/outline v2、幻灯片表达系统 v2、diagram 互动闭环和单场景再生成。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
@@ -336,4 +336,4 @@ M7 不加入 LangGraph、多智能体、多模态、RAG、媒体、自由坐标�
 
 ## 14. 推荐的下一次开发迭代
 
-下一批提交回到既定 M7.0：建立评价集、七维评分量表、`slide-density.v1`、双视口截图清单和报告模板，选择 6 个无隐私主题，用当前 DeepSeek + Prompt v1 生成可追踪基线；不直接改 Prompt、Schema、Renderer、CSS 或 iframe。M7.0 退出后再开始 Course v2 和迁移；迁移通过前不修改当前 Scene 联合，幻灯片模板优化集中在 M7.2 实施。
+当前 M7.0 已冻结评价集、七维评分量表、`slide-density.v1`、双视口和退出阈值，并保持 Prompt、Schema、Renderer、CSS 与 iframe 不变。mock 采集 smoke 已通过；DeepSeek + Prompt v1 自动基线已完成，留存 6 门 MySQL 课程、生成元数据、密度报告和 44 张截图。下一步是按冻结量表完成人工评分；M7.0 退出后才开始 Course v2 和迁移。

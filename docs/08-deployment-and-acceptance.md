@@ -137,6 +137,8 @@ M6/M6.5 已按本机、MySQL、mock 与 DeepSeek 的 v0.3 边界完成。百炼�
 
 M7 不能用现有 AC-01～AC-12 自动继承完成结论。实施后必须新增 AC-Q01～AC-Q11 证据，并且 M6 证据继续有效。详细范围见 [01-scope.md](01-scope.md)，开发顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
 
+截至 2026-08-27，M7.0 评价集、量表、密度协议、双视口和退出阈值已冻结；mock smoke 已通过，6 主题 DeepSeek Prompt v1 自动基线已执行并保留失败样本。当前待人工七维评分，评分完成前不宣布 M7.0 退出。
+
 ### 8.1 自动化质量门增量
 
 计划在原有 `verify:full` 之上加入但不混淆以下测试：

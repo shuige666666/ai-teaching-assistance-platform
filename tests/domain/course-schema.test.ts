@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createFixtureCourse, materializeFixtureCourse } from "@/lib/domain/fixture";
+import { createCourseDraft, createFixtureCourse, materializeFixtureCourse } from "@/lib/domain/fixture";
 import { CourseSchema } from "@/lib/domain/schemas";
 
 describe("CourseSchema", () => {
+  it("长课程描述完整保存到 topic，并为草稿派生契约内标题", () => {
+    const topic = `面向初学者讲解${"浏览器导航过程".repeat(40)}`;
+    const course = createCourseDraft(topic, 5);
+    expect(course.topic).toBe(topic);
+    expect(course.title.length).toBeLessThanOrEqual(120);
+    expect(topic.startsWith(course.title)).toBe(true);
+  });
+
   it("接受包含 slide、quiz 和代码块的完整 fixture", () => {
     const course = materializeFixtureCourse(createFixtureCourse("TCP 拥塞控制", 4));
     expect(CourseSchema.parse(course).status).toBe("ready");

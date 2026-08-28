@@ -1,0 +1,51 @@
+{
+  "version": "slide-density.v1",
+  "status": "frozen",
+  "frozenAt": "2026-08-27T13:24:42.566Z",
+  "countingRules": {
+    "collapseWhitespace": true,
+    "visibleFields": ["scene.title", "content.subtitle", "paragraph.text", "bullet_list.items", "callout.title", "callout.text", "code.caption"],
+    "excludedFields": ["code.code", "speech.text", "scene.summary"],
+    "codeMetrics": ["lineCount", "longestLineChars"]
+  },
+  "viewports": [
+    { "id": "desktop", "width": 1280, "height": 720 },
+    { "id": "narrow", "width": 390, "height": 844 }
+  ],
+  "v2Targets": {
+    "sceneTitleRecommendedChars": { "min": 8, "max": 22 },
+    "subtitleMaxChars": 36,
+    "paragraphRecommendedChars": { "min": 40, "max": 80 },
+    "paragraphHardMaxChars": 120,
+    "itemRecommendedMaxChars": 30,
+    "itemHardMaxChars": 60,
+    "calloutRecommendedMaxChars": 60,
+    "calloutHardMaxChars": 120,
+    "codeRecommendedLines": { "min": 8, "max": 18 },
+    "minimumBodyFontPx": 16,
+    "templateVisibleCharBudgets": {
+      "key_points": 160,
+      "card_grid": 220,
+      "process": 180,
+      "comparison": 220,
+      "code_explainer": 120,
+      "summary": 150
+    }
+  },
+  "baselineObservation": {
+    "legacyVisibleCharWarning": 220,
+    "legacyVisibleCharFail": 320,
+    "longestItemWarning": 60,
+    "longestItemFail": 120,
+    "codeLineWarning": 18,
+    "codeLineFail": 30,
+    "notes": "这些等级只用于标记 v0.3 基线中的密度风险，不进入当前生产保存门，也不等于教学质量评分。"
+  },
+  "domOverflowRule": {
+    "tolerancePx": 1,
+    "horizontal": "scrollWidth <= clientWidth + tolerancePx",
+    "vertical": "scrollHeight <= clientHeight + tolerancePx",
+    "blockingFromVersion": "M7.2",
+    "m7_0Behavior": "observe_only"
+  }
+}

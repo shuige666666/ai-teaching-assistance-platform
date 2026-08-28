@@ -12,6 +12,10 @@
     "test:watch": "vitest",
     "test:db": "node --env-file=.env.local ./node_modules/vitest/vitest.mjs run --config vitest.integration.config.mjs",
     "test:e2e": "playwright test",
+    "eval:validate": "node eval/scripts/collect-course-quality-baseline.mjs --validate-only",
+    "eval:smoke": "node eval/scripts/collect-course-quality-baseline.mjs --smoke-mock",
+    "eval:baseline": "node eval/scripts/collect-course-quality-baseline.mjs",
+    "eval:summarize": "node eval/scripts/summarize-course-quality-run.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "verify": "pnpm lint && pnpm test && pnpm build",
     "verify:full": "pnpm lint && pnpm test && pnpm test:db && pnpm build && pnpm test:e2e"

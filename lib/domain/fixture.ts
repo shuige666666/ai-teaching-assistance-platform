@@ -2,6 +2,16 @@ import { randomUUID } from "node:crypto";
 import type { Course, GenerationMetadata, Scene, SceneOutline } from "./schemas";
 import { CourseSchema } from "./schemas";
 
+/** 从原始课程描述派生草稿标题；完整描述仍保存在 topic，不能因标题上限丢失。 */
+function deriveDraftTitle(topic: string, maxLength: number = 120) {
+  let title = "";
+  for (const character of topic) {
+    if ((title + character).length > maxLength) break;
+    title += character;
+  }
+  return title;
+}
+
 /** 创建尚未调用模型的课程草稿，主题和场景数量是后续生成管线的唯一输入事实。 */
 export function createCourseDraft(topic: string, requestedSceneCount: number): Course {
   const normalizedTopic = topic.trim();
@@ -11,7 +21,7 @@ export function createCourseDraft(topic: string, requestedSceneCount: number): C
     schemaVersion: 1,
     id: randomUUID(),
     topic: normalizedTopic,
-    title: normalizedTopic,
+    title: deriveDraftTitle(normalizedTopic),
     requestedSceneCount: parsedCount,
     status: "draft",
     revision: 0,
