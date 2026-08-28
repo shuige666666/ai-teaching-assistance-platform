@@ -156,18 +156,18 @@ M6.5 主验收时 62 个单元测试、9 个 MySQL 集成测试、production bui
 
 2026-08-26 缺陷回归确认课程 `6648e038-c9df-4faa-b77f-f49bfc75f4d0` 的第 4 场连续失败并非远端 envelope 故障，而是 React 教学内容中的 JSX 被全对象 HTML 正则误判。校验现已只检查会作为普通文本展示的字段，排除始终被转义的 `code.code`；Prompt 与 repair Prompt 同步声明只读源码边界。同时课堂门禁从“Course.status 必须 ready”调整为“至少存在一个已保存 Scene”，partial preview 显示完成数、原始场景序号和返回生成页入口。修复后 `pnpm verify:full` 通过：15 个文件、64 项单元测试，1 个文件、9 项 MySQL 集成测试，production build 与 Chromium E2E 1/1 均成功。
 
-## 7. 当前进行中：M7.0 质量基线与评价协议
+## 7. 已完成：M7.0 质量基线与场景归档
 
-M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` 固定概念解释、机制流程和编程实践三类共 6 个公开主题，`config/slide-density.v1.json` 固定密度、`1280×720`/`390×844` 视口和溢出规则，`README.md` 合并操作说明、七维量表和退出阈值，`scripts/` 保存采集工具，`runs/` 保存每次正式结果。上述协议已于 `2026-08-27T13:24:42.566Z` 冻结。
+M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` 固定概念解释、机制流程和编程实践三类共 6 个公开主题，`README.md` 是唯一操作与验收说明，`scripts/` 保存输入校验、正式采集和 MHTML 迁移工具，`runs/` 保存正式结果。六题输入已于 `2026-08-27T13:24:42.566Z` 冻结。
 
-正式采集前，`pnpm eval:baseline` 会检查两份协议使用同一 `frozenAt`，且服务明确运行在 `remote + deepseek`。业务层不额外手动重试，生产管线内部受限重试和一次 repair 保持不变，失败样本不删除。mock 采集器 smoke 已形成 ready 课程、4 份 slide 报告和 8 张双视口截图，且自动删除临时课程。
+正式采集前，`pnpm eval:baseline` 会检查评价集已冻结，且服务明确运行在 `remote + deepseek`。业务层不额外手动重试，生产管线内部受限重试和一次 repair 保持不变，失败样本不删除。mock smoke 验证真实课堂逐场景切换和 Chromium MHTML 归档，成功后自动删除临时课程与文件。
 
-正式基线运行 ID 为 `2026-08-27T13-36-18-569Z`：4/6 课程为 `ready`，2/6 为 `partial_failed`，保存 28/30 个场景；共记录 50 次上游调用、31711 输入 token、62567 输出 token 和 44 张截图。两个第 5 场景在修复后仍不符合契约，以 `INVALID_MODEL_OUTPUT` 保留；22 个 slide 的密度 pass/warning/fail 为 0/6/16，6 张窄屏截图存在容器溢出。六门课程均已从 MySQL 重新读取并核对 ID、状态、revision 和场景数，失败样本未补跑。
+正式基线运行 ID 为 `2026-08-27T13-36-18-569Z`：4/6 课程为 `ready`，2/6 为 `partial_failed`，保存 28/30 个场景；共记录 50 次上游调用、31711 输入 token 和 62567 输出 token。两个第 5 场景在修复后仍不符合契约，以 `INVALID_MODEL_OUTPUT` 保留。六门课程均从 MySQL 重新读取并核对 ID、revision 和场景清单，再归档为 28 份 `1280×720` MHTML；没有调用创建、大纲生成或场景生成接口。
 
-实施中还发现并修复了一个原有契约缺陷：用户 topic 允许 500 字符，而草稿 title 最多 120 字符，原实现直接复制会让长主题在创建阶段失败。现在保留完整 topic，只为草稿 title 派生 120 字符内摘要，并补充回归测试。完整回归为 16 个文件、69 项单元测试、9 项 MySQL 集成测试、ESLint 和 production build 通过。
+实施中还发现并修复了一个原有契约缺陷：用户 topic 允许 500 字符，而草稿 title 最多 120 字符，原实现直接复制会让长主题在创建阶段失败。现在保留完整 topic，只为草稿 title 派生 120 字符内摘要，并补充回归测试。本次 M7.0 证据重做后的完整回归为 16 个文件、68 项单元测试、9 项 MySQL 集成测试、production build 和 Chromium E2E 1/1 通过。
 
-2026-08-28 范围调整后，M8～M10 只承诺 `1280×720` 及更大桌面视口。已冻结的双视口 v1 配置、44 张截图和其中 6 张窄屏溢出证据继续保留，不能回写或删除；它们只作为范围调整前的历史资料。当前在进入 Course v2 之前，还需先版本化并冻结桌面端 v2 评价协议，再使用既有桌面基线证据完成人工评分。移动端、平板和窄屏不再是 M7～M10 的实现任务或退出条件。
+2026-08-28 需求澄清后，提交 `85be4b9f` 遗留的 `slide-density.v1.json`、44 张 PNG、DOM/密度报告、`scores.json` 和独立汇总脚本被删除或收束。`report.json` 继续保存原课程、narration、quiz、生成耗时、调用、token、repair 和错误；`summary.md` 只做事实索引，`scenes/` 保存逐场景 MHTML。人工七维评分延后到 M10 的 v0.3/v0.4 配对验收。M8～M10 只承诺 `1280×720` 及更大桌面视口。
 
-M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。原 M7.2、M7.3、M7.4 均未进入代码，现已分别升格为 M8、M9、M10；当前顺序为 M7.0/M7.1 课程质量基础 → M8 只读受控自由画布 → M9 diagram 互动 → M10 单场景再生成与 v0.4 验收。M11 可视化画布编辑器是可选项，不阻塞 v0.4 或 MX。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
+M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。下一步是 M7.1 CourseBrief/outline v2；之后依次为 M8 只读受控自由画布、M9 diagram 互动和 M10 单场景再生成与 v0.4 配对验收。M11 可视化画布编辑器是可选项，不阻塞 v0.4 或 MX。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
 
 M8 计划保存标准 `canvas.v1`，但让 LLM 只返回语义 SlidePlan 和布局意图，由服务端布局编译器生成坐标；M8 不允许用户直接编辑。M9 独立实现自包含 diagram 与严格 sandbox。以上阶段均不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。

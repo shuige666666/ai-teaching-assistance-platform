@@ -19,7 +19,7 @@
 
 M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部完成。
 
-当前已进入 **M7 课程质量基础**：6 主题评价集、七维人工量表、`slide-density.v1`、双视口和退出阈值已于 2026-08-27 冻结，mock 采集 smoke 和 DeepSeek Prompt v1 自动基线已完成。基线得到 4/6 `ready`、28/30 场景保存、50 次上游调用、44 张双视口截图；两门课程的第 5 场景因 `INVALID_MODEL_OUTPUT` 保留为 `partial_failed`。冻结的 M7.0/v1 证据不改名、不回写；下一步先冻结只含 `1280×720` 桌面视口的评价协议并完成基线人工评分，再实现 M7.1 CourseBrief/outline v2。后续能力已拆为 M8 只读受控自由画布、M9 `interactive/diagram`、M10 单场景再生成与 v0.4 验收；M11 可视化画布编辑器是可选项。M7～M10 不承诺移动端、平板或窄屏专项适配。
+**M7.0 课程质量基线现已完成**：6 个公开主题及 Prompt v1 输入已冻结，mock 采集 smoke 和 DeepSeek v0.3 自动基线均已完成。基线得到 4/6 `ready`、28/30 场景保存和 50 次上游调用；两门课程的第 5 场景因 `INVALID_MODEL_OUTPUT` 保留为 `partial_failed`。每个已保存场景均归档为 `1280×720` 课堂 MHTML，旧 PNG、双视口密度观察和提前生成的空评分表不再保留；课程内容与生成元数据没有重生成。人工评分延后到 M10，在同六题 v0.4 课程生成后做配对评价。下一步是 M7.1 CourseBrief/outline v2；M8～M10 只承诺桌面端，M11 画布编辑器可选。
 
 ## v0.3 MVP 已实现什么
 
@@ -168,7 +168,7 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 5. **M5（已完成）**：Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
 6. **M6（已完成）**：本机自动化测试、故障注入、生产构建、恢复和 DeepSeek 真实生成证据均已通过。
 7. **M6.5（已完成）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
-8. **M7（进行中）**：保留 M7.0 冻结证据，完成桌面评价协议、人工基线、CourseBrief、Course v2 和 outline v2；
+8. **M7（进行中）**：M7.0 已保留六题基线、生成事实和逐场景 MHTML；继续完成 CourseBrief、Course v2 和 outline v2；
 9. **M8（计划）**：建立 `canvas.v1`、受控布局编译器、只读 SlideCanvas、场景 Prompt v2、MySQL 恢复和桌面质量门；
 10. **M9（计划）**：实现唯一一种 `interactive/diagram` 的生成、严格校验、沙箱运行、消息协议和 fallback；
 11. **M10（计划）**：实现 ready 场景按指令再生成、事务替换和 v0.3/v0.4 成对质量验收；

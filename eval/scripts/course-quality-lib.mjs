@@ -36,127 +36,93 @@ export const DatasetSchema = z.object({
   if (dataset.status === "candidate" && dataset.frozenAt) context.addIssue({ code: "custom", path: ["frozenAt"], message: "候选评价集不能提前记录 frozenAt" });
 });
 
-export const DensityPolicySchema = z.object({
-  version: z.literal("slide-density.v1"),
-  status: z.enum(["candidate", "frozen"]),
-  frozenAt: z.string().datetime().nullable(),
-  countingRules: z.object({ collapseWhitespace: z.literal(true), visibleFields: z.array(z.string()).min(1), excludedFields: z.array(z.string()).min(1), codeMetrics: z.array(z.string()).min(1) }),
-  viewports: z.array(z.object({ id: z.enum(["desktop", "narrow"]), width: z.number().int().positive(), height: z.number().int().positive() })).length(2),
-  v2Targets: z.object({
-    sceneTitleRecommendedChars: z.object({ min: z.number().int().positive(), max: z.number().int().positive() }),
-    subtitleMaxChars: z.number().int().positive(),
-    paragraphRecommendedChars: z.object({ min: z.number().int().positive(), max: z.number().int().positive() }),
-    paragraphHardMaxChars: z.number().int().positive(),
-    itemRecommendedMaxChars: z.number().int().positive(),
-    itemHardMaxChars: z.number().int().positive(),
-    calloutRecommendedMaxChars: z.number().int().positive(),
-    calloutHardMaxChars: z.number().int().positive(),
-    codeRecommendedLines: z.object({ min: z.number().int().positive(), max: z.number().int().positive() }),
-    minimumBodyFontPx: z.number().positive(),
-    templateVisibleCharBudgets: z.record(z.string(), z.number().int().positive()),
-  }),
-  baselineObservation: z.object({
-    legacyVisibleCharWarning: z.number().int().positive(),
-    legacyVisibleCharFail: z.number().int().positive(),
-    longestItemWarning: z.number().int().positive(),
-    longestItemFail: z.number().int().positive(),
-    codeLineWarning: z.number().int().positive(),
-    codeLineFail: z.number().int().positive(),
-    notes: z.string().min(1),
-  }),
-  domOverflowRule: z.object({ tolerancePx: z.number().nonnegative(), horizontal: z.string().min(1), vertical: z.string().min(1), blockingFromVersion: z.literal("M7.2"), m7_0Behavior: z.literal("observe_only") }),
-}).superRefine((policy, context) => {
-  const desktop = policy.viewports.find((viewport) => viewport.id === "desktop");
-  const narrow = policy.viewports.find((viewport) => viewport.id === "narrow");
-  if (desktop?.width !== 1280 || desktop.height !== 720) context.addIssue({ code: "custom", path: ["viewports"], message: "桌面视口必须固定为 1280×720" });
-  if (narrow?.width !== 390 || narrow.height !== 844) context.addIssue({ code: "custom", path: ["viewports"], message: "窄屏视口必须固定为 390×844" });
-  if (policy.status === "frozen" && !policy.frozenAt) context.addIssue({ code: "custom", path: ["frozenAt"], message: "冻结密度协议必须记录 frozenAt" });
-  if (policy.status === "candidate" && policy.frozenAt) context.addIssue({ code: "custom", path: ["frozenAt"], message: "候选密度协议不能提前记录 frozenAt" });
-});
-
-/** 折叠空白后统计页面实际可见字段，代码原文和 narration 不计入可见字符。 */
-function normalizedLength(value) {
-  return [...String(value ?? "").replace(/\s+/gu, " ").trim()].length;
+/** 校验六题评价集；正式 DeepSeek 基线只允许使用已经确认冻结的输入。 */
+export function parseEvaluationDataset(value, requireFrozen = false) {
+  const dataset = DatasetSchema.parse(value);
+  if (requireFrozen && dataset.status !== "frozen") throw new Error("付费基线只能使用开发者已经确认并冻结的评价集");
+  return dataset;
 }
 
-/** 为一个 v1 slide 生成只用于 M7.0 观察的确定性密度报告。 */
-export function analyzeLegacySlide(scene, policy) {
-  const visibleItems = [{ path: "scene.title", value: scene.title }];
-  if (scene.content.subtitle) visibleItems.push({ path: "content.subtitle", value: scene.content.subtitle });
-  let codeLineCount = 0;
-  let longestCodeLineChars = 0;
-  for (const [blockIndex, block] of scene.content.blocks.entries()) {
-    const base = `content.blocks.${blockIndex}`;
-    if (block.type === "paragraph") visibleItems.push({ path: `${base}.text`, value: block.text });
-    if (block.type === "bullet_list") block.items.forEach((value, index) => visibleItems.push({ path: `${base}.items.${index}`, value }));
-    if (block.type === "callout") {
-      if (block.title) visibleItems.push({ path: `${base}.title`, value: block.title });
-      visibleItems.push({ path: `${base}.text`, value: block.text });
-    }
-    if (block.type === "code") {
-      if (block.caption) visibleItems.push({ path: `${base}.caption`, value: block.caption });
-      const lines = block.code.replace(/\r\n/gu, "\n").split("\n");
-      codeLineCount += lines.length;
-      longestCodeLineChars = Math.max(longestCodeLineChars, ...lines.map(normalizedLength));
-    }
-  }
-  const lengths = visibleItems.map((item) => ({ path: item.path, chars: normalizedLength(item.value) }));
-  const visibleCharCount = lengths.reduce((sum, item) => sum + item.chars, 0);
-  const longestItemChars = Math.max(0, ...lengths.map((item) => item.chars));
-  const normalizedValues = visibleItems.map((item) => String(item.value).replace(/\s+/gu, " ").trim().toLocaleLowerCase("zh-CN")).filter(Boolean);
-  const duplicateSignals = [...new Set(normalizedValues.filter((value, index) => normalizedValues.indexOf(value) !== index))];
-  const limits = policy.baselineObservation;
-  const fail = visibleCharCount > limits.legacyVisibleCharFail || longestItemChars > limits.longestItemFail || codeLineCount > limits.codeLineFail;
-  const warning = visibleCharCount > limits.legacyVisibleCharWarning || longestItemChars > limits.longestItemWarning || codeLineCount > limits.codeLineWarning || duplicateSignals.length > 0;
+/** 从持久化课程中提取复现实验所需的公开内容与生成元数据。 */
+export function sanitizeCourse(course) {
   return {
-    template: "legacy_stack",
-    visibleCharCount,
-    longestItemChars,
-    blockCount: scene.content.blocks.length,
-    codeLineCount,
-    longestCodeLineChars,
-    duplicateSignals,
-    densityStatus: fail ? "fail" : warning ? "warning" : "pass",
-    visibleItems: lengths,
-    policyVersion: policy.version,
-    enforcement: "observe_only",
+    courseId: course.id,
+    schemaVersion: course.schemaVersion,
+    title: course.title,
+    status: course.status,
+    revision: course.revision,
+    requestedSceneCount: course.requestedSceneCount,
+    outlineGeneration: course.outlineGeneration,
+    outlines: course.outlines.map(({ type, title, teachingObjective, keyPoints, order, estimatedMinutes }) => ({ type, title, teachingObjective, keyPoints, order, estimatedMinutes })),
+    scenes: course.scenes.map((scene) => ({
+      type: scene.type,
+      title: scene.title,
+      summary: scene.summary,
+      order: scene.order,
+      content: scene.content,
+      narration: scene.actions.find((action) => action.type === "speech")?.text ?? "",
+      generation: scene.generation,
+    })),
+    sceneProgress: course.sceneProgress.map(({ status, attempts, lastError }) => ({ status, attempts, lastError })),
   };
 }
 
-/** 同时校验评价集与密度协议，确保二者处于相同冻结状态和时间点。 */
-export function parseEvaluationInputs(datasetValue, densityValue, requireFrozen = false) {
-  const dataset = DatasetSchema.parse(datasetValue);
-  const density = DensityPolicySchema.parse(densityValue);
-  if (dataset.status !== density.status) throw new Error("评价集和密度协议必须处于相同状态");
-  if (dataset.frozenAt !== density.frozenAt) throw new Error("评价集和密度协议必须使用同一个 frozenAt");
-  if (requireFrozen && dataset.status !== "frozen") throw new Error("付费基线只能使用开发者已经确认并冻结的评价协议");
-  return { dataset, density };
+/** 统计一次课程生成的上游调用，失败请求保留预算消耗但不虚构 token。 */
+export function countUpstreamCalls(result) {
+  const successfulCalls = (result.course.outlineGeneration?.upstreamCalls ?? 0)
+    + result.course.scenes.reduce((total, scene) => total + (scene.generation?.upstreamCalls ?? 0), 0);
+  const failedCalls = result.collectionErrors
+    .filter((error) => error.stage === "scene")
+    .reduce((total, error) => total + (error.details?.upstreamCalls ?? 0), 0);
+  return { successfulCalls, failedCalls, totalCalls: successfulCalls + failedCalls };
 }
 
-export const HUMAN_SCORE_DIMENSIONS = ["factualCorrectness", "goalAlignment", "structureCoherence", "explanationCaseValue", "visibleReadability", "visualHierarchyLayout", "quizAlignment"];
-
-/** 为每门课程建立可直接填写的评分表，同时附上课程定位信息。 */
-export function createHumanScoreTemplate(runId, topics, results = []) {
-  const resultByTopic = new Map(results.map((result) => [result.topicId, result]));
+/** 生成一份只陈述基线事实的摘要；人工评分延后到 v0.3/v0.4 对照阶段。 */
+export function createRunSummary(report) {
+  const courses = report.results.map((result) => ({
+    topicId: result.topicId,
+    courseId: result.course.courseId,
+    title: result.course.title,
+    status: result.course.status,
+    savedScenes: result.course.scenes.length,
+    requestedScenes: result.course.requestedSceneCount,
+    durationMs: result.durationMs,
+    ...countUpstreamCalls(result),
+    repairedSavedScenes: result.course.scenes.filter((scene) => scene.generation?.repaired).length,
+    archivedScenes: result.sceneArchives?.length ?? 0,
+    errors: result.collectionErrors,
+  }));
+  const generations = report.results.flatMap((result) => [result.course.outlineGeneration, ...result.course.scenes.map((scene) => scene.generation)]).filter(Boolean);
   return {
-    version: "course-quality-human-scores.v1",
-    runId,
-    evaluator: null,
-    completedAt: null,
-    courses: topics.map((topic) => {
-      const result = resultByTopic.get(topic.id);
-      return {
-        topicId: topic.id,
-        courseId: result?.course.courseId ?? null,
-        title: result?.course.title ?? topic.title,
-        status: result?.course.status ?? null,
-        savedScenes: result?.course.scenes.length ?? null,
-        requestedScenes: result?.course.requestedSceneCount ?? null,
-        scores: Object.fromEntries(HUMAN_SCORE_DIMENSIONS.map((dimension) => [dimension, null])),
-        criticalError: null,
-        criticalErrorEvidence: null,
-        overallNotes: null,
-      };
-    }),
+    courses,
+    readyCourses: courses.filter((course) => course.status === "ready").length,
+    partialFailedCourses: courses.filter((course) => course.status === "partial_failed").length,
+    savedScenes: courses.reduce((total, course) => total + course.savedScenes, 0),
+    requestedScenes: courses.reduce((total, course) => total + course.requestedScenes, 0),
+    archivedScenes: courses.reduce((total, course) => total + course.archivedScenes, 0),
+    totalUpstreamCalls: courses.reduce((total, course) => total + course.totalCalls, 0),
+    failedSceneUpstreamCalls: courses.reduce((total, course) => total + course.failedCalls, 0),
+    recordedInputTokens: generations.reduce((total, generation) => total + (generation.usage?.inputTokens ?? 0), 0),
+    recordedOutputTokens: generations.reduce((total, generation) => total + (generation.usage?.outputTokens ?? 0), 0),
   };
+}
+
+/** 把机器报告压缩成人工可快速核对的单页索引。 */
+export function createSummaryMarkdown(report) {
+  const summary = createRunSummary(report);
+  const rows = summary.courses.map((course) => `| ${course.topicId} | ${course.status} | ${course.savedScenes}/${course.requestedScenes} | ${course.archivedScenes} | ${course.totalCalls} |`).join("\n");
+  return `# M7.0 DeepSeek v0.3 基线摘要
+
+> 运行 ID：\`${report.runId}\`<br>
+> 冻结时间：\`${report.frozenAt}\`<br>
+> 模型：\`${report.server.provider} / ${report.server.model}\`
+
+本次保留 ${summary.savedScenes}/${summary.requestedScenes} 个场景，其中 ${summary.archivedScenes} 个已保存为可离线打开的 MHTML。课程状态为 ${summary.readyCourses} 门 \`ready\`、${summary.partialFailedCourses} 门 \`partial_failed\`。上游调用共 ${summary.totalUpstreamCalls} 次；可追溯 token 为输入 ${summary.recordedInputTokens}、输出 ${summary.recordedOutputTokens}。
+
+| 主题 | 状态 | 已保存/请求场景 | MHTML | 上游调用 |
+| --- | --- | ---: | ---: | ---: |
+${rows}
+
+人工评分暂不在 M7.0 执行。完成 v0.4 优化并用相同六题重新生成课程后，再以 v0.3/v0.4 配对方式进行内容与视觉评分；本目录只保存基线事实和场景快照。
+`;
 }

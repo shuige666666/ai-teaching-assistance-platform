@@ -1,46 +1,50 @@
 import { describe, expect, it } from "vitest";
 import dataset from "@/eval/config/course-quality.v1.json";
-import density from "@/eval/config/slide-density.v1.json";
-import { analyzeLegacySlide, createHumanScoreTemplate, parseEvaluationInputs } from "@/eval/scripts/course-quality-lib.mjs";
+import { createRunSummary, parseEvaluationDataset } from "@/eval/scripts/course-quality-lib.mjs";
 
 describe("M7.0 质量基线", () => {
   it("固定六个公开主题并覆盖三类课程", () => {
-    const parsed = parseEvaluationInputs(dataset, density);
-    expect(parsed.dataset.topics).toHaveLength(6);
-    expect(Object.fromEntries(["concept_explanation", "mechanism_process", "programming_practice"].map((category) => [category, parsed.dataset.topics.filter((topic) => topic.category === category).length]))).toEqual({ concept_explanation: 2, mechanism_process: 2, programming_practice: 2 });
-    expect(parsed.dataset.topics.every((topic) => topic.publicTopic && !topic.containsPersonalData)).toBe(true);
+    const parsed = parseEvaluationDataset(dataset);
+    expect(parsed.topics).toHaveLength(6);
+    expect(Object.fromEntries(["concept_explanation", "mechanism_process", "programming_practice"].map((category) => [category, parsed.topics.filter((topic) => topic.category === category).length]))).toEqual({
+      concept_explanation: 2,
+      mechanism_process: 2,
+      programming_practice: 2,
+    });
+    expect(parsed.topics.every((topic) => topic.publicTopic && !topic.containsPersonalData)).toBe(true);
   });
 
-  it("只有同步冻结的协议才能触发正式基线", () => {
-    expect(() => parseEvaluationInputs(dataset, density, true)).not.toThrow();
+  it("只有冻结的六题输入才能触发正式付费基线", () => {
+    expect(() => parseEvaluationDataset(dataset, true)).not.toThrow();
     const candidateDataset = { ...structuredClone(dataset), status: "candidate", frozenAt: null };
-    const candidateDensity = { ...structuredClone(density), status: "candidate", frozenAt: null };
-    expect(() => parseEvaluationInputs(candidateDataset, candidateDensity, true)).toThrow("付费基线只能使用开发者已经确认并冻结的评价协议");
+    expect(() => parseEvaluationDataset(candidateDataset, true)).toThrow("付费基线只能使用开发者已经确认并冻结的评价集");
   });
 
-  it("统计可见文字时排除代码原文和讲解稿", () => {
-    const scene = {
-      title: "状态更新",
-      content: {
-        type: "slide",
-        subtitle: "函数式更新",
-        blocks: [
-          { type: "paragraph", text: "根据前一个状态计算下一个状态" },
-          { type: "code", caption: "示例", code: "<button>不会作为可见字符预算统计</button>\nsetCount((value) => value + 1);" },
-        ],
-      },
+  it("摘要只统计生成事实和场景归档，不提前创建人工评分", () => {
+    const report = {
+      results: [{
+        topicId: "concept-http-cache",
+        durationMs: 100,
+        course: {
+          courseId: "course-1",
+          title: "HTTP 缓存",
+          status: "partial_failed",
+          requestedSceneCount: 5,
+          outlineGeneration: { upstreamCalls: 1, usage: { inputTokens: 10, outputTokens: 20 } },
+          scenes: [{ order: 1, generation: { upstreamCalls: 1, usage: { inputTokens: 30, outputTokens: 40 } } }],
+        },
+        collectionErrors: [{ stage: "scene", details: { upstreamCalls: 2 } }],
+        sceneArchives: [{ sceneOrder: 1, format: "mhtml" }],
+      }],
     };
-    const report = analyzeLegacySlide(scene, density);
-    expect(report.visibleCharCount).toBe("状态更新函数式更新根据前一个状态计算下一个状态示例".length);
-    expect(report.codeLineCount).toBe(2);
-    expect(report.template).toBe("legacy_stack");
-    expect(report.enforcement).toBe("observe_only");
-  });
-
-  it("为七个维度生成独立的人工评分空表", () => {
-    const template = createHumanScoreTemplate("run-1", dataset.topics);
-    expect(Object.keys(template.courses[0].scores)).toHaveLength(7);
-    expect(Object.values(template.courses[0].scores).every((score) => score === null)).toBe(true);
-    expect(template.courses).toHaveLength(6);
+    expect(createRunSummary(report)).toMatchObject({
+      partialFailedCourses: 1,
+      savedScenes: 1,
+      requestedScenes: 5,
+      archivedScenes: 1,
+      totalUpstreamCalls: 4,
+      recordedInputTokens: 40,
+      recordedOutputTokens: 60,
+    });
   });
 });

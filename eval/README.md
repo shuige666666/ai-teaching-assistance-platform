@@ -1,73 +1,66 @@
 # M7.0 课程质量基线
 
-评测所需的配置、工具、运行结果和评分说明全部收束在本目录。M7.0 只建立 v0.3 对照基线，不修改生产 Prompt、Schema、Renderer 或 CSS。
+M7.0 只负责固定六个公开测试输入、保存 v0.3 生成事实，并为每个已生成场景留下一份 MHTML。它不修改生产 Prompt、Schema、Renderer 或 CSS，也不要求现在凭空给课程打分。人工评分延后到 v0.4 课程生成后，以同题目的 v0.3/v0.4 配对方式完成。
 
-> **2026-08-28 范围修订**：本目录现有 `course-quality.v1.json`、`slide-density.v1.json`、双视口规则和运行结果是已经冻结的历史协议，必须保留原始证据，不能删除 `390×844` 数据或直接改写 v1。原计划的 M7.2～M7.4 已重分为 M8～M10，当前只承诺 `1280×720` 及更大桌面视口；在生成任何 M8/v0.4 画布候选前，应新增并冻结 `course-quality.v2.json`、`slide-density.v2.json`，使当前产品退出只使用桌面截图、桌面溢出和桌面版式评分。已有 v0.3 运行中的 `1280×720` 证据可以复用，窄屏结果不进入 v2 硬门。v1 配置内既有的 M7.2 标签属于冻结历史，不改名。
-
-## 1. 目录只分四类
+## 目录
 
 ```text
 eval/
-├─ README.md                  # 唯一总说明：命令、量表、阈值和验收方法
-├─ config/                    # 冻结输入，不随运行改变
-│  ├─ course-quality.v1.json    # 6 个用户初始 Prompt 与生成策略
-│  └─ slide-density.v1.json     # 密度、双视口和溢出规则
-├─ scripts/                   # 校验、采集和汇总脚本
-└─ runs/                      # 每次正式运行的结果（Git 忽略）
+├─ README.md
+├─ config/
+│  └─ course-quality.v1.json       # 六个初始 Prompt、类别与生成策略
+├─ scripts/
+│  ├─ course-quality-lib.mjs       # 输入校验与事实摘要
+│  ├─ scene-archive-lib.mjs        # Chromium MHTML 归档
+│  ├─ collect-course-quality-baseline.mjs
+│  └─ archive-existing-course-quality-run.mjs
+└─ runs/                           # 正式运行结果，Git 忽略
 ```
 
-每个正式运行目录只保留：
+一次完成的运行目录只有三类内容：
 
-- `summary.md`：给人看的结果和验收步骤；
-- `scores.json`：唯一需要人工填写的文件；
-- `report.json`：机器采集的完整原始证据，不手工修改；
-- `progress.json`：中断后续跑的检查点；
-- `evidence/`：按主题存放双视口截图和采集错误图。
+```text
+<runId>/
+├─ summary.md                      # 给人看的课程状态和数量摘要
+├─ report.json                     # 课程内容、生成元数据、错误和 MHTML 清单
+└─ scenes/
+   └─ <topicId>/
+      ├─ 01-slide.mhtml
+      └─ ...
+```
 
-## 2. 运行与续跑
+MHTML 由 Chromium 在 `1280×720` 桌面视口下，从真实课堂页面逐场景切换后生成。每个文件是当时场景的单文件静态归档，报告同时记录大小和 SHA-256。它用于离线阅读与后续人类对照，不代替真实浏览器功能测试，也不让模型二次审核视觉。
+
+## 命令
 
 ```powershell
 pnpm eval:validate
 pnpm eval:smoke
 pnpm eval:baseline
-pnpm eval:summarize -- eval/runs/baseline-v0.3/<runId>
+pnpm eval:archive -- eval/runs/baseline-v0.3/<runId>
 ```
 
-`eval:validate` 校验两份冻结 JSON。`eval:smoke` 只用 mock 验证采集链，成功后自动清理临时产物。`eval:baseline` 必须连接 `remote + deepseek`，依次调用正式创建、大纲和逐场景 API；不做业务级手动重试，失败样本也必须保留。
+`eval:validate` 只校验六题冻结输入。`eval:smoke` 只连接 mock，验证创建、课堂渲染与 MHTML 归档链，成功后删除临时课程和文件。`eval:baseline` 仅允许 `remote + deepseek`，会真实生成课程并产生费用。`eval:archive` 只读取数据库中已经存在的课程，为旧运行补齐 MHTML，不调用创建、大纲生成或场景生成接口。
 
-可选参数：
+正式采集仍支持：
 
 ```powershell
-$env:EVAL_BASE_URL='http://127.0.0.1:3000'
+$env:EVAL_BASE_URL='http://localhost:3000'
 $env:EVAL_OUTPUT_DIR='eval/runs/baseline-v0.3'
 $env:EVAL_RESUME_RUN='eval/runs/baseline-v0.3/<runId>'
-$env:EVAL_DELETE_COURSES='1' # 仅临时调试；正式基线必须保留 MySQL 课程
+$env:EVAL_DELETE_COURSES='1' # 仅临时调试
 ```
 
-评价集、量表、密度阈值、`1280×720`/`390×844` 视口和退出阈值已于 `2026-08-27T13:24:42.566Z` 冻结。如需改变，必须升级协议版本，不能根据 v0.4 结果临时放宽。
+运行中会暂存 `progress.json` 以便续跑；完整报告成功落盘后自动删除，避免最终目录重复。
 
-## 3. 人工评分量表（v1 历史协议）
+## 当前基线
 
-每门课程先阅读所有已保存场景、narration、quiz 和双视口截图，再在 `scores.json` 中对七个维度给 1～5 分。无法判断时应在 `overallNotes` 说明，不要默认填 3。
+首次 DeepSeek v0.3 运行 ID 为 `2026-08-27T13-36-18-569Z`：4/6 门课程为 `ready`，2/6 为 `partial_failed`，保存 28/30 个场景，共记录 50 次上游调用。两个第 5 场景在有限修复后仍为 `INVALID_MODEL_OUTPUT`，继续作为真实失败样本保留，不补跑、不删除。
 
-| 维度 | 1 分 | 3 分 | 5 分 |
-| --- | --- | --- | --- |
-| `factualCorrectness` | 核心结论错误或严重误导 | 核心基本正确，有边界遗漏 | 事实、条件和适用边界准确 |
-| `goalAlignment` | 偏离受众或学习目标 | 覆盖目标，但部分场景联系较弱 | 场景、例子和测验共同服务目标 |
-| `structureCoherence` | 重复、跳跃或缺少前置 | 顺序可理解，但递进或收束较弱 | 动机、概念、机制、应用和检查递进清楚 |
-| `explanationCaseValue` | 定义堆砌，案例无效 | 有解释和示例，但因果或边界不足 | 能解释原因和边界，并支持知识迁移 |
-| `visibleReadability` | 长段落过密或字号过小 | 大部分可读，局部过密 | 可见内容精炼可扫读，细节合理下沉 |
-| `visualHierarchyLayout` | 主次混乱或关键内容裁切 | 层级基本清楚，但版式单一或窄屏一般 | 信息层级清楚，桌面和窄屏均自然可读 |
-| `quizAlignment` | 题目无关、答案错误或只考无意义记忆 | 覆盖课程，但区分度或解析较弱 | 检查关键目标，选项、答案和解析准确 |
+提交 `85be4b9f` 中的 PNG、双视口 DOM/密度观察和提前生成的 `scores.json` 已被逐场景 MHTML 方案取代。课程 ID、原始场景、narration、quiz、生成耗时、调用、token、repair 和错误仍保存在 `report.json`，因此不需要重新调用 DeepSeek。
 
-`criticalError` 是独立于平均分的事实红线：未检查填 `null`，没有发现填 `false`，发现会让学习者形成错误核心概念、执行错误代码或作出错误安全决策的问题时填 `true`，并在 `criticalErrorEvidence` 记录场景序号、错误内容和理由。`overallNotes` 记录这门课的主要优点、缺陷和缺失场景的影响。
+## 后续配对评分
 
-## 4. 退出阈值和当前基线（v1 历史协议）
+人工评分在 M10 统一执行：使用相同六题、Provider、模型、场景数和桌面视口生成 v0.4，然后隐藏版本标签，成对阅读 v0.3/v0.4 的场景。届时再生成一份评分表，评价事实正确性、目标匹配、结构连贯、解释与案例价值、可见内容可读性、视觉层级版式和测验对齐；其中视觉版式 5 分口径保留为“信息层级清楚”。
 
-M10 使用同一主题、Provider、模型、场景数和 `1280×720` 桌面视口对 v0.3/v0.4 做隐藏版本标签的成对评分。五个产品质量维度（目标、结构、案例、可读性、视觉版式）平均提升至少 0.5/5；事实正确性不下降且不新增关键错误；桌面标准视口无未声明硬溢出；至少 70% 有效课程对更偏好 v0.4。同时必须报告完成率、调用数、repair、耗时和 token，不能用质量分数隐藏成本。
-
-首次 v0.3 基线位于 `runs/baseline-v0.3/2026-08-27T13-36-18-569Z/`：4/6 课程 `ready`，28/30 场景保存，50 次上游调用，44 张截图。两个第 5 场景保留为 `partial_failed`，人工七维评分尚未完成。这 6 个主题只用于产品开发退出，不用于宣称统计显著或直接形成论文结论。
-
-## 5. 当前桌面端 v2 协议要求
-
-v2 必须在看到任何 v0.4 候选结果前冻结，并沿用相同的 6 个主题、Provider、模型、场景数量、非视觉评分维度和既定质量阈值；变化只限于删除移动端交付要求、将标准视口固定为 `1280×720`，以及把 `visualHierarchyLayout` 的 5 分标准改为“桌面端信息层级清楚、主要内容自然可读且无硬裁切”。v2 可以从 v1 原始报告派生桌面基线，但必须生成新的协议版本和派生记录，不能覆写 v1 `report.json`、截图或 `scores.json`。
+`criticalError`、`criticalErrorEvidence` 和 `overallNotes` 也在配对评分时填写：前两项用于标记会误导学习者的核心事实错误及其场景证据，后一项记录整门课程的主要优缺点。M7.0 不再创建空评分文件。
