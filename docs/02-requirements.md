@@ -236,9 +236,9 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-Q105 | SceneOutline v2 必须包含教学场景角色；误区、评估重点和 widgetType 按场景需要出现。 |
 | FR-Q106 | 场景 Prompt 必须接收有长度上限的已覆盖关键点、待覆盖目标和前文摘要，不能无限累计整课原文。 |
 | FR-Q107 | slide 必须继续区分可见短内容和 narration，不得通过生成长段落伪造课程深度。 |
-| FR-Q108 | 系统必须生成可机器检查的密度、重复、关键点覆盖和 quiz—objective 对齐报告；该报告不宣称事实正确。 |
-| FR-Q109 | `scene-slide-plan.v2` 必须根据 SceneRole 和内容关系选择一个受控布局意图，并返回对应语义内容；不得生成实体 id、坐标、zIndex、CSS、React、HTML 或布局外字段。 |
-| FR-Q110 | 布局语义、可见内容硬上限和明显重复失败可以进入现有一次 repair；服务端布局编译器的确定性错误不得消耗模型 repair，且 repair 与传输重试仍共享单请求最多四次上游调用预算。 |
+| FR-Q108 | 系统必须继续机器检查必需目标覆盖、明显重复、quiz 答案索引与 objective 对齐；这些结构信号不宣称事实正确或页面一定美观。 |
+| FR-Q109 | `scene-slide.v2` 必须基于 CourseBrief、SceneOutline 和有上限的课程上下文，直接返回背景与带坐标的有限 PPTElement；不得生成课程实体 id、状态、revision、Action、React 组件或可执行 slide HTML。 |
+| FR-Q110 | slide 响应解析失败、关键字段非法或规范化后没有可显示元素时，可以进入现有一次 repair；repair 与传输重试继续共享单请求最多四次上游调用预算，不增加自动排版或模型评审循环。 |
 | FR-Q111 | `outline.v2` 只能提取原始描述中明确出现的教学要求，不能仅按学科难度推断受众、水平或用户偏好。 |
 | FR-Q112 | CourseBrief 字段合并优先级必须固定为 `explicit_setting > prompt > default`；显式空数组与字段缺失必须保持不同语义。 |
 | FR-Q113 | 正常路径下，Prompt 字段检测、解析警告、resolved CourseBrief 和 outlines 必须由同一次 `outline.v2` 结构化响应返回，不增加独立 LLM 解析调用。 |
@@ -247,19 +247,21 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-Q116 | 用户在大纲确认前修改 resolved Brief 时，新值必须作为显式设置保存并使旧大纲失效；M7.1 不支持场景生成后直接修改整课 Brief。 |
 | FR-Q117 | 原始 topic 只能作为待解析数据进入 User Prompt，其中的指令不得覆盖 System Prompt、输出 Schema、字段优先级或安全校验。 |
 
-### 4.10 PPT 式只读受控自由画布（M8 计划）
+### 4.10 PPT 式只读幻灯片画布（M8 计划）
 
 | 编号 | 需求 |
 |---|---|
-| FR-Q201 | 系统必须增加 `CanvasSlideContentV1`：`format='canvas.v1'`、`1000 × 562.5` 逻辑画布、背景和带稳定 id 的元素数组；持久化结果使用绝对坐标。 |
-| FR-Q202 | M8 只支持 `text/shape/line/code` 四类 CanvasElement；共同字段包含 left、top、width、height、rotate 和 zIndex，模型 DTO 不得提供这些身份或几何字段。 |
-| FR-Q203 | `SlidePlanDTO` 只能选择 key_points、card_grid、process、comparison、code_explainer 或 summary，并由服务端布局编译器确定性生成元素 id、坐标、尺寸和主题 token。 |
+| FR-Q201 | 新生成 slide 必须在 `content.canvas` 中保存与 OpenMAIC 同构的 `Slide`：`viewportSize=1000`、`viewportRatio=0.5625`、背景、主题和带稳定 id 的绝对坐标元素。这里的 canvas 是逻辑坐标容器，不是 HTML `<canvas>`。 |
+| FR-Q202 | M8 首版只支持 `text/shape/line/code` 四类 PPTElement。模型可以直接返回 left、top、width、height、rotate 和样式，但不能控制元素 id、Course/Scene 标识、状态、revision 或 Action。 |
+| FR-Q203 | `scene-slide.v2` 应从 OpenMAIC 的 `slide-content` Prompt 裁剪：保留 1000 × 562.5 画布、对齐、留白、字号、视觉层级和“幻灯片不是讲稿”等规则，删除图片、视频、图表、复杂公式及其他未实现元素。 |
 | FR-Q204 | 通用只读 SlideCanvas 必须在 `1280×720` 及更大桌面视口等比缩放 16:9 逻辑画布并完整展示主要内容；M8～M10 不要求为移动端、平板或窄屏实现专门重排。 |
-| FR-Q205 | 旧 SlideContent 必须通过 `legacy_stack` 兼容路径恢复；未知元素、非法几何、编译失败或版本不兼容时显示可诊断 fallback，不能导致整个课堂白屏。 |
-| FR-Q206 | 布局编译必须检查有限数字、id 唯一、正尺寸、画布边界、zIndex、最小字号、文本容量、连接线端点和非预期重叠；允许的包含/连接关系不能被一概判错。 |
+| FR-Q205 | 旧 `content.blocks` 课程必须继续由当前 Renderer 恢复；未知或损坏的新元素应被丢弃或显示局部 fallback，不能导致整个课堂白屏。 |
+| FR-Q206 | 服务端必须对模型元素执行轻量规范化：过滤未支持类型，补齐必要默认值，拒绝非有限坐标、非正尺寸和关键字段缺失，净化 text 富文本，并为保留元素分配 id；若最终元素为空则按场景生成失败处理。 |
 | FR-Q207 | 展示字体只用于短标题或关键结论，关键正文和要点使用无衬线字体且不得低于 16px 等效字号；不能靠缩小、隐藏、画布外元素或内部滚动规避内容超载。 |
-| FR-Q208 | 系统必须对布局、元素数量、标题、subtitle、单项、整页可见字符、代码行数、越界、非预期重叠和重复信号生成确定性 SlideQualityReport。 |
-| FR-Q209 | 浏览器测试必须在 `1280×720` 桌面视口检查 slide surface 和文本/代码元素的水平/垂直溢出并保存截图；DOM 溢出断言阻塞合并，首版截图由人工审查。移动端和窄屏截图不属于 M8～M10 硬门。 |
+| FR-Q208 | M8 退出前必须用 2～3 个代表主题做 DeepSeek 真实生成和固定桌面视口人工检查，确认标题、正文、视觉关系和留白明显优于当前文字堆叠；截图用于 Prompt 调整，不建立自动美学评分。 |
+| FR-Q209 | 浏览器测试只需证明 16:9 等比缩放、`text/shape/line/code` 可渲染、主要内容没有被容器裁掉、未知元素不会白屏；移动端和窄屏截图不属于 M8～M10 硬门。 |
+| FR-Q210 | 新生成的 v2 slide 只采用 `content.canvas` 下的 PPT 式 `Slide/PPTElement` 表达；系统不同时提供新的类 Markdown、纵向讲义或同课第二套 Renderer。旧 block 路径只用于读取历史课程。 |
+| FR-Q211 | PPT 式页面必须执行统一视觉基线：四周安全边距、短标题与副标题层级、可选标题强调线、等宽卡片/步骤、稳定列间距和简洁要点；页面外层阴影与圆角只属于 Web 播放 chrome，不写入导出画布。 |
 
 ### 4.11 互动场景（M9 计划）
 
@@ -268,9 +270,9 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-I101 | Scene 判别联合增加 `interactive`，v0.4 的 widgetType 只能是 `diagram`。 |
 | FR-I102 | `interactionMode=off` 时不得生成互动场景；`auto` 时最多一个；`required` 时必须恰好一个。 |
 | FR-I103 | 互动模型输出必须包含完整自包含 HTML、固定 fallback 和 `runtimeContractVersion:1`，不得包含实体 ID。 |
-| FR-I104 | HTML 最大 100 KiB，禁止外部 script/link、子 iframe、object/embed、meta refresh、下载、表单提交、外部 URL、Worker/WebAssembly 和持续执行调度器。 |
+| FR-I104 | HTML 最大 100 KiB，必须自包含；首版禁止外部 script/link、外部 URL、子 iframe、object/embed、下载和表单提交。 |
 | FR-I105 | InteractiveRenderer 必须用 iframe `srcDoc` 渲染，sandbox 只能包含 `allow-scripts`。 |
-| FR-I106 | iframe CSP 必须拒绝外部资源、连接、Worker、对象、子 frame、base URI 和表单提交，并且不允许 `unsafe-eval`；脚本检查另行拒绝 window.open 和 location 导航。 |
+| FR-I106 | iframe 必须注入拒绝外部资源与连接、对象、子 frame、base URI 和表单提交的 CSP；不为模型页面开放 `unsafe-eval`、弹窗或顶层导航。 |
 | FR-I107 | 父子页面消息必须经过来源检查和 Zod 校验，只支持 ready、reset、completed 和 error 最小协议。 |
 | FR-I108 | 互动页 5 秒未 ready、运行报错或消息非法时必须显示固定 fallback，不能影响课堂导航和其他场景。 |
 | FR-I109 | 互动场景使用 speech + learner pause；合法 completed 事件解除等待，切页或卸载必须拒绝迟到事件。 |
@@ -282,11 +284,22 @@ MVP 只有一个逻辑参与者：本地用户。
 |---|---|
 | FR-Q301 | 用户可以对 ready 场景提交不超过 500 字的修改指令；失败场景继续使用原有重试流程。 |
 | FR-Q302 | 再生成必须读取现有场景作为受限 baseline，但模型不能修改 courseId、outlineId、order、status 或实体 ID。 |
-| FR-Q303 | 新场景只有在解析、Schema、语义/安全门、slide 的布局编译与几何门，以及 MySQL expectedRevision 提交全部成功后才能替换旧场景。 |
+| FR-Q303 | 新场景只有在解析、Schema、slide 规范化或互动安全边界，以及 MySQL expectedRevision 提交全部成功后才能替换旧场景。 |
 | FR-Q304 | 再生成失败、取消或冲突时必须保留旧 ready 场景和其他场景。 |
 | FR-Q305 | 项目必须保存固定评价集、量表版本、Prompt/模型元数据和汇总分数，评价产物不得包含真实用户隐私。 |
 | FR-Q306 | v0.4 退出前必须在同一模型配置下与 v0.3 做成对人工比较，并同时报告质量、延迟、token、修复和完成率。 |
 | FR-Q307 | ready 场景再生成期间不改变 Course.status 或持久化 activeOperation；最终用 expectedRevision 原子替换。quiz 再生成必须经用户确认，并在同一事务删除旧 sceneId 的作答。 |
+
+### 4.13 PPT 式编辑与简化资源包（M11/M12 可选）
+
+| 编号 | 需求 |
+|---|---|
+| FR-X101 | M11 编辑器必须直接读取并更新 M8 的 `Slide/PPTElement`，复用同一只读 SlideCanvas 作为绘制层，不创建另一份编辑器专用页面格式。 |
+| FR-X102 | M11 第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和基于 expectedRevision 的 MySQL 保存；冲突或保存失败必须保留原版本。 |
+| FR-X103 | M12 导出包固定为一个 ZIP：根目录一个课程 PPTX，`interactive/` 下按 `Scene.order` 保存自包含 HTML；不额外生成 manifest、README 或 assets 目录。 |
+| FR-X104 | PPTX 只写入 slide 场景并保持其相对顺序；互动 HTML 文件名必须包含补零后的原始场景序号和安全化标题，例如 `03_流程互动.html`。 |
+| FR-X105 | 互动 HTML 的 CSS、JavaScript 和运行所需小型资源必须内联，使解压后的单个 HTML 在无网络环境下可打开；导出不能放宽 M9 的生成安全边界。 |
+| FR-X106 | M11/M12 不属于 M7～M10/v0.4 退出门；只有 M10/v0.4 已完成且用户再次确认范围后，才进入实现和独立验收。 |
 
 ## 5. 非功能需求
 
@@ -342,7 +355,7 @@ MVP 只有一个逻辑参与者：本地用户。
 | NFR-MNT-03 | AI 适配器、存储仓储和语音接口必须可替换为测试实现。 |
 | NFR-MNT-04 | 业务方法新增时使用简洁中文注释说明职责和关键防御场景。 |
 | NFR-MNT-05 | 每个里程碑结束时同步更新 README 和相关设计文档。 |
-| NFR-MNT-06 | 每种新 Scene、旧格式 Block 或 CanvasElement 必须同时具有 Schema、模型/编译输入 DTO、装配、Renderer、fixture 和测试。 |
+| NFR-MNT-06 | 每种新 Scene 或新增 PPTElement 子集必须同时具有 Schema、模型输入契约、装配、Renderer、fixture 和最小主链测试。 |
 | NFR-MNT-07 | LangGraph、多智能体、多模态与 RAG 不得成为 M7～M10 的隐式依赖。 |
 
 ## 6. 验收场景
@@ -403,9 +416,9 @@ MVP 只有一个逻辑参与者：本地用户。
 
 ### 场景 G-4：只读画布生成与恢复（M8）
 
-**Given** 一个 process 类型的 slide 计划已经通过语义校验<br>
-**When** 服务端布局编译器装配并保存场景，用户在 `1280×720` 课堂中打开并刷新页面<br>
-**Then** MySQL 中保存的是 id 和几何字段完整的 `canvas.v1`，只读 SlideCanvas 稳定恢复同一布局；模型没有提交坐标或 CSS，越界、非预期重叠和文本溢出均已被质量门或浏览器断言拦截。
+**Given** DeepSeek 已按裁剪后的 OpenMAIC Prompt 返回带坐标的 `text/shape/line/code` 元素<br>
+**When** 服务端规范化、装配并保存场景，用户在 `1280×720` 课堂中打开并刷新页面<br>
+**Then** MySQL 中保存带服务端 id 的 `Slide/PPTElement`，只读 SlideCanvas 恢复同一页面；不支持或损坏的单个元素不会导致课堂白屏，主要内容在桌面视口中可见。
 
 ### 场景 H：互动脚本异常（v0.4）
 
@@ -430,10 +443,11 @@ MVP 只有一个逻辑参与者：本地用户。
 | 课堂、测验和可选语音 | FR-401～408 | M5 |
 | 可验收交付 | 全部 NFR、AC-01～12 | M6 |
 | 质量上下文与 outline v2 | FR-Q101～117 | M7.1 |
-| PPT 式只读受控自由画布 | FR-Q201～209 | M8 |
+| PPT 式只读幻灯片画布 | FR-Q201～211 | M8 |
 | 受控互动场景 | FR-I101～110、NFR-SEC-08～10 | M9 |
 | 单场景再生成与质量验收 | FR-Q301～307 | M10 |
-| 可视化画布编辑器 | 当前不形成 v0.4 强制需求，确认范围后另补需求编号 | M11（可选） |
+| PPT 式幻灯片编辑器 | FR-X101～102、106 | M11（可选） |
+| PPTX + interactive HTML 简化资源包 | FR-X103～106 | M12（可选） |
 | 单一可度量研究问题 | 从 M7～M10 数据中另行立项 | MX |
 
 当需求编号或范围发生变化时，必须同步更新 [01-scope.md](01-scope.md)、[03-architecture.md](03-architecture.md)、[06-roadmap.md](06-roadmap.md) 和 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。

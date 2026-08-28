@@ -145,16 +145,16 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 
 | 测试层 | M7～M10 必须覆盖 |
 | --- | --- |
-| Domain | Course v1/v2 判别、v1 → v2 迁移、CourseBrief 默认值/字段来源/合并优先级/冲突警告、SlidePlanDTO、canvas.v1/旧 slide 联合读取、有限元素、布局语义和互动数量规则 |
-| Canvas/Renderer | 六种布局的确定性编译，`text/shape/line/code` 的边界、纯文本转义、16:9 缩放、桌面字体层级和未知元素 fallback |
-| Slide quality | 可见字符、最长单项、代码行数、元素数量、坐标边界、非预期重叠、重复、布局预算以及 `1280×720` 桌面 DOM 溢出断言和截图 |
-| Interactive security | HTML 大小与禁用标签、CSP、sandbox、消息来源和消息 Schema |
+| Domain | Course v1/v2 判别、v1 → v2 迁移、CourseBrief 默认值/字段来源/合并优先级/冲突警告、GeneratedSlideData、Slide/旧 block 联合读取、四类 PPTElement 和互动数量规则 |
+| Slide/Renderer | 未支持元素过滤、必要默认值、非有限坐标/非正尺寸、text 白名单净化、code 文本转义、`text/shape/line/code` 渲染、16:9 缩放和未知元素 fallback |
+| Slide visual | 2～3 个 DeepSeek 代表主题在 `1280×720` 的截图与人工检查，确认主次、可读性、关系表达和主要内容未被裁掉；不建立自动美学评分 |
+| Interactive boundary | 完整自包含 HTML、外部依赖拒绝、CSP、`sandbox="allow-scripts"`、消息来源/Schema 和 fallback |
 | MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、新旧行读取、互动内容恢复、再生成原位替换和 conflict |
-| API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 计划/编译/几何失败分类、interactive 失败分类、ready 场景再生成 |
-| Playwright | `1280×720` 桌面只读 SlideCanvas，以及 required diagram 的生成、操作、重置、完成、刷新、fallback 和迟到事件 |
+| API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 解析/规范化失败、interactive 失败分类、ready 场景再生成 |
+| Playwright | `1280×720` 桌面只读 SlideCanvas 的四类元素与恢复，以及 required diagram 的操作、重置、完成、刷新和 fallback |
 | Regression | 原 M6 创建、slide/quiz、播放、作答、删除和 mock E2E 全部保持通过 |
 
-mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。恶意 fixture 至少覆盖外部 fetch、读写父页面、`eval`、子 iframe、meta refresh 和伪造 postMessage。
+mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。另保留一个尝试外部 fetch/访问父页面和一个伪造消息来源的失败 fixture，证明隔离与 fallback 即可；首版不穷举浏览器全部 API。
 
 ### 8.2 M9 DeepSeek 互动 smoke test
 
@@ -172,10 +172,10 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 
 - 事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配、quiz 对齐；
 - 互动页的教学必要性、控件可理解性、重置和完成反馈；
-- 课程完成率、首次结构/密度通过率、修复次数、请求耗时、token、布局分布、几何失败、硬溢出和关键事实错误；
+- 课程完成率、结构解析成功率、修复次数、请求耗时、token、人工发现的主要版式问题和关键事实错误；
 - 每个失败样本的保留/排除规则，不能只展示成功课程。
 
-建议初始退出阈值为目标匹配、教学组织、案例/练习价值、可见内容可读性、视觉层级与版式适配五项平均提升至少 0.5/5，事实正确性不下降，`1280×720` 桌面视口不存在硬溢出，至少 70% 的课程对更偏好 v0.4。桌面端 v2 阈值必须在看到 v0.4 结果前冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
+建议初始退出阈值为目标匹配、教学组织、案例/练习价值、可见内容可读性、视觉层级与版式适配五项平均提升至少 0.5/5，事实正确性不下降，`1280×720` 桌面视口的主要内容没有被裁掉，至少 70% 的课程对更偏好 v0.4。桌面端 v2 阈值必须在看到 v0.4 结果前冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
 
 ### 8.4 M7～M10 证据矩阵模板
 
@@ -184,7 +184,7 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 | AC-Q01 CourseBrief 解析、来源、警告与同 revision 保存恢复 | M7 | Schema + API + MySQL integration | 未实现 |
 | AC-Q02 v1 → v2 兼容 | M7 | migration fixture + 旧库读取 | 未实现 |
 | AC-Q03 outline.v2 同调用解析与大纲生成，场景 Prompt 使用完整上下文 | M7/M8 | golden + 调用计数 + 生成元数据 | 未实现 |
-| AC-Q04 canvas.v1、布局编译、有限元素与桌面端安全渲染 | M8 | Schema + compiler + component + 桌面 DOM 断言 + 截图 | 未实现 |
+| AC-Q04 OpenMAIC 式 Slide/PPTElement 生成、规范化、保存恢复与桌面只读渲染 | M8 | Schema + normalize + component + 真实模型截图 + 桌面 E2E | 未实现 |
 | AC-Q05 required diagram 数量 | M9 | domain + API | 未实现 |
 | AC-Q06 HTML 安全门 | M9 | validator 恶意 fixture | 未实现 |
 | AC-Q07 iframe 协议 | M9 | Playwright + network/console 记录 | 未实现 |
@@ -193,4 +193,4 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 | AC-Q10 桌面端成对质量提升 | M10 | 冻结的桌面 v2 量表报告 | 未实现 |
 | AC-Q11 M6 全量回归 | M7～M10 | `pnpm verify:full` | 每个里程碑退出时复跑 |
 
-M7、M8、M9 可以在各自相关行具备证据后单独更新为完成；只有表中所有“未实现”都被真实证据替换后，才能把 [07-development-status.md](07-development-status.md) 更新为“M10 完成、v0.4 完成”。
+M7、M8、M9 可以在各自相关行具备证据后单独更新为完成；只有表中所有“未实现”都被真实证据替换后，才能把 [07-development-status.md](07-development-status.md) 更新为“M10 完成、v0.4 完成”。M11 编辑器和 M12 简化资源包是 v0.4 之后的可选扩展，不得混入本表伪装为当前验收项；若启动，必须另建需求、测试和退出证据。

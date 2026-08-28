@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 目标：为页面、API、生成管线、播放器和 MySQL Repository 提供唯一数据语言。  
-> 状态说明：第 1～15 节描述已实现的 schemaVersion 1；第 16 节描述 M7～M10 计划中的 Course schemaVersion 2、`canvas.v1` 和 interactive runtime contract，实施后仍以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
+> 状态说明：第 1～15 节描述已实现的 schemaVersion 1；第 16 节描述 M7～M10 计划中的 Course schemaVersion 2、OpenMAIC 式 `Slide/PPTElement` 和 interactive runtime contract，实施后仍以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
 
 ## 1. 建模原则
 
@@ -237,7 +237,7 @@ interface BadScene {
 
 ## 7. Slide 内容
 
-MVP 幻灯片不是自由坐标画布，而是固定布局的内容块。这样更容易校验、保持桌面端渲染稳定并提高生成成功率；移动端重排不属于当前领域契约。M8 计划新增的 `canvas.v1` 是独立判别分支，不能把下面已经持久化的 v1 Block 结构原地改义。
+MVP 幻灯片不是自由坐标画布，而是固定布局的内容块。这样更容易校验、保持桌面端渲染稳定并提高生成成功率；移动端重排不属于当前领域契约。M8 计划新增 `content.canvas: Slide` 判别分支，不能把下面已经持久化的 v1 Block 结构原地改义。
 
 ```ts
 export interface SlideContent {
@@ -292,7 +292,7 @@ export interface CodeBlock {
 - block id 唯一并由装配器生成；
 - 所有页面可见文本总量设置上限，避免模型返回不可阅读的“文字墙”。
 
-自由坐标、图片、图表、公式和动画均不进入 MVP。M8 只在新 `canvas.v1` 分支增加 `text/shape/line/code` 绝对坐标元素；旧 Block 仍保持原义，任何分支都不允许向普通文本字段塞入任意 HTML。
+自由坐标、图片、图表、公式和动画均不进入 v0.3 MVP。M8 只在新 `content.canvas` 分支增加 `text/shape/line/code` 绝对坐标元素；旧 Block 仍保持原义。M8 的 text 只接受净化后的有限富文本，其他普通文本字段仍不得塞入任意 HTML。
 
 ## 8. Quiz 内容
 
@@ -690,7 +690,7 @@ create/save 在写入前调用 CourseSchema.parse；get 在读取并组装后再
 ## 15. 演进规则
 
 - 增加可选字段且旧读者允许时，可保持 schemaVersion；
-- 删除字段、改变 Course 顶层语义或存储布局时必须升级 Course schemaVersion；slide/interactive 等嵌套契约使用自己的 `format` 或 `runtimeContractVersion`，新增判别分支仍必须保持旧分支可读且不承诺旧程序降级读取新数据；
+- 删除字段、改变 Course 顶层语义或存储布局时必须升级 Course schemaVersion；新增 slide/interactive 判别分支仍必须保持旧分支可读，互动消息协议可独立使用 `runtimeContractVersion`；
 - 每次版本升级提供 `migrateVnToVnPlus1` 纯函数和 fixture 测试；
 - 新 Scene 类型只有在 Schema、Renderer、生成器和测试同时存在时才能加入；
 - 新 Action 类型只有在 Schema、Executor、取消语义和测试同时存在时才能加入；
@@ -700,7 +700,7 @@ create/save 在写入前调用 CourseSchema.parse；get 在读取并组装后再
 
 ### 16.1 版本兼容策略
 
-M7 增加持久化 CourseBrief 和 SceneOutlineV2，因此 Course 聚合升级到 `schemaVersion: 2`。M8 的 slide 使用独立 `format: 'canvas.v1'`，M9 的互动消息使用 `runtimeContractVersion: 1`；这些内容子版本不能替代 Course schemaVersion。Repository 不能把旧行直接交给 v2 Schema，也不能要求用户清库；读取顺序应为：
+M7 增加持久化 CourseBrief 和 SceneOutlineV2，因此 Course 聚合升级到 `schemaVersion: 2`。M8 的新 slide 通过 `content.canvas` 与旧 `content.blocks` 区分，M9 的互动消息使用 `runtimeContractVersion: 1`；这些内容分支不能替代 Course schemaVersion。Repository 不能把旧行直接交给 v2 Schema，也不能要求用户清库；读取顺序应为：
 
 ```text
 MySQL row
@@ -827,122 +827,98 @@ export interface SceneOutlineV2 {
 - interactive 不能是第一场，且其 teachingObjective 必须引用课程中已引入的概念；
 - requestedSceneCount 在 v2 仍为 3～5，至少一个 quiz、最多两个 quiz 的规则不变。
 
-### 16.4 SlidePlanDTO、CanvasSlideContentV1 与有限元素
+### 16.4 GeneratedSlideData、Slide 与有限 PPTElement
 
-模型输出和持久化实体必须分开。`SlidePlanDTO` 表达内容与关系，布局编译器生成最终坐标、id 和主题 token：
+M8 采用 OpenMAIC 的直接元素生成方式。模型 DTO 与持久化实体仍然分开，但二者之间不增加另一份语义页面计划：模型直接给出背景和带坐标的元素，服务端做轻量规范化并装配 Slide。
 
 ```ts
-export type SlideLayoutPreset =
-  | 'key_points'
-  | 'card_grid'
-  | 'process'
-  | 'comparison'
-  | 'code_explainer'
-  | 'summary';
-
-export interface SlidePlanDTO {
-  layoutPreset: SlideLayoutPreset;
-  subtitle?: string;
-  content:
-    | KeyPointsPlan
-    | CardGridPlan
-    | ProcessPlan
-    | ComparisonPlan
-    | CodeExplainerPlan
-    | SummaryPlan;
-  narration: string;
-  summary: string;
+export interface GeneratedSlideData {
+  elements: GeneratedPPTElement[];
+  background?: SlideBackground;
+  remark?: string;
 }
 
-export type CanvasColorToken =
-  | 'surface'
-  | 'surface_muted'
-  | 'text'
-  | 'text_muted'
-  | 'primary'
-  | 'secondary'
-  | 'accent'
-  | 'warning';
+export type GeneratedPPTElement =
+  | Omit<PPTTextElement, 'id'>
+  | Omit<PPTShapeElement, 'id'>
+  | Omit<PPTLineElement, 'id'>
+  | GeneratedCodeElement;
 
-export interface CanvasBackground {
-  color: CanvasColorToken;
-}
-
-export interface CanvasTextStyle {
-  color: CanvasColorToken;
-  fontFamily: 'display' | 'sans' | 'mono';
-  fontSize: number;
-  fontWeight: 400 | 500 | 600 | 700;
-  lineHeight: number;
-  align: 'left' | 'center' | 'right';
-}
-
-export interface CanvasShapeStyle {
-  fill: CanvasColorToken;
-  stroke?: CanvasColorToken;
-  strokeWidth?: number;
-  radius?: number;
-}
-
-export interface CanvasLineStyle {
-  color: CanvasColorToken;
-  width: number;
-  endArrow?: boolean;
-}
-
-export interface CanvasElementBase {
+export interface PPTBaseElement {
   id: string;
   left: number;
   top: number;
   width: number;
   height: number;
   rotate: number;
-  zIndex: number;
-  semanticRole?: 'title' | 'subtitle' | 'body' | 'accent' | 'connector' | 'code';
 }
 
-export interface CanvasTextElement extends CanvasElementBase {
+export interface PPTTextElement extends PPTBaseElement {
   type: 'text';
-  text: string;
-  textStyle: CanvasTextStyle;
+  content: string;
+  defaultFontName: string;
+  defaultColor: string;
+  lineHeight?: number;
 }
 
-export interface CanvasShapeElement extends CanvasElementBase {
+export interface PPTShapeElement extends PPTBaseElement {
   type: 'shape';
-  shape: 'rect' | 'round_rect' | 'ellipse';
-  style: CanvasShapeStyle;
+  path: string;
+  viewBox: [number, number];
+  fill: string;
+  outline?: PPTElementOutline;
 }
 
-export interface CanvasLineElement extends CanvasElementBase {
+export type LinePoint = '' | 'arrow' | 'dot';
+
+export interface PPTLineElement extends Omit<PPTBaseElement, 'height' | 'rotate'> {
   type: 'line';
-  start: { x: number; y: number };
-  end: { x: number; y: number };
-  style: CanvasLineStyle;
+  start: [number, number];
+  end: [number, number];
+  style: 'solid' | 'dashed' | 'dotted';
+  color: string;
+  points: [LinePoint, LinePoint];
 }
 
-export interface CanvasCodeElement extends CanvasElementBase {
+export interface PPTCodeElement extends PPTBaseElement {
   type: 'code';
   language: string;
-  code: string;
-  caption?: string;
+  lines: CodeLine[];
+  fileName?: string;
+  showLineNumbers?: boolean;
+  fontSize?: number;
 }
 
-export type CanvasElement =
-  | CanvasTextElement
-  | CanvasShapeElement
-  | CanvasLineElement
-  | CanvasCodeElement;
+export interface CodeLine {
+  id: string;
+  content: string;
+}
 
-export interface CanvasSlideContentV1 {
+export interface GeneratedCodeElement extends Omit<PPTCodeElement, 'id' | 'lines'> {
+  lines: string[];
+}
+
+export type SupportedPPTElement =
+  | PPTTextElement
+  | PPTShapeElement
+  | PPTLineElement
+  | PPTCodeElement;
+
+export interface Slide {
+  id: string;
+  viewportSize: 1000;
+  viewportRatio: 0.5625;
+  theme: SlideTheme;
+  elements: SupportedPPTElement[];
+  background?: SlideBackground;
+}
+
+export interface OpenMaicSlideContent {
   type: 'slide';
-  format: 'canvas.v1';
-  viewport: { width: 1000; height: 562.5 };
-  layoutPreset: SlideLayoutPreset;
-  background: CanvasBackground;
-  elements: CanvasElement[];
+  canvas: Slide;
 }
 
-export type SlideContentV2 = SlideContent | CanvasSlideContentV1;
+export type SlideContentV2 = SlideContent | OpenMaicSlideContent;
 
 export interface SlideSceneV2 extends SceneBase {
   type: 'slide';
@@ -950,13 +926,15 @@ export interface SlideSceneV2 extends SceneBase {
 }
 ```
 
-计划内容的不变量为：card_grid 有 2～4 张卡片；process 有 2～6 步；comparison 有 2～5 个逐行成对的比较维度；code_explainer 必须有源码和 1～5 条注解。模型 DTO 不含任何 id、坐标、zIndex、CSS、React 或 HTML，服务端也不能从模型样式字符串直接构造 className。
+上述代码表达职责边界，不要求逐字段复制 OpenMAIC 的完整超集。真正实施时应从固定提交的 [`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts) 中裁出四类元素实际需要的字段，避免为了兼容图片、视频、图表、表格、音频、复杂公式、动画和编辑器而扩大联合。固定提交的生成 DTO 本身没有 code 分支，但 DSL 有 `PPTCodeElement`；本项目需要把现有安全只读代码块显式适配进去。
 
-布局编译后的不变量为：所有几何数字有限，width/height 为正，id 唯一，元素不能完全越界，关键文本满足最小字号和容量，line 端点合法，zIndex 位于有限范围。非预期重叠需要报告，但 shape 作为文字背景、line 连接节点等显式关系允许相交，不能用简单的“矩形相交即失败”代替语义判断。code 仍只作为转义后的源码文本。
+模型可以提交坐标、尺寸和允许的样式，这是复用 OpenMAIC Prompt 版式能力的关键；模型不能提交或控制元素/代码行 id、Course/Scene id、outlineId、order、status、revision 和 Action。规范化步骤忽略模型 id，补齐有限默认值，过滤未支持元素，拒绝非有限坐标、非正尺寸和关键字段缺失，并在服务端为元素与代码行生成 id。个别坏元素可以丢弃；全部元素无效时整个场景生成失败。
 
-布局编译器使用 `Scene.title` 同源生成 `semanticRole='title'` 的元素；M8 期间 `Scene.title` 仍是导航事实来源。若 M11 允许编辑画布标题，必须以一个领域事务同时更新 Scene.title 与标题元素。读取旧 SlideContent 时走 `legacy_stack`，不在迁移时编造坐标；只有 M10 明确再生成才把旧场景替换为 `canvas.v1`。
+`PPTTextElement.content` 在 OpenMAIC 中是富文本 HTML。本项目只允许 `p/span/strong/em/br` 和实际需要的有限内联样式，装配前统一净化，不能把上游 Renderer 的信任边界原样复制。code 始终作为源码数据转义渲染，不进入富文本路径。
 
-OpenMAIC 固定提交的 [`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts) 可参考基础几何和元素联合，[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts) 可参考默认值补全边界；本项目只采用有限子集，并以 Zod 和更严格几何门作为可执行契约。
+`content.canvas` 是新生成 slide 的唯一新产品表达，表示一张固定 16:9 的 PPT 式页面；它不是 HTML `<canvas>` 标签，也不是无限白板。旧 `SlideContent.blocks` 继续由原 Renderer 读取，不在迁移时编造坐标。M10 明确再生成旧场景时，才用同一 M8 生成链替换该页。
+
+OpenMAIC 固定提交的 [`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts) 是模型响应参考，[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts) 是默认值与单元素规范化参考，[`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts) 是 `1000/0.5625` 和 `content.canvas` 装配参考。直接移植时必须保留 MIT 许可和来源记录。
 
 ### 16.5 InteractiveScene
 
@@ -1013,7 +991,7 @@ OpenMAIC 固定提交的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC
 ### 16.7 再生成替换不变量
 
 - 再生成只允许替换同一个 courseId + outlineId 的 ready Scene；
-- 候选 Scene 沿用 courseId、outlineId、type 和 order，获得新的 scene id、CanvasElement/旧 Block id、Action id、GenerationMetadata 和时间戳；
+- 候选 Scene 沿用 courseId、outlineId、type 和 order，获得新的 scene id、PPTElement/旧 Block id、Action id、GenerationMetadata 和时间戳；
 - 新候选未通过完整校验和事务提交前，旧 Scene 保持在聚合中；
 - 候选生成期间 Course.status、SceneProgress 和持久化 activeOperation 都保持不变；最终 expectedRevision 不匹配时拒绝迟到结果，因此崩溃或取消天然回到旧 ready 场景；
 - quiz 场景再生成必须要求用户确认旧作答会失效；替换 Course Scene 与删除旧 sceneId 的 QuizAttempt 使用同一个 MySQL 事务，任一步失败则全部回滚；
@@ -1023,4 +1001,4 @@ OpenMAIC 固定提交的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC
 
 Course `schemaVersion: 2` 只有在 M7 的 v1/v2 读取与迁移、MySQL `brief_json`、CourseBrief 归一/API/来源展示、SceneOutlineV2、fixture 和仓储契约测试同时进入正式调用链后才能成为 `CURRENT_SCHEMA_VERSION`。M7 不等待画布或互动代码，也不能提前产生对应内容。
 
-M8 的 `canvas.v1` 只有在 SlidePlanDTO、布局编译器、有限元素 Schema、只读 Renderer、legacy 恢复、几何/密度门、MySQL 恢复和 production E2E 同时可用后才能进入生产 Scene 联合。M9 的 InteractiveScene 也只有在生成器、安全校验、iframe Renderer、消息协议、fallback、fixture 和 E2E 同时完成后才能产生。只提前修改联合类型或让模型输出下游尚不能处理的分支，都会破坏阶段可运行性，因此禁止分离发布。
+M8 的 `content.canvas` 分支只有在 GeneratedSlideData/Slide/PPTElement Schema、轻量规范化、文本净化、只读 Renderer、旧 block 恢复、MySQL 恢复、真实模型 smoke 和 production E2E 同时可用后才能进入生产 Scene 联合。M9 的 InteractiveScene 也只有在生成器、必要安全边界、iframe Renderer、消息协议、fallback、fixture 和 E2E 同时完成后才能产生。只提前修改联合类型或让模型输出下游尚不能处理的分支，都会破坏阶段可运行性，因此禁止分离发布。

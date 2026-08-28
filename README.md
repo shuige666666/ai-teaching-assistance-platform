@@ -19,7 +19,7 @@
 
 M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部完成。
 
-**M7.0 课程质量基线现已完成**：6 个公开主题及 Prompt v1 输入已冻结，mock 采集 smoke 和 DeepSeek v0.3 自动基线均已完成。基线得到 4/6 `ready`、28/30 场景保存和 50 次上游调用；两门课程的第 5 场景因 `INVALID_MODEL_OUTPUT` 保留为 `partial_failed`。每个已保存场景均归档为 `1280×720` 课堂 MHTML，旧 PNG、双视口密度观察和提前生成的空评分表不再保留；课程内容与生成元数据没有重生成。人工评分延后到 M10，在同六题 v0.4 课程生成后做配对评价。下一步是 M7.1 CourseBrief/outline v2；M8～M10 只承诺桌面端，M11 画布编辑器可选。
+**M7.0 课程质量基线现已完成**：6 个公开主题及 Prompt v1 输入已冻结，mock 采集 smoke 和 DeepSeek v0.3 自动基线均已完成。基线得到 4/6 `ready`、28/30 场景保存和 50 次上游调用；两门课程的第 5 场景因 `INVALID_MODEL_OUTPUT` 保留为 `partial_failed`。每个已保存场景均归档为 `1280×720` 课堂 MHTML，旧 PNG、双视口密度观察和提前生成的空评分表不再保留；课程内容与生成元数据没有重生成。人工评分延后到 M10，在同六题 v0.4 课程生成后做配对评价。下一步是 M7.1 CourseBrief/outline v2；M8～M10 只承诺桌面端，M11 PPT 式幻灯片编辑器和 M12 简化资源包导出均为可选扩展。
 
 ## v0.3 MVP 已实现什么
 
@@ -29,13 +29,13 @@ MVP 面向“教师或学生输入一个主题，生成并运行一门微型课�
 - 大纲与场景分阶段生成，模型输出经过 Schema 和语义校验；
 - 固定渲染器展示 slide/quiz 和只读代码块，确定性播放引擎执行 speech/pause。
 
-v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 引入只读、桌面端的受控自由画布，在 M9 只加入一种受控 diagram 互动页；可视化画布编辑器留到可选 M11，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
+v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 把新生成的 slide 统一升级为只读、桌面端的 OpenMAIC 式 `Slide/PPTElement` 幻灯片，在 M9 只加入一种受控 diagram 互动页；不再并行建设类 Markdown/纵向讲义视图。基于同一 Slide 数据的编辑器留到可选 M11，只含 PPTX 与 `interactive/*.html` 的简化 ZIP 导出留到可选 M12，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
 
 ## 为什么不一比一照搬 OpenMAIC
 
 OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 `@openmaic` 包和多条生成入口的平台型项目。它同时处理文档导入、模型路由、媒体、白板、交互应用、多智能体、存储迁移和大量兼容逻辑，整体规模不适合作为毕业设计第一阶段的直接复刻目标。
 
-本项目复刻其核心机制和数据流，而不是复刻全部产品功能。当前已经证明“主题 → 结构化课程 → 课堂运行时”这一最小闭环；接下来先建立更好的产品质量和互动基线，再选择一个有对照、有指标的论文方向。
+本项目不复制完整平台，但对已经进入本项目范围的能力应优先裁剪其成熟纵向实现，而不是重新设计一套更重的架构。当前已经证明“主题 → 结构化课程 → 课堂运行时”这一最小闭环；M8 将成套参考 OpenMAIC 的 slide Prompt、直接坐标元素、normalize、Slide 装配和只读 Renderer，M9 同样参考 diagram Prompt、HTML 后处理与 iframe 宿主，再适配本项目的 AIAdapter、MySQL 和有限类型。
 
 ## 设计文档
 
@@ -46,10 +46,10 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 | [03. 系统架构设计](docs/03-architecture.md) | OpenMAIC 实际如何运行，目标系统如何分层和调用 |
 | [04. 领域模型与数据契约](docs/04-domain-model.md) | Course、Scene、Action、状态和 DTO 如何定义 |
 | [05. AI 生成管线设计](docs/05-generation-pipeline.md) | Prompt、解析、校验、修复、重试和预算如何控制 |
-| [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M10、可选 M11 与暂存 MX 如何分阶段，每阶段用什么证据退出 |
+| [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M10、可选 M11/M12 与暂存 MX 如何分阶段，每阶段用什么证据退出 |
 | [07. 当前开发状态](docs/07-development-status.md) | 哪些代码已进入调用链、通过了什么验证、下一步是什么 |
 | [08. 部署、恢复与验收手册](docs/08-deployment-and-acceptance.md) | 如何生产启动、备份恢复、排障并复现 AC-01～AC-12 |
-| [09. v0.4 课程质量、画布与互动开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | M7～M10 的 CourseBrief、受控自由画布、互动沙箱、再生成和 OpenMAIC 参考路径 |
+| [09. v0.4 课程质量、幻灯片与互动开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | M7～M10 的 CourseBrief、PPT 式只读幻灯片、互动沙箱、再生成，以及 M11/M12 和 OpenMAIC 参考路径 |
 | [10. M6.5 远端响应韧性与可观测性开发方案](docs/10-m6.5-remote-response-resilience-plan.md) | DeepSeek 响应分类、受限重试、安全日志和验收证据 |
 
 01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，09 是 M7～M10 的可执行开发方案，10 是插入 M6 与 M7 之间的 M6.5 工程加固方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
@@ -69,8 +69,9 @@ app/
   api/health/config/             # [M6 已实现] 当前 AI 档位的无密钥配置检查
 components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
-  canvas/                        # [M8 计划] 只读 SlideCanvas 与有限元素 Renderer
+  slides/                        # [M8 计划] 只读 SlideCanvas 与 text/shape/line/code Renderer
   interactive/                   # [M9 计划] sandbox iframe 宿主与消息桥
+  editor/                        # [M11 可选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
   domain/                        # [M1 已实现] Schema、状态转换与 fixture
   repository/                    # [M2 已实现] InMemory / MySQL 仓储与错误映射
@@ -79,9 +80,10 @@ lib/
   ai/                            # [M3/M6.5 已实现] mock、OpenAI-compatible 适配器与响应诊断
   generation/                    # [M4/M6.5 已实现] Prompt、解析、修复、预算与受限重试
   playback/                      # [M5 已实现] 播放 reducer、Action executor 与语音适配器
-  quality/                       # [M7/M8 计划] 内容、几何与视觉质量报告
-  canvas/                        # [M8 计划] 布局编译、规范化与几何语义门
+  quality/                       # [M7/M10 计划] 固定主题、人工量表与离线汇总
+  slides/                        # [M8 计划] Slide/PPTElement、规范化与富文本净化
   interactive/                   # [M9 计划] HTML 校验、CSP patch 与运行协议
+  export/                        # [M12 可选] Slide/PPTElement → PPTX 与简单 ZIP 打包
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
 scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
 e2e/                             # [M6 已实现] production mock 完整浏览器回归
@@ -89,7 +91,7 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
-标记为 M1～M6.5 的目录已经进入正式调用链，标记为 M7～M9 的目录只是计划结构，目前不应在开发状态中写成已实现。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M6.5 的目录已经进入正式调用链，标记为 M7～M9 的目录只是计划结构，M11/M12 目录甚至只有在再次确认可选范围后才创建；目前都不应在开发状态中写成已实现。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 ## 技术栈
 
@@ -169,11 +171,12 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 6. **M6（已完成）**：本机自动化测试、故障注入、生产构建、恢复和 DeepSeek 真实生成证据均已通过。
 7. **M6.5（已完成）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
 8. **M7（进行中）**：M7.0 已保留六题基线、生成事实和逐场景 MHTML；继续完成 CourseBrief、Course v2 和 outline v2；
-9. **M8（计划）**：建立 `canvas.v1`、受控布局编译器、只读 SlideCanvas、场景 Prompt v2、MySQL 恢复和桌面质量门；
-10. **M9（计划）**：实现唯一一种 `interactive/diagram` 的生成、严格校验、沙箱运行、消息协议和 fallback；
+9. **M8（计划）**：裁剪 OpenMAIC 的 `slide-content Prompt → 带坐标 PPTElement → normalize → Slide → SlideCanvas` 纵向链，接入 MySQL，并用 2～3 个真实主题做桌面视觉检查；
+10. **M9（计划）**：裁剪 OpenMAIC 的 diagram Prompt、HTML 后处理和 iframe Renderer，实现唯一一种 `interactive/diagram` 的生成、保存、隔离运行和 fallback；
 11. **M10（计划）**：实现 ready 场景按指令再生成、事务替换和 v0.3/v0.4 成对质量验收；
-12. **M11（可选）**：在稳定的 `canvas.v1` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不阻塞 v0.4；
-13. **MX（暂时搁置）（未选题）**：待 M10 产品质量闭环完成后选择一个可度量的毕业论文研究问题。
+12. **M11（可选）**：在 M8 的同一 `Slide/PPTElement` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不建立第二套页面格式，也不阻塞 v0.4；
+13. **M12（可选）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；
+14. **MX（暂时搁置）（未选题）**：待 M10 产品质量闭环完成后选择一个可度量的毕业论文研究问题。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。
 
@@ -181,4 +184,4 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 
 OpenMAIC 是本项目的参考系统，其源码采用 MIT License。本仓库当前只依据公开源码分析并重新设计毕业设计规模的实现，尚未复制 OpenMAIC 源文件。若后续直接复用任何实现或资源，应保留原项目的版权和许可声明，并在本项目中明确标注来源。
 
-本项目文档中的“复刻”指核心工作流和架构思想的独立实现，不表示与 OpenMAIC 官方项目兼容，也不代表 OpenMAIC 官方对本项目的认可。
+本项目文档中的“复刻”指在毕业设计范围内重建核心工作流，并允许在遵守 MIT License、保留版权和明确标注来源的前提下裁剪复用上游成熟链路。本项目需要明确区分上游原有实现与自己的范围裁剪、AIAdapter/MySQL 适配、代码元素扩展和后续研究工作；它不表示与 OpenMAIC 官方项目兼容，也不代表 OpenMAIC 官方对本项目的认可。

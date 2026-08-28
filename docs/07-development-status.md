@@ -168,6 +168,6 @@ M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` �
 
 2026-08-28 需求澄清后，提交 `85be4b9f` 遗留的 `slide-density.v1.json`、44 张 PNG、DOM/密度报告、`scores.json` 和独立汇总脚本被删除或收束。`report.json` 继续保存原课程、narration、quiz、生成耗时、调用、token、repair 和错误；`summary.md` 只做事实索引，`scenes/` 保存逐场景 MHTML。人工七维评分延后到 M10 的 v0.3/v0.4 配对验收。M8～M10 只承诺 `1280×720` 及更大桌面视口。
 
-M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。下一步是 M7.1 CourseBrief/outline v2；之后依次为 M8 只读受控自由画布、M9 diagram 互动和 M10 单场景再生成与 v0.4 配对验收。M11 可视化画布编辑器是可选项，不阻塞 v0.4 或 MX。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
+M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。下一步是 M7.1 CourseBrief/outline v2；之后依次为 M8 PPT 式只读幻灯片画布、M9 diagram 互动和 M10 单场景再生成与 v0.4 配对验收。M11 PPT 式幻灯片编辑器和 M12 PPTX + interactive HTML 简化资源包均为可选项，不阻塞 v0.4 或 MX。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
 
-M8 计划保存标准 `canvas.v1`，但让 LLM 只返回语义 SlidePlan 和布局意图，由服务端布局编译器生成坐标；M8 不允许用户直接编辑。M9 独立实现自包含 diagram 与严格 sandbox。以上阶段均不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。
+M8 计划裁剪 OpenMAIC 已验证的幻灯片纵向链：LLM 按 `slide-content` Prompt 直接返回带坐标的有限 PPTElement，服务端完成过滤、默认值、text 净化、id 分配和 Slide 装配，再由只读 SlideCanvas 渲染并保存到 MySQL。首版只支持 `text/shape/line/code`，不增加类 Markdown/纵向讲义视图，也不提前实现编辑器、导出、通用自动排版或复杂几何报告。M9 独立裁剪 OpenMAIC diagram Prompt、HTML 后处理和 iframe Renderer，形成一个自包含 diagram 闭环。以上阶段均不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。

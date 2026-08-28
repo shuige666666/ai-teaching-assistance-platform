@@ -8,13 +8,13 @@
 
 复刻不按 OpenMAIC 的目录逐项照搬，而按纵向闭环推进：**固定课程可浏览 → MySQL 可恢复 → 真实大纲 → 真实场景 → 播放与测验 → 完整验收**。数据库现在是基础能力，因此必须在真实模型接入前完成，不能等课程已经生成后再补持久化。
 
-M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读画布、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的可选画布编辑器；暂存的 MX 才选择一个可度量研究问题。
+M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读幻灯片、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的可选 PPT 式幻灯片编辑器，M12 是可选的 PPTX + interactive HTML 简化资源包导出；暂存的 MX 才选择一个可度量研究问题。
 
 **当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7.0 的 6 主题 Prompt v1 自动基线、生成事实与逐场景 MHTML 已留存，人工评分延后到 M10 的 v0.3/v0.4 配对验收。下一步实现 M7.1 CourseBrief/outline v2。原 M7.2、M7.3、M7.4 尚未进入代码，现分别升格为 M8、M9、M10；M8～M10 只承诺 `1280×720` 及更大桌面视口。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
-以下定义适用于 M1～M10 的实现任务；M0 只执行文档链接、术语和追踪一致性检查。M11 开始前必须另行确认范围，但一旦进入实现也遵守同一完成定义。
+以下定义适用于 M1～M10 的实现任务；M0 只执行文档链接、术语和追踪一致性检查。M11/M12 开始前必须另行确认范围，但一旦进入实现也遵守同一完成定义。
 
 1. 代码已经进入正式调用链，不是孤立示例；
 2. 正常路径能在 `AI_MODE=mock` 下复现；
@@ -41,10 +41,11 @@ M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。
 | M5 课堂运行时（已完成） | 自动播放、单选测验和可选浏览器语音 | 手工翻页 | 4～6 天 |
 | M6 本机验收交付（已完成） | mock 自动回归、生产构建与 DeepSeek 实测 | 开发态系统 | 5～7 天 |
 | M7 课程质量基础（进行中） | 桌面评价基线、CourseBrief、Course/outline v2 | v0.3 模糊课程要求 | 分 M7.0、M7.1 |
-| M8 PPT 式只读画布（计划） | 受控布局生成 `canvas.v1`，保存、恢复并只读播放 | 纵向 Block 堆叠 | 分 DSL、编译、渲染、质量门 |
+| M8 PPT 式只读幻灯片（计划） | 裁剪 OpenMAIC 的直接坐标元素链，保存、恢复并只读播放 | 纵向 Block 堆叠 | 分类型/fixture、Prompt/生成、渲染/实测 |
 | M9 diagram 互动闭环（计划） | 一个可操作、可重置、可完成且可安全失败的互动页 | 全静态场景 | 一个纵向闭环 |
 | M10 课程修订与 v0.4 验收（计划） | ready 场景按指令替换并完成成对质量报告 | 只能重新生成失败场景 | 事务闭环 + 最终评价 |
-| M11 可视化画布编辑器（可选） | 选择、拖拽、缩放、文字编辑、撤销重做和保存 | M8 只读画布 | 不阻塞 v0.4/MX |
+| M11 PPT 式幻灯片编辑器（可选） | 在同一 `Slide/PPTElement` 上选择、拖拽、缩放、文字编辑、撤销重做和保存 | M8 只读幻灯片 | 不阻塞 v0.4/MX |
+| M12 简化资源包导出（可选） | 一个 ZIP 内含课程 PPTX 与 `interactive/*.html` | M8 slide + M9 interactive | 不阻塞 v0.4/MX |
 | MX 毕业论文延展（暂存） | 基于 M7～M10 数据完成一个可度量研究问题 | 无 | 视选题而定 |
 
 建议投入是专注开发日。延期时先减少视觉装饰和扩展能力，不压缩 Schema、事务、错误恢复和测试。
@@ -296,19 +297,19 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 **M7 退出门**：M7.0 六题输入、生成报告和逐场景 MHTML 已保存；四类 Brief fixture、Course v1/v2 兼容、MySQL 恢复和 M6 全量回归通过；同一主题在默认值与显式受众/目标下得到可解释差异。达到此门后才开始 M8。
 
-## 12. M8：PPT 式只读受控自由画布
+## 12. M8：PPT 式只读幻灯片画布
 
-M8 取代原 M7.2 的固定 React 模板方案。持久化契约改为 `canvas.v1`：固定逻辑画布为 `1000 × 562.5`，页面由带稳定 id、绝对坐标、尺寸、旋转和层级的有限元素组成。第一版只支持 `text/shape/line/code`，不加入图片检索、图表、音视频、动画或任意 HTML。旧 SlideContent v1 继续由 legacy Renderer 读取，不静默改写历史课程。
+M8 取代原 M7.2 的固定 React 模板方案。新生成的 slide 只有一种产品形态：固定 16:9、一次展示一个场景的 PPT 式页面，不再建设类 Markdown、纵向讲义或同课双视图。新内容在 `content.canvas` 中保存 `Slide`：固定 `viewportSize: 1000`、`viewportRatio: 0.5625`，页面由带稳定 id、绝对坐标、尺寸和样式的有限 PPTElement 组成。第一版只支持 `text/shape/line/code`，不加入图片检索、图表、音视频、复杂公式、动画或可执行 slide HTML。旧 `content.blocks` 继续由当前 Renderer 读取，但仅用于历史兼容。
 
-生成仍只调用一次现有 scene 模型：LLM 输出可见短内容、narration 和 `key_points/card_grid/process/comparison/code_explainer/summary` 之一的布局意图，服务端布局编译器再确定性地产生元素坐标、主题 token 和 id。生产路径不接受模型直接提交任意坐标、CSS 或 HTML；这样最终存储是真正可供 M11 编辑的自由画布，同时把重叠、越界和样式漂移控制在可测试的编译层。Renderer 只消费规范化后的 `canvas.v1`，负责缩放、元素分派和 fallback。
+生成仍只调用一次现有 scene 模型。与 OpenMAIC 一样，裁剪后的 `slide-content` Prompt 直接要求 LLM 返回背景和元素坐标；服务端执行 JSON/Schema、未支持元素过滤、默认值补齐、text 富文本净化、损坏元素丢弃和 id 分配，然后组装 `Slide`。不增加独立的语义计划、自动排版器或复杂坐标质量系统。Renderer 只负责等比缩放、四类元素分发和 fallback。
 
-OpenMAIC 固定提交 `59adbef` 提供实现参照：[`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts) 展示绝对坐标 DSL，[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts) 和 [`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md) 展示画布生成与规范化，[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 与 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx) 展示只读渲染分层。参考不等于整包照搬；本项目必须保留自己的 Zod、MySQL、调用预算和纯文本安全边界。
+OpenMAIC 固定提交 `59adbef` 提供整条实现参照：[`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md) 和 [`user.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/user.md) 定义画布与视觉规则，[`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts)、[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts)、[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts) 和 [`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts) 串起响应、规范化和装配，[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 与 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx) 负责渲染。本项目保留 AIAdapter、Zod、MySQL 和调用预算，裁掉上游媒体/编辑能力，并保留 MIT 许可和来源记录。
 
-**M8 退出门**：固定 6 主题能够生成、保存、重启恢复和播放；最终画布通过 Schema、元素白名单、几何边界、文本密度、重复、最小字号和 `1280×720` DOM 溢出门；v1 课程仍能打开，M6 全量回归通过。移动端、平板和窄屏不阻塞退出。完成后才开始 M9。
+**M8 退出门**：mock fixture 覆盖四类元素并能保存、重启恢复和播放；2～3 个代表主题完成 DeepSeek 真实生成和 `1280×720` 人工视觉检查；新页面主次清楚、主要内容没有被裁掉，坏元素不会造成白屏；v1 课程仍能打开，M6 全量回归通过。移动端、平板和窄屏不阻塞退出。完成后才开始 M9。
 
 ## 13. M9：interactive/diagram 纵向闭环
 
-M9 只实现 `interactive/diagram`：专用 Prompt 生成自包含 HTML/CSS/JavaScript，服务端执行大小、结构、危险能力和运行协议校验；课堂只用 `sandbox="allow-scripts"` 且注入禁止外部网络的 CSP，支持 ready、reset、completed、error 和固定 fallback。若 M8 静态画布仍频繁溢出或只能人工挑选好样本，不进入互动开发。
+M9 只实现 `interactive/diagram`：从 OpenMAIC 裁剪专用 Prompt、HTML 后处理、InteractiveRenderer 和 iframe 宿主，生成自包含 HTML/CSS/JavaScript；服务端只做完整文档、大小、外部依赖和消息契约等必要检查。课堂只用 `sandbox="allow-scripts"` 且注入禁止外部网络的 CSP，支持 ready、reset、completed、error 和固定 fallback。若 M8 还不能稳定生成和恢复页面，不进入互动开发。
 
 可参考 OpenMAIC 的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/interactive.ts)、[`diagram-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/diagram-content/system.md)、[`interactive-renderer.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/interactive-renderer.tsx)、[`InteractiveIframeHost.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/InteractiveIframeHost.tsx) 和 [`iframe.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/lib/utils/iframe.ts)。OpenMAIC 当前 iframe 还允许 forms/popups，本项目范围更小，安全配置不得原样复制，仍坚持只有 `allow-scripts`。
 
@@ -316,29 +317,35 @@ M9 只实现 `interactive/diagram`：专用 Prompt 生成自包含 HTML/CSS/Java
 
 ## 14. M10：单场景再生成与 v0.4 验收
 
-允许 ready 场景携带 500 字以内意见进行事务化再生成。候选生成期间不改变 ready Course；提交前保留旧结果，失败、取消和 conflict 均不破坏课程。slide 再生成继续经过 M8 的同一画布编译和质量门；quiz 再生成经用户确认后，在替换场景的同一事务清理旧作答。最后使用 M7.0 的相同六题、Provider、模型、请求设置和 `1280×720` 视口完成 v0.3/v0.4 成对人工评价，并报告内容质量、视觉可读性、成本、延迟、首次通过率、修复率和布局分布。
+允许 ready 场景携带 500 字以内意见进行事务化再生成。候选生成期间不改变 ready Course；提交前保留旧结果，失败、取消和 conflict 均不破坏课程。slide 再生成继续经过 M8 的同一 Prompt、规范化和 Slide 装配链；quiz 再生成经用户确认后，在替换场景的同一事务清理旧作答。最后使用 M7.0 的相同六题、Provider、模型、请求设置和 `1280×720` 视口完成 v0.3/v0.4 成对人工评价，并报告内容质量、视觉可读性、成本、延迟、完成率和修复率。
 
 **M10 退出门**：AC-Q01～AC-Q11 全部有证据；M6 `pnpm verify:full` 继续通过；质量达到 M7.0 预先冻结并在候选生成前版本化的阈值。达到此门后才宣布 v0.4 完成。
 
-## 15. M11：可视化画布编辑器（可选）
+## 15. M11：PPT 式幻灯片编辑器（可选）
 
-M11 只在 M8 的 `canvas.v1` 已稳定且用户再次确认范围后开始。第一批能力限于选择、拖拽、缩放、删除、撤销重做和 MySQL 保存；第二批再考虑文本编辑、复制粘贴、对齐吸附和图层。它复用 M8 的只读 Renderer，不反向改变 M8 生成契约，也不阻塞 M10 或 MX。
+M11 只在 M10/v0.4 已完成、M8 的 `Slide/PPTElement` 已稳定且用户再次确认范围后开始。第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和 MySQL 保存；第二批再考虑复制粘贴、对齐吸附和图层。它复用 M8 的只读 Renderer，在同一 PPT 式页面上叠加编辑交互，不建立第二套页面格式，不反向改变 M8 生成契约，也不作为 MX 的前置条件。
 
 可参考 OpenMAIC Editor 的三层边界：[`README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/README.md)、[`core/index.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/core/index.ts)、[`EditableSlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/react/EditableSlideCanvas.tsx) 和 [`EditableSlideCanvasWithUI.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/ui/EditableSlideCanvasWithUI.tsx)。本项目用 MySQL revision/事务保存替代 OpenMAIC 的宿主状态与本地持久化方式。
 
-## 16. 共同硬边界
+## 16. M12：PPTX + interactive HTML 简化资源包（可选）
 
-M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、code/simulation/game/3D widget 或任意学习者代码执行。M8 不实现直接编辑，M9 的 diagram 未稳定前不得增加第二类互动场景，M11 不得被悄悄并入 v0.4 硬门。
+M12 只在 M10/v0.4 已完成、M8 slide 与 M9 interactive 均稳定且用户再次确认范围后开始。导出结果固定为一个 ZIP：根目录只放一个课程 PPTX，`interactive/` 目录只放按原始场景顺序命名的自包含 HTML，例如 `03_流程互动.html`。第一版不生成 manifest、README 或 assets 目录；互动页依赖的 CSS、JavaScript 和小型资源必须内联。PPTX 只写入 slide 场景并保持相对顺序，互动页面不尝试嵌入 PPTX。
 
-## 17. MX：毕业论文延展
+可参考 OpenMAIC 的 [`lib/export/use-export-pptx.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/lib/export/use-export-pptx.ts) 中 PPTElement 到 PPTX 的映射、资源包组装、标题安全化和 `interactive/` 分包方式，以及其内置 [`packages/pptxgenjs`](https://github.com/THU-MAIC/OpenMAIC/tree/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/pptxgenjs)。固定提交按“第几个互动页”编号，本项目明确改为原始 `Scene.order`，不能原样复制该编号逻辑。本项目只复用 `text/shape/line/code` 子集和简单 ZIP 结构，不复制 `.maic.zip` manifest、导入协议、视频导出或完整媒体管线。
+
+## 17. 共同硬边界
+
+M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、code/simulation/game/3D widget 或任意学习者代码执行。M8 不实现直接编辑，M9 的 diagram 未稳定前不得增加第二类互动场景，M11/M12 不得被悄悄并入 v0.4 硬门。
+
+## 18. MX：毕业论文延展
 
 
 
-## 18. 风险登记与止损规则
+## 19. 风险登记与止损规则
 
 | 风险 | 早期信号 | 止损措施 |
 | --- | --- | --- |
-| 范围膨胀 | M8 未稳定就并行开发互动、编辑器、RAG 或 Agent | 严格按 M7 → M8 → M9 → M10，M11 与额外能力不进入 v0.4 硬门 |
+| 范围膨胀 | M8 未稳定就并行开发互动、编辑器、导出、RAG 或 Agent | 严格按 M7 → M8 → M9 → M10，M11/M12 与额外能力不进入 v0.4 硬门 |
 | 数据库先于领域模型扩张 | 页面和 API 直接拼 SQL | 强制 CourseRepository 与契约测试 |
 | 长事务 | 模型调用期间占用数据库事务 | 使用登记操作和结果提交两个短事务 |
 | 并发覆盖 | 迟到响应覆盖重试结果 | operation id + expectedRevision |
@@ -347,14 +354,14 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、code/si
 | 语音拖慢主线 | 调试集中在音色或兼容性 | TextOnly 为默认，BrowserSpeech 可关闭 |
 | 生成脚本越权 | iframe 可访问网络、主页面或存储 | 关闭 interactive 入口，先修复 sandbox/CSP/消息边界 |
 | 旧课程无法读取 | schemaVersion 2 直接替换 v1 | 停止 UI/Prompt 开发，先完成迁移与 fixture 回归 |
-| 画布计划与编译器脱节 | Prompt 要求并列/流程，但布局编译器无法产生对应元素关系 | 先补齐 `SlidePlanDTO → canvas.v1` 编译和 fixture，再升级生产 Prompt |
-| 模型直接控制几何 | 坐标、CSS、任意 HTML 混入生产 DTO，页面频繁重叠或越界 | 退回布局意图，由服务端编译坐标；M8 不开放任意坐标输出 |
-| 用视觉手段掩盖超载 | 依赖小字体、隐藏或画布内滚动才不溢出 | 回退内容预算或布局规则，不接受低于 16px 的关键正文 |
+| 裁剪上游时牵入过多依赖 | 为一个 slide 同时引入媒体、编辑器、动效和存储包 | 只移植四类元素需要的类型、纯函数和 Renderer，记录来源 |
+| 模型坐标不稳定 | 多个真实主题反复出现相同重叠、越界或超长正文 | 先缩小 Prompt/元素字段并调整示例；稳定复现后只补针对性规则 |
+| 用视觉手段掩盖超载 | 依赖小字体、隐藏或画布内滚动才不溢出 | 回退 Prompt 中的可见内容预算，细节移入 narration |
 | 质量提升不可证 | 只展示一个好看的课程 | M7.0 先冻结数据集、量表与阈值，再做成对评价 |
 | 论文成为功能堆砌 | 延展没有唯一变量 | MX 一次只选择一个主问题 |
 
 当前主分支无法启动、迁移不可重复、CourseSchema 可被绕过、密钥进入客户端、失败只能清库恢复或测试连续失效时，停止增加功能并先恢复基线。
 
-## 19. 推荐的下一次开发迭代
+## 20. 推荐的下一次开发迭代
 
 当前 M7.0 已保留冻结的六题输入、6 门 MySQL 课程、生成元数据、失败样本和 28 份逐场景 MHTML，并保持 Prompt、Schema、Renderer、CSS 与 iframe 不变。下一次开发迭代直接进入 M7.1 CourseBrief、Course v2 和 outline v2；人工评分等 M8/M9/M10 形成同题 v0.4 课程后再做。不得提前开始 M8 画布、M9 互动或把移动端适配重新加入当前硬门。

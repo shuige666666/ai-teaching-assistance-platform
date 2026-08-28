@@ -1,7 +1,7 @@
 # 01. 项目范围与版本边界
 
 > 文档版本：0.4
-> 状态：v0.3/M1～M6.5 已完成；v0.4/M7.0 已完成六题冻结、自动基线和逐场景 MHTML，人工评分延后到 M10 配对验收；M7.1、M8、M9、M10 尚未实现，M11 可选
+> 状态：v0.3/M1～M6.5 已完成；v0.4/M7.0 已完成六题冻结、自动基线和逐场景 MHTML，人工评分延后到 M10 配对验收；M7.1、M8、M9、M10 尚未实现，M11 编辑器和 M12 导出可选
 > 适用阶段：毕业设计复刻项目的工程质量增强阶段
 
 ## 1. 核心结论
@@ -39,7 +39,7 @@ OpenMAIC 当前是平台级项目，包含课程生成、四类场景、动作�
 | 多 Provider 与按阶段路由 | MVP 只验收 mock 与 DeepSeek；百炼兼容档保留为后续可选扩展 |
 | IndexedDB 与 HTTP/PostgreSQL 双后端 | 使用服务端 MySQL 作为唯一课程事实来源 |
 | LangGraph 多智能体讨论 | 不进入 MVP，作为后续候选扩展 |
-| PPTX、HTML、视频导出 | 不进入 MVP |
+| PPTX、HTML、视频导出 | 不进入 MVP；只含 PPTX 与互动 HTML 的简化资源包暂存为可选 M12 |
 
 参考源码定位（均指 OpenMAIC 参考仓库）：
 
@@ -136,21 +136,37 @@ MVP 只有一个本地用户角色，可以同时扮演课程创建者和学习�
 
 ### 4.3 v0.4/M7～M10 计划范围
 
-v0.4 以“课程质量、PPT 式只读画布与一种互动能力”为产品主题，拆为 M7～M10 四个独立退出阶段，详细任务和验收见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。本版本必须交付：
+v0.4 以“课程质量、PPT 式只读幻灯片与一种互动能力”为产品主题，拆为 M7～M10 四个独立退出阶段，详细任务和验收见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。新生成课程只保留这一种 PPT 式 slide 表达，不再建设类 Markdown、纵向讲义或同课双视图。本版本必须交付：
 
 M8～M10 只承诺最新版 Chrome/Edge 下 `1280×720` 及更大桌面视口。移动端、平板和小于 1280px 的窄屏不要求专门布局、截图或 E2E；已有媒体查询和自然缩放无需删除，但只按非阻塞 best-effort 处理。
 
 - 原样保存用户的主题/自然语言课程描述，并将其中明确写出的要求与可选高级设置、服务端默认值归一为 CourseBrief；在 MySQL 持久化受众、学习者水平、学习目标、先修知识、时长、教学风格、互动偏好、附加要求、每字段来源和解析警告；只有主题仍为必填项；
 - 升级大纲和场景 Prompt，使目标、场景角色、案例/练习、常见误区和测验之间具有可追踪关系；
-- 在 M8 建立 `SlidePlanDTO → 布局编译器 → canvas.v1`：六种受控布局意图由服务端编译为 `text/shape/line/code` 绝对坐标元素，并由通用只读 React SlideCanvas 渲染；
-- 明确区分可见短内容与 narration，增加页面密度、布局语义、几何边界、非预期重叠、`1280×720` 桌面 DOM 溢出和截图证据，禁止用长段落、过小字号或画布外元素伪造内容丰富度；
+- 在 M8 裁剪 OpenMAIC 的 `slide-content Prompt → GeneratedSlideData/PPTElement → normalize → Slide → SlideCanvas` 纵向链：模型直接返回 `text/shape/line/code` 的坐标和样式，服务端只做过滤、默认值、文本净化、id 分配和装配；
+- 明确区分可见短内容与 narration，以 OpenMAIC 的画布、对齐、留白、字号和输出前自检规则约束页面，并用 2～3 个真实主题的 `1280×720` 截图人工调整 Prompt；
 - 增加一种 `interactive/diagram` 场景，生成自包含 HTML/CSS/JavaScript，并在无同源权限、无外部网络的 sandbox iframe 中运行；
 - 支持 ready 场景按用户简短意见单独再生成，失败时保留原场景；
 - 建立固定质量集、人工量表、成本/延迟记录和 v0.3/v0.4 成对比较。
 
-M7～M10 明确不加入 LangGraph、多智能体、多模态、RAG、媒体生成、code/simulation/game/3D widget 和任意学习者代码执行。M8 保存自由坐标画布，但生产模型不直接输出任意坐标、CSS、React 或 HTML，也不提供拖拽编辑；可视化编辑器仅作为可选 M11，不阻塞 v0.4。diagram 闭环尚未通过 M9 退出门前，不增加第二种互动类型。
+M7～M10 明确不加入 LangGraph、多智能体、多模态、RAG、媒体生成、code/simulation/game/3D widget 和任意学习者代码执行。M8 复用 OpenMAIC 的做法让模型直接输出有限 PPTElement 的坐标和样式，但不允许模型控制实体 id、状态、revision、Action、React 或可执行 slide HTML；服务端不再增加通用自动排版和几何评分系统。编辑器仅作为可选 M11，不阻塞 v0.4。diagram 闭环尚未通过 M9 退出门前，不增加第二种互动类型。
 
 2026-08-27 冻结的 M7.0 六题输入已经完成 v0.3 生成。2026-08-28 将视觉留档收束为每个已保存场景一份 `1280×720` MHTML；旧双视口截图、DOM 密度观察和空评分表已退出当前方案，但原课程、失败样本、生成元数据和错误记录不变。M8～M10 产品退出只覆盖桌面端，人工量表和既定阈值不得因看到 v0.4 候选结果而临时放宽。
+
+### 4.4 M11/M12 可选扩展边界
+
+M11 是 PPT 式幻灯片编辑器，不是另一种课程展示形态。它必须复用 M8 的只读 SlideCanvas 和 `Slide/PPTElement`，只在其上增加选择、拖拽、缩放、文字编辑、撤销重做和 MySQL revision 保存。M11 不得建立独立的编辑器文档格式，也不得让编辑器状态替代 CourseRepository 中的课程事实。
+
+M12 是简化资源包导出，不进入 v0.4 完成标准。其唯一目标结构为：
+
+```text
+课程名称.zip
+├─ 课程名称.pptx
+└─ interactive/
+   ├─ 03_流程互动.html
+   └─ 07_知识结构图.html
+```
+
+PPT 式 slide 按课程顺序写入 PPTX；interactive 场景按原始 `Scene.order` 命名为自包含 HTML。第一版资源包不额外生成 manifest、README 或 assets 目录，HTML 所需 CSS、JavaScript 和小型资源必须内联。M11 和 M12 都只能在 M10/v0.4 完成后按需启动，均不作为毕业论文延展的前置条件。
 
 ## 5. MVP 完成标准
 
@@ -182,9 +198,9 @@ v0.4 的“完成”以 M10 退出为准，同时要求产品链路、画布质�
 | AC-Q01 | CourseBrief 按“显式设置 > Prompt > 默认值”解析，字段来源、警告和大纲可从 MySQL 同 revision 恢复 | Schema + API + MySQL 集成 |
 | AC-Q02 | v1 课程无需清库即可读取并迁移到 v2 | 迁移 fixture + MySQL 集成 |
 | AC-Q03 | outline.v2 在同一次正常调用中解析描述并生成大纲；场景 Prompt 实际使用已保存的受众、目标、时长、风格和课程记忆 | Prompt golden + 调用计数 + 生成测试 |
-| AC-Q04 | `canvas.v1` 只包含允许的 `text/shape/line/code` 元素，通过几何和密度门，并在 `1280×720` 及更大桌面视口由只读 SlideCanvas 安全渲染；未知类型不会白屏 | Schema + 编译器 + 组件测试 + 桌面 E2E |
+| AC-Q04 | 新 `content.canvas` 只包含允许的 `text/shape/line/code`，经轻量规范化和 text 净化后可从 MySQL 恢复，并在 `1280×720` 及更大桌面视口由只读 SlideCanvas 渲染；未知类型不会白屏 | Schema + normalize + 组件测试 + 2～3 个真实主题截图 + 桌面 E2E |
 | AC-Q05 | `interactionMode=required` 生成且只生成一个 diagram 场景 | Schema + API 集成 |
-| AC-Q06 | 互动 HTML 经过大小、结构和危险能力校验后才能持久化 | validator 测试 |
+| AC-Q06 | 互动 HTML 经过大小、自包含、外部依赖和最小协议检查后才能持久化 | validator 测试 |
 | AC-Q07 | iframe 无 `allow-same-origin`、无外部网络，并正确处理 ready/reset/completed/error | 安全测试 + Playwright |
 | AC-Q08 | 互动生成失败或运行失败不会丢失其他场景，并提供 fallback 与单场重试 | 故障注入 + E2E |
 | AC-Q09 | ready 场景再生成成功时原位替换，失败或冲突时保留旧结果 | 应用服务 + MySQL 集成 |
@@ -235,7 +251,7 @@ M7.0 已用当前 Prompt v1 和固定六题建立历史基线，M10 必须复用
 
 ## 10. 与毕业论文的关系
 
-v0.3 是可运行工程基线，v0.4/M7～M10 是课程质量、画布和互动能力的产品基线；两者可支撑需求分析、系统设计、实现和测试章节，但都不自动等于研究创新。M10 通过后才进入暂存的 MX 论文选题，并在同一基线上定义：
+v0.3 是可运行工程基线，v0.4/M7～M10 是课程质量、PPT 式幻灯片和互动能力的产品基线；两者可支撑需求分析、系统设计、实现和测试章节，但都不自动等于研究创新。M10 通过后才进入暂存的 MX 论文选题，并在同一基线上定义：
 
 - 明确的问题与输入输出；
 - 可复现的基线方法；
