@@ -8,13 +8,13 @@
 
 复刻不按 OpenMAIC 的目录逐项照搬，而按纵向闭环推进：**固定课程可浏览 → MySQL 可恢复 → 真实大纲 → 真实场景 → 播放与测验 → 完整验收**。数据库现在是基础能力，因此必须在真实模型接入前完成，不能等课程已经生成后再补持久化。
 
-M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7 不直接做论文创新，而是把当前工程基线提升为“课程要求更明确、幻灯片表达更清晰、至少一种互动场景可安全运行、质量改进有证据”的 v0.4 产品基线。暂存的 MX 才选择一个可度量研究问题。
+M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读画布、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的可选画布编辑器；暂存的 MX 才选择一个可度量研究问题。
 
-**当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7.0 评价集、量表、密度协议和双视口已冻结，mock smoke 和 6 主题 DeepSeek Prompt v1 自动基线已完成，待人工七维评分。M7.1～M7.4 尚未进入代码，后续仍依次实现 CourseBrief/outline v2、幻灯片表达系统 v2、diagram 互动闭环和单场景再生成。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7.0 双视口 v1 协议和 6 主题 Prompt v1 自动基线已留存。冻结证据继续保留 M7.0/v1 名称，不回写、不删除。下一步先版本化并冻结桌面端评价协议，再完成人工评分和 M7.1 CourseBrief/outline v2。原 M7.2、M7.3、M7.4 尚未进入代码，现分别升格为 M8、M9、M10；M8～M10 只承诺 `1280×720` 及更大桌面视口。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
-以下定义适用于 M1～M7 的实现任务；M0 只执行文档链接、术语和追踪一致性检查。
+以下定义适用于 M1～M10 的实现任务；M0 只执行文档链接、术语和追踪一致性检查。M11 开始前必须另行确认范围，但一旦进入实现也遵守同一完成定义。
 
 1. 代码已经进入正式调用链，不是孤立示例；
 2. 正常路径能在 `AI_MODE=mock` 下复现；
@@ -40,8 +40,12 @@ M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。
 | M4 DeepSeek 真实场景（已完成） | 逐场景生成、事务保存并隔离失败 | 固定场景 | 5～7 天 |
 | M5 课堂运行时（已完成） | 自动播放、单选测验和可选浏览器语音 | 手工翻页 | 4～6 天 |
 | M6 本机验收交付（已完成） | mock 自动回归、生产构建与 DeepSeek 实测 | 开发态系统 | 5～7 天 |
-| M7 课程质量与互动能力（计划） | Prompt v2、丰富内容、一个 diagram 互动页和成对质量报告 | v0.3 通用静态课程 | 分四个可独立验收的小阶段 |
-| MX 毕业论文延展（暂存） | 基于 M7 数据完成一个可度量研究问题 | 无 | 视选题而定 |
+| M7 课程质量基础（进行中） | 桌面评价基线、CourseBrief、Course/outline v2 | v0.3 模糊课程要求 | 分 M7.0、M7.1 |
+| M8 PPT 式只读画布（计划） | 受控布局生成 `canvas.v1`，保存、恢复并只读播放 | 纵向 Block 堆叠 | 分 DSL、编译、渲染、质量门 |
+| M9 diagram 互动闭环（计划） | 一个可操作、可重置、可完成且可安全失败的互动页 | 全静态场景 | 一个纵向闭环 |
+| M10 课程修订与 v0.4 验收（计划） | ready 场景按指令替换并完成成对质量报告 | 只能重新生成失败场景 | 事务闭环 + 最终评价 |
+| M11 可视化画布编辑器（可选） | 选择、拖拽、缩放、文字编辑、撤销重做和保存 | M8 只读画布 | 不阻塞 v0.4/MX |
+| MX 毕业论文延展（暂存） | 基于 M7～M10 数据完成一个可度量研究问题 | 无 | 视选题而定 |
 
 建议投入是专注开发日。延期时先减少视觉装饰和扩展能力，不压缩 Schema、事务、错误恢复和测试。
 
@@ -254,7 +258,7 @@ quiz 进入页面即可作答；自动播放到 learner pause 时进入 awaiting
 
 > 状态：已完成实施与验收。完整分类、调用预算、验收矩阵和实测证据见 [10-m6.5-remote-response-resilience-plan.md](10-m6.5-remote-response-resilience-plan.md)。
 
-M6.5 是 M6 与 M7 之间的工程加固里程碑，不重新打开 M6 的交付范围，也不修改 M7 的质量与互动计划。它将 HTTP 2xx 下的空响应、非 JSON、异常 OpenAI-compatible envelope 和空 content 从“未知且不可重试”改为可诊断、可受限重试的上游响应错误，同时保留严格 Zod、领域语义门、一次 repair 和单请求 4 次上游调用硬上限。
+M6.5 是 M6 与 M7 之间的工程加固里程碑，不重新打开 M6 的交付范围，也不替代 M7～M10 的质量、画布、互动和修订计划。它将 HTTP 2xx 下的空响应、非 JSON、异常 OpenAI-compatible envelope 和空 content 从“未知且不可重试”改为可诊断、可受限重试的上游响应错误，同时保留严格 Zod、领域语义门、一次 repair 和单请求 4 次上游调用硬上限。
 
 ### 实施顺序
 
@@ -270,9 +274,9 @@ M6.5.0 冻结脱敏故障 fixture 和分类契约
 
 AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepSeek 课程中的连续两次 `empty_content` 已在第 4 次上游调用自动恢复，最终 3/3 ready。认证和明确配置错误不自动重试；结构化日志可用 `requestId` 追踪但不包含 Prompt、主题、Key 或原始模型响应。
 
-## 11. M7：课程质量与互动能力
+## 11. M7：课程质量基础
 
-> 状态：方案已完成，代码尚未开始。完整任务、字段、安全协议和提交顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+> 状态：M7.0 自动基线已留存，人工评分和 M7.1 代码尚未完成。完整任务、字段和退出门见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
 
 ### M7.0：质量基线与评价协议
 
@@ -280,45 +284,61 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 **退出门**：评价数据、量表版本、密度规则、截图视口、模型/Prompt 配置和基线报告可复现；不修改生产 Prompt、Schema、Renderer 或 CSS。
 
+**2026-08-28 范围修订**：已冻结的 v1 双视口协议、44 张截图和失败样本继续作为历史证据，不删除、不回写。当前产品退出改为桌面端范围；在任何 M8 画布候选生成前，必须新增并冻结 `course-quality.v2.json` 与 `slide-density.v2.json`，只保留 `1280×720` 桌面视口，并明确桌面版式评分口径。若主题、Provider、模型和请求配置一致，可复用既有 v0.3 运行中的桌面截图和原始报告，不需要为了删除窄屏重新调用模型。移动端结果不进入 v2 评分或退出门。
+
 ### M7.1：CourseBrief、Schema v2 与大纲质量
 
 把 CourseBrief 定义为“原始描述 + 可选高级设置 + 服务端默认值”的结构化归一结果，而不是新增一张必填表单。创建接口原样保存 topic，并先写入 provisional Brief；原有一次 `outline.v2` 调用同时返回 Prompt 中明确检测到的字段、警告、resolved Brief 和 outlines，服务端按 `explicit_setting > prompt > default` 复算并同事务保存。MySQL `brief_json` 同时保存有效值、每字段来源和解析状态；大纲页展示系统理解和冲突警告，确认前修改 Brief 会使旧大纲失效。
 
-本阶段同时完成 Course v1/v2 判别、确定性 v1 → v2 迁移、受众/水平/目标/先修/时长/风格/互动/附加要求契约，以及 SceneRole、误区/评估意图和可选 diagram 计划。旧课程无需清库、无需重新调用模型即可恢复；正常大纲路径不因 Brief 解析固定增加一次 LLM 调用。
+本阶段同时完成 Course v1/v2 判别、确定性 v1 → v2 迁移、受众/水平/目标/先修/时长/风格/互动/附加要求契约，以及 SceneRole、误区/评估意图和可选 diagram 计划。旧课程无需清库、无需重新调用模型即可恢复；正常大纲路径不因 Brief 解析固定增加一次 LLM 调用。M7 只建立后续场景生成需要的语义上下文，不提前实现画布 Renderer 或互动 iframe。
 
 **退出门**：只有主题、信息完整 Prompt、部分信息 Prompt 和设置冲突四类 fixture 均能得到可解释的字段值、来源与警告；同一原始描述按默认值和显式受众/目标生成的计划有可解释差异；Brief 与大纲同 revision 恢复，修改 Brief 不会遗留旧大纲；Prompt 注入不能越过 System Prompt/Schema；v1 fixture、MySQL 恢复和 M6 E2E 均通过。
 
-### M7.2：幻灯片表达系统 v2 与课程连贯性
+**M7 退出门**：桌面端 v2 评价协议和 v0.3 人工基线已冻结；四类 Brief fixture、Course v1/v2 兼容、MySQL 恢复和 M6 全量回归通过；同一主题在默认值与显式受众/目标下得到可解释差异。达到此门后才开始 M8。
 
-建立 `key_points/card_grid/process/comparison/code_explainer/summary` 六种受控模板，增加 card_grid、steps、comparison、table 固定 Block，并保留旧 SlideContent 的 `legacy_stack` 读取路径。桌面端采用有限 16:9 slide surface，重新划分标题、subtitle、卡片标题和正文层级；窄屏按语义重排而不是把文字缩小到不可读。升级 slide/quiz Prompt，在同一次 scene 调用中选择模板，严格区分可见短内容与 narration；使用受限课程记忆传递已覆盖关键点、待覆盖目标和前文摘要。增加模板组合、密度、重复、覆盖、DOM 溢出和 quiz 对齐报告，repair 继续受现有四次上游调用总预算约束。
+## 12. M8：PPT 式只读受控自由画布
 
-**退出门**：四种新增 Block 与六种模板在标准桌面和窄屏安全渲染，最终保存的 v2 slide 不存在未声明溢出；v1 课程仍可打开，原 slide/quiz/code 与 M6 全量回归全部通过。候选课程不能靠增加长段落、把关键正文或要点缩小到 16px 以下，或把所有内容包装成卡片提高表面信息量。完整内部顺序、内容预算和测试见文档 09 的 M7.2。
+M8 取代原 M7.2 的固定 React 模板方案。持久化契约改为 `canvas.v1`：固定逻辑画布为 `1000 × 562.5`，页面由带稳定 id、绝对坐标、尺寸、旋转和层级的有限元素组成。第一版只支持 `text/shape/line/code`，不加入图片检索、图表、音视频、动画或任意 HTML。旧 SlideContent v1 继续由 legacy Renderer 读取，不静默改写历史课程。
 
-### M7.3：interactive/diagram 纵向闭环
+生成仍只调用一次现有 scene 模型：LLM 输出可见短内容、narration 和 `key_points/card_grid/process/comparison/code_explainer/summary` 之一的布局意图，服务端布局编译器再确定性地产生元素坐标、主题 token 和 id。生产路径不接受模型直接提交任意坐标、CSS 或 HTML；这样最终存储是真正可供 M11 编辑的自由画布，同时把重叠、越界和样式漂移控制在可测试的编译层。Renderer 只消费规范化后的 `canvas.v1`，负责缩放、元素分派和 fallback。
 
-M7.2 通过退出门后只实现 `interactive/diagram`：专用 Prompt 生成自包含 HTML/CSS/JavaScript，服务端进行大小、结构、危险能力和运行协议校验；课堂使用无 `allow-same-origin`、无外部网络的 sandbox iframe，支持 ready、reset、completed、error 和固定 fallback。若静态 slide 仍频繁溢出或只能人工挑选好样本，不进入互动开发。
+OpenMAIC 固定提交 `59adbef` 提供实现参照：[`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts) 展示绝对坐标 DSL，[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts) 和 [`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md) 展示画布生成与规范化，[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 与 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx) 展示只读渲染分层。参考不等于整包照搬；本项目必须保留自己的 Zod、MySQL、调用预算和纯文本安全边界。
 
-**退出门**：`interactionMode=required` 的课程完成“生成 → MySQL 保存 → 课堂操作 → 重置 → 完成 → 刷新恢复”的 production Chromium E2E；恶意 fixture 不能访问主页面身份、存储或网络；失败不影响其他场景。
+**M8 退出门**：固定 6 主题能够生成、保存、重启恢复和播放；最终画布通过 Schema、元素白名单、几何边界、文本密度、重复、最小字号和 `1280×720` DOM 溢出门；v1 课程仍能打开，M6 全量回归通过。移动端、平板和窄屏不阻塞退出。完成后才开始 M9。
 
-### M7.4：单场景再生成与 v0.4 验收
+## 13. M9：interactive/diagram 纵向闭环
 
-允许 ready 场景携带 500 字以内意见进行事务化再生成。候选生成期间不改变 ready Course；提交前保留旧结果，失败、取消和 conflict 均不破坏课程。slide 再生成继续经过模板、密度和溢出质量门；quiz 再生成经用户确认后，在替换场景的同一事务清理旧作答。最后在相同主题、Provider、模型、请求设置和截图视口下完成 v0.3/v0.4 成对人工评价，并报告内容质量、视觉可读性、成本、延迟、首次通过率、修复率和模板分布。
+M9 只实现 `interactive/diagram`：专用 Prompt 生成自包含 HTML/CSS/JavaScript，服务端执行大小、结构、危险能力和运行协议校验；课堂只用 `sandbox="allow-scripts"` 且注入禁止外部网络的 CSP，支持 ready、reset、completed、error 和固定 fallback。若 M8 静态画布仍频繁溢出或只能人工挑选好样本，不进入互动开发。
 
-**退出门**：AC-Q01～AC-Q11 全部有证据；M6 `pnpm verify:full` 继续通过；质量达到 M7.0 预先冻结的阈值。达到此门后才宣布 v0.4 完成。
+可参考 OpenMAIC 的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/interactive.ts)、[`diagram-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/diagram-content/system.md)、[`interactive-renderer.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/interactive-renderer.tsx)、[`InteractiveIframeHost.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/InteractiveIframeHost.tsx) 和 [`iframe.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/lib/utils/iframe.ts)。OpenMAIC 当前 iframe 还允许 forms/popups，本项目范围更小，安全配置不得原样复制，仍坚持只有 `allow-scripts`。
 
-### M7 的硬边界
+**M9 退出门**：`interactionMode=required` 的课程完成“生成 → MySQL 保存 → 课堂操作 → 重置 → 完成 → 刷新恢复”的 production Chromium E2E；恶意 fixture 不能访问主页面身份、存储或网络；失败不影响其他场景。
 
-M7 不加入 LangGraph、多智能体、多模态、RAG、媒体、自由坐标画布、code/simulation/game/3D widget 或任意学习者代码执行。diagram 未稳定前不得增加第二类互动场景。
+## 14. M10：单场景再生成与 v0.4 验收
 
-## 12. MX：毕业论文延展
+允许 ready 场景携带 500 字以内意见进行事务化再生成。候选生成期间不改变 ready Course；提交前保留旧结果，失败、取消和 conflict 均不破坏课程。slide 再生成继续经过 M8 的同一画布编译和质量门；quiz 再生成经用户确认后，在替换场景的同一事务清理旧作答。最后按冻结的桌面端 v2 协议，在相同主题、Provider、模型、请求设置和 `1280×720` 视口下完成 v0.3/v0.4 成对人工评价，并报告内容质量、视觉可读性、成本、延迟、首次通过率、修复率和布局分布。
+
+**M10 退出门**：AC-Q01～AC-Q11 全部有证据；M6 `pnpm verify:full` 继续通过；质量达到 M7.0 预先冻结并在候选生成前版本化的阈值。达到此门后才宣布 v0.4 完成。
+
+## 15. M11：可视化画布编辑器（可选）
+
+M11 只在 M8 的 `canvas.v1` 已稳定且用户再次确认范围后开始。第一批能力限于选择、拖拽、缩放、删除、撤销重做和 MySQL 保存；第二批再考虑文本编辑、复制粘贴、对齐吸附和图层。它复用 M8 的只读 Renderer，不反向改变 M8 生成契约，也不阻塞 M10 或 MX。
+
+可参考 OpenMAIC Editor 的三层边界：[`README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/README.md)、[`core/index.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/core/index.ts)、[`EditableSlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/react/EditableSlideCanvas.tsx) 和 [`EditableSlideCanvasWithUI.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/ui/EditableSlideCanvasWithUI.tsx)。本项目用 MySQL revision/事务保存替代 OpenMAIC 的宿主状态与本地持久化方式。
+
+## 16. 共同硬边界
+
+M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、code/simulation/game/3D widget 或任意学习者代码执行。M8 不实现直接编辑，M9 的 diagram 未稳定前不得增加第二类互动场景，M11 不得被悄悄并入 v0.4 硬门。
+
+## 17. MX：毕业论文延展
 
 
 
-## 13. 风险登记与止损规则
+## 18. 风险登记与止损规则
 
 | 风险 | 早期信号 | 止损措施 |
 | --- | --- | --- |
-| 范围膨胀 | diagram 未稳定就加入 RAG、Agent 或第二种 widget | 严格按 M7.0～M7.4，额外能力移入 MX |
+| 范围膨胀 | M8 未稳定就并行开发互动、编辑器、RAG 或 Agent | 严格按 M7 → M8 → M9 → M10，M11 与额外能力不进入 v0.4 硬门 |
 | 数据库先于领域模型扩张 | 页面和 API 直接拼 SQL | 强制 CourseRepository 与契约测试 |
 | 长事务 | 模型调用期间占用数据库事务 | 使用登记操作和结果提交两个短事务 |
 | 并发覆盖 | 迟到响应覆盖重试结果 | operation id + expectedRevision |
@@ -327,13 +347,14 @@ M7 不加入 LangGraph、多智能体、多模态、RAG、媒体、自由坐标�
 | 语音拖慢主线 | 调试集中在音色或兼容性 | TextOnly 为默认，BrowserSpeech 可关闭 |
 | 生成脚本越权 | iframe 可访问网络、主页面或存储 | 关闭 interactive 入口，先修复 sandbox/CSP/消息边界 |
 | 旧课程无法读取 | schemaVersion 2 直接替换 v1 | 停止 UI/Prompt 开发，先完成迁移与 fixture 回归 |
-| 模板与 Prompt 脱节 | Prompt 要求并列/流程，但 JSON 和 Renderer 仍只能纵向堆叠 | 先补齐 SlideContent v2 和固定模板，再升级生产 Prompt |
-| 用视觉手段掩盖超载 | 依赖小字体、隐藏或内部滚动才不溢出 | 回退内容预算或模板组合，不接受低于 16px 的正文 |
+| 画布计划与编译器脱节 | Prompt 要求并列/流程，但布局编译器无法产生对应元素关系 | 先补齐 `SlidePlanDTO → canvas.v1` 编译和 fixture，再升级生产 Prompt |
+| 模型直接控制几何 | 坐标、CSS、任意 HTML 混入生产 DTO，页面频繁重叠或越界 | 退回布局意图，由服务端编译坐标；M8 不开放任意坐标输出 |
+| 用视觉手段掩盖超载 | 依赖小字体、隐藏或画布内滚动才不溢出 | 回退内容预算或布局规则，不接受低于 16px 的关键正文 |
 | 质量提升不可证 | 只展示一个好看的课程 | M7.0 先冻结数据集、量表与阈值，再做成对评价 |
 | 论文成为功能堆砌 | 延展没有唯一变量 | MX 一次只选择一个主问题 |
 
 当前主分支无法启动、迁移不可重复、CourseSchema 可被绕过、密钥进入客户端、失败只能清库恢复或测试连续失效时，停止增加功能并先恢复基线。
 
-## 14. 推荐的下一次开发迭代
+## 19. 推荐的下一次开发迭代
 
-当前 M7.0 已冻结评价集、七维评分量表、`slide-density.v1`、双视口和退出阈值，并保持 Prompt、Schema、Renderer、CSS 与 iframe 不变。mock 采集 smoke 已通过；DeepSeek + Prompt v1 自动基线已完成，留存 6 门 MySQL 课程、生成元数据、密度报告和 44 张截图。下一步是按冻结量表完成人工评分；M7.0 退出后才开始 Course v2 和迁移。
+当前 M7.0 已保留冻结的双视口 v1 协议、6 门 MySQL 课程、生成元数据、密度报告和 44 张历史截图，并保持 Prompt、Schema、Renderer、CSS 与 iframe 不变。下一步先新增并冻结仅含 `1280×720` 的桌面端 v2 协议，复用现有桌面基线证据并完成人工评分；桌面协议冻结后才开始 Course v2 和迁移。不得删除 v1 窄屏证据，也不得提前开始 M8 画布、M9 互动或把移动端适配重新加入当前硬门。

@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 状态说明：M1～M6.5 架构已经实现；M7.0 已冻结离线评价协议并留存 DeepSeek v0.3 自动基线，但没有改变生产架构；标记为 CourseBrief、Schema v2、模板或 interactive 的增量设计仍未进入正式调用链。
+> 状态说明：M1～M6.5 架构已经实现；M7.0 已冻结离线评价协议并留存 DeepSeek v0.3 自动基线，但没有改变生产架构；标记为 CourseBrief、Schema v2、canvas.v1、interactive 或再生成的 M7～M10 增量设计仍未进入正式调用链。
 
 ## 1. 架构结论
 
@@ -17,7 +17,7 @@ MVP 采用一个 Next.js App Router 单体：
 - 大模型只生成 DTO，领域装配器负责 id、状态、Action 和时间戳；
 - 第一版不拆微服务、不建 monorepo、不使用 LangGraph。
 
-这套架构与 OpenMAIC 保持相同主方向，但把平台能力裁剪成一名学生可以理解、实现和验证的规模。v0.4 继续使用同一个 Next.js 单体、CourseRepository、AIAdapter 和播放器，只增加质量上下文、受控 Block 与一个沙箱互动场景，不引入 LangGraph 或新的服务进程。
+这套架构与 OpenMAIC 保持相同主方向，但把平台能力裁剪成一名学生可以理解、实现和验证的规模。v0.4 继续使用同一个 Next.js 单体、CourseRepository、AIAdapter 和播放器，只增加质量上下文、受控自由画布与一个沙箱互动场景，不引入 LangGraph 或新的服务进程。
 
 ## 2. OpenMAIC 深度解析结论
 
@@ -155,7 +155,7 @@ mock 和 DeepSeek 返回相同 DTO，并经过同一套 Zod/领域校验。代�
 
 slide 可以包含 code block，其中 HTML、JSX、TSX 只作为源码字符串保存，渲染器仅进行文本转义和语法高亮，不运行代码。标题、正文、提示块、讲解稿等普通字段仍拒绝 HTML 与外链。v0.4 的 interactive iframe 是独立 Scene 类型和独立安全边界，不能借“代码块”创建执行路径。
 
-**AD-09～AD-13 是 v0.4/M7 增量决策，尚未实现。**
+**AD-09～AD-13 是 v0.4/M7～M10 增量决策，尚未实现。**
 
 ### AD-09：原始描述可追溯，CourseBrief 在 outline.v2 中一次定稿
 
@@ -165,19 +165,23 @@ CourseBrief 是系统最终采用的教学上下文，不等同于一张必填�
 
 该设计让“用户在 Prompt 中已经说明要求”和“用户只写主题”共用一条链：前者只为未说明字段补默认值，后者全部使用可解释默认值；正常路径不会增加独立的 Prompt 解析调用。描述与高级设置冲突时设置优先并保存警告。用户在确认大纲前修改 Brief 会使旧大纲失效并要求重新生成；场景生成后直接修改整课 Brief 不属于 M7.1。
 
-### AD-10：幻灯片表达能力仍使用判别联合和固定 React Renderer
+### AD-10：M8 使用“语义计划 → 服务端布局编译 → 只读自由画布”
 
-SlideContent v2 以 `key_points/card_grid/process/comparison/code_explainer/summary` 表达受控布局意图，card_grid、steps、comparison 和 table 分别拥有严格 Schema 与固定组件。模型只选择内容关系和短文本，Renderer 使用 CSS Grid/Flex 决定空间布局；不采用自由坐标 PPT 画布，也不让模型生成 React/CSS。旧 SlideContent 继续走 `legacy_stack` 兼容路径。这样能够提高教学表达力，同时保留现有可校验、响应式和可测试优势。
+M8 的持久化事实是 `canvas.v1`：固定 `1000 × 562.5` 逻辑画布和带稳定 id、绝对坐标、尺寸、旋转、层级的 `text/shape/line/code` 有限元素。模型只返回 `SlidePlanDTO` 中的内容关系、短文本和六种受控布局意图，不返回 id、坐标、CSS、React 或 HTML；服务端布局编译器确定性生成元素并执行 normalize、几何和密度门，通用只读 SlideCanvas 再按元素类型分发 Renderer。旧 SlideContent 继续走 `legacy_stack`，不静默改写。
 
-桌面课堂使用有限 16:9 slide surface，关键正文和要点不低于 16px；窄屏按 DOM 语义顺序重排，允许课堂页面纵向滚动但不允许模板内部横向裁切。服务端负责模板组合、可见字符、重复和代码行数等确定性门，浏览器负责真实换行和 DOM 溢出断言。两类结果分别记录，不能用结构通过代替视觉或教学质量结论。
+桌面课堂等比缩放 16:9 画布，关键正文和要点不低于 16px 等效字号；在 `1280×720` 及更大桌面视口中，主要内容必须无需画布内部滚动即可完整呈现。服务端负责布局语义、坐标边界、非预期重叠、可见字符、重复和代码行数等确定性门，桌面 Chromium 负责真实换行和 DOM 溢出断言。移动端、平板和窄屏不进入 M8～M10 架构承诺。
+
+OpenMAIC 的 [`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts)、[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 和 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx) 是固定提交上的数据/渲染边界参考；本项目不照搬其完整元素集或 HTML 文本信任边界。
 
 ### AD-11：互动脚本只能在无同源权限的 iframe 中执行
 
 `InteractiveContent.html` 是不可信完整文档，只允许进入 `srcDoc` iframe。sandbox 仅包含 `allow-scripts`，明确排除同源权限、表单提交、弹窗、下载和顶层导航；宿主注入拒绝外部资源与连接的 CSP，脚本检查另行拒绝导航 API，并用 `event.source` + Zod 管理最小 postMessage 协议。静态扫描和脚本 AST 检查是纵深防御，不能替代 sandbox 与 CSP。
 
-### AD-12：M7 不引入 LangGraph、多智能体和多模态
+可参考 OpenMAIC 的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/interactive.ts)、[`interactive-renderer.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/interactive-renderer.tsx) 和 [`InteractiveIframeHost.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/InteractiveIframeHost.tsx) 的职责拆分，但不能照搬其 `allow-forms/allow-popups`；本项目 diagram 仍只允许 `allow-scripts`。
 
-CourseBrief、Prompt v2、SlideContent v2/固定模板、四种新 Block 和 diagram HTML 都是现有两阶段生成管线的普通类型分支。LangGraph 只在未来出现多角色、有状态、跨请求编排问题时评估；多模态只在材料/图片输入成为范围时评估。未出现这些需求前，引入框架只会增加状态、费用和测试矩阵。
+### AD-12：M7～M10 不引入 LangGraph、多智能体和多模态
+
+CourseBrief、Prompt v2、SlidePlanDTO/布局编译、canvas.v1 和 diagram HTML 都是现有两阶段生成管线的普通类型分支。LangGraph 只在未来出现多角色、有状态、跨请求编排问题时评估；多模态只在材料/图片输入成为范围时评估。未出现这些需求前，引入框架只会增加状态、费用和测试矩阵。
 
 ### AD-13：在线质量门与离线教学评价分开
 
@@ -253,13 +257,17 @@ flowchart LR
     AtomicSave --> Repo
 
     Generation --> PromptV2["Scene Prompt v2"]
-    PromptV2 --> Quality["Deterministic Quality Report"]
+    PromptV2 --> SlidePlan["SlidePlanDTO + semantic gate"]
+    SlidePlan --> LayoutCompiler["Deterministic Layout Compiler"]
+    LayoutCompiler --> CanvasGate["canvas.v1 geometry + quality gate"]
+    CanvasGate --> Repo
     PromptV2 --> InteractiveGen["Interactive Diagram Generator"]
     InteractiveGen --> HtmlGate["HTML Validator + CSP Patcher"]
     HtmlGate --> Repo
 
     Classroom["Classroom"] --> SceneRenderer["SceneRenderer"]
-    SceneRenderer --> FixedBlocks["Fixed Block Renderers"]
+    SceneRenderer --> LegacyBlocks["Legacy Block Renderers"]
+    SceneRenderer --> SlideCanvas["Read-only SlideCanvas"]
     SceneRenderer --> IframeHost["Sandbox InteractiveIframeHost"]
     IframeHost <--> Bridge["Typed postMessage Bridge"]
     Bridge --> Player["Playback learner pause"]
@@ -277,8 +285,9 @@ flowchart LR
 | 服务端应用层 | `lib/application/` | 用例、事务边界、状态转换、仓储与生成协调 | React、直接拼 SQL |
 | 领域层 | `lib/domain/` | 类型、Schema、不变量、装配、状态机 | React、fetch、MySQL、模型 SDK |
 | 生成层 | `lib/generation/` | Prompt、解析、校验、重试和错误分类 | 浏览器组件状态 |
-| 质量层（M7） | `lib/quality/` | 确定性质量规则、评价 DTO 和离线汇总 | 在线主观判分、直接持久化 |
-| 互动运行时（M7） | `lib/interactive/`、`components/renderers/` | HTML 校验/CSP、iframe 宿主、消息协议和 fallback | 读取服务端 Key、访问主页面身份 |
+| 质量层（M7/M8） | `lib/quality/` | 内容、布局、几何、密度规则，评价 DTO 和离线汇总 | 在线主观判分、直接持久化 |
+| 画布层（M8） | `lib/canvas/`、`components/canvas/` | 语义布局编译、normalize、只读 SlideCanvas 和有限元素 Renderer | 模型调用、直接写 MySQL、任意 HTML |
+| 互动运行时（M9） | `lib/interactive/`、`components/interactive/` | HTML 校验/CSP、iframe 宿主、消息协议和 fallback | 读取服务端 Key、访问主页面身份 |
 | AI 基础设施 | `lib/ai/` | mock、DeepSeek 配置与模型调用；保留可选兼容档 | 课程持久化 |
 | 数据基础设施 | `lib/db/` | MySQLCourseRepository、事务、迁移 | Prompt 和播放推进 |
 | API 层 | `app/api/**/route.ts` | 请求校验、应用服务调用、HTTP 映射 | React 状态、直接 SQL |
@@ -292,8 +301,8 @@ flowchart LR
 | 路由 | 职责 |
 |---|---|
 | `/` | 创建课程，显示历史课程和状态；M7 保持 topic 必填，增加可选折叠高级设置 |
-| `/generation/[courseId]` | 加载草稿、生成/编辑大纲、展示 Brief 字段来源和警告；确认前修改 Brief 时使旧大纲失效；M7 增加 ready 场景再生成 |
-| `/classroom/[courseId]` | 至少一个 ready 场景时加载成功场景并提示部分预览；整课 ready 时进入正式课堂；M7 增加互动 iframe 宿主 |
+| `/generation/[courseId]` | 加载草稿、生成/编辑大纲、展示 Brief 字段来源和警告；确认前修改 Brief 时使旧大纲失效；M10 增加 ready 场景再生成 |
+| `/classroom/[courseId]` | 至少一个 ready 场景时加载成功场景并提示部分预览；M8 增加只读 SlideCanvas，M9 增加互动 iframe 宿主 |
 
 courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢复，不能把 React state、sessionStorage 或 localStorage 作为课程事实来源。
 
@@ -309,7 +318,7 @@ courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢
 | `PATCH /api/courses/{courseId}/brief`（M7） | 在大纲确认前保存显式设置，并使已有大纲失效 | 是 |
 | `PATCH /api/courses/{courseId}/outline` | 保存用户编辑或确认的大纲 | 是 |
 | `POST /api/courses/{courseId}/scenes/{outlineId}/generate` | 生成、校验并保存一个场景 | 是 |
-| `POST /api/courses/{courseId}/scenes/{outlineId}/regenerate`（M7） | 按用户意见生成候选并原位替换 ready 场景 | 是 |
+| `POST /api/courses/{courseId}/scenes/{outlineId}/regenerate`（M10） | 按用户意见生成候选并原位替换 ready 场景 | 是 |
 
 Route Handler 不直接拼 SQL，而是调用应用服务。应用服务加载聚合、执行状态转换、调用 GenerationService，并用 expectedRevision 事务保存；客户端收到成功响应时，对应结果已经进入 MySQL。
 
@@ -458,11 +467,11 @@ Next.js Server
 
 ## 13. 已选 v0.4 扩展与更远期边界
 
-M7 已选择 CourseBrief、Prompt v2、幻灯片表达系统 v2、diagram 互动和单场景再生成，按接口扩展而不重写主链。以下能力仍属于 MX 或更远期候选：
+M7～M10 已选择 CourseBrief/outline v2、只读受控自由画布、diagram 互动和单场景再生成，按接口扩展而不重写主链。M11 的可视化画布编辑器是独立可选产品里程碑，不阻塞 v0.4 或 MX。以下能力仍属于 MX 或更远期候选：
 
 - 文档输入：在 outline 请求前增加 DocumentExtractor；
 - 生成优化：替换 GenerationPolicy，不改变已持久化身份和恢复语义；
-- 新互动类型：只有 diagram 通过 M7 退出门后才扩展 Scene 判别联合和专用 Renderer/运行契约；
+- 新互动类型：只有 diagram 通过 M9 退出门后才扩展 Scene 判别联合和专用 Renderer/运行契约；
 - 新动作：扩展 Action 联合和 ActionExecutor；
 - 多智能体：在 discussion Action 后增加独立 ChatOrchestrator；
 - 多用户：增加认证、ownerId、授权检查和租户级查询；
@@ -470,4 +479,4 @@ M7 已选择 CourseBrief、Prompt v2、幻灯片表达系统 v2、diagram 互动
 - 异步任务：把客户端循环迁移到持久化 Job/Queue；
 - 多模态与 RAG：仅在材料输入或来源增强成为明确研究问题时加入。
 
-任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。M7 的完整依赖、顺序和止损规则见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。M7～M11 的完整依赖、顺序和止损规则见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。

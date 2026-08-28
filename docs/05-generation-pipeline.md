@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-27）：大纲与逐场景 v1 链路均已进入正式调用路径，并在 mock + MySQL 下验证；slide/quiz DTO、装配、短事务、失败隔离与单场重试已经实现。M7.0 已冻结固定评价协议，并通过只读使用正式 API 的离线采集器完成 6 主题 DeepSeek Prompt v1 自动基线；本文标记为 v2 或 interactive 的生产管线内容仍是计划。
+> 实现状态（2026-08-27）：大纲与逐场景 v1 链路均已进入正式调用路径，并在 mock + MySQL 下验证；slide/quiz DTO、装配、短事务、失败隔离与单场重试已经实现。M7.0 已冻结固定评价协议，并通过只读使用正式 API 的离线采集器完成 6 主题 DeepSeek Prompt v1 自动基线；本文标记为 outline v2、SlidePlan/canvas.v1、interactive 或 regenerate 的 M7～M10 生产管线内容仍是计划。
 
 ## 1. 设计结论
 
@@ -15,7 +15,7 @@ v0.3 使用两层结构化生成：
 第二层：一个 SceneOutline + 紧凑课程上下文 → GeneratedSceneDTO
 ```
 
-第二层按场景串行执行。模型生成可见内容和 narration，程序负责生成所有 id、引用、状态、时间戳和 Action。v0.4 保留两层与串行恢复边界，只把第一层扩展为 `原始 topic + provisional Brief → detectedBrief + resolvedBrief + CourseOutlineDTO`，再把 CourseBrief、课程记忆、丰富 Block 和 interactive 作为第二层的类型化输入/输出加入，不改成 Agent 图或无限评审循环。
+第二层按场景串行执行。模型生成可见内容和 narration，程序负责生成所有 id、引用、状态、时间戳和 Action。v0.4 保留两层与串行恢复边界：M7 把第一层扩展为 `原始 topic + provisional Brief → detectedBrief + resolvedBrief + CourseOutlineDTO`；M8 让 slide 模型输出语义 `SlidePlanDTO`，再由服务端布局编译器产生 `canvas.v1`；M9 增加 interactive 类型；M10 复用同一管线生成单场景候选。不改成 Agent 图或无限评审循环。
 
 ## 2. 与 OpenMAIC 的对应关系
 
@@ -42,7 +42,9 @@ scene-outlines-stream
 | 首场景完成即自动切入课堂 | MVP 串行生成；全部完成才标记正式 ready，已有成功场景可手动部分预览 |
 | 图片、视频、云 TTS | 不进入生成管线 |
 
-v0.4 只追加 OpenMAIC 中最接近当前质量问题的三点：更完整的教学要求、专用场景 Prompt，以及一个自包含 diagram 互动页面。自由坐标画布、媒体、多智能体和五类 widget 仍不复刻。
+v0.4 只追加 OpenMAIC 中最接近当前质量问题的四点：更完整的教学要求、专用场景 Prompt、PPT 式只读自由画布，以及一个自包含 diagram 互动页面。M8 的模型只输出语义计划，坐标由服务端布局编译器生成；媒体、多智能体、其他 widget 和直接画布编辑仍不复刻。
+
+画布生成可参考 OpenMAIC 固定提交的 [`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md)、[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts) 和 [`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts)；diagram 可参考 [`diagram-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/diagram-content/system.md) 与 [`interactive-post-processor.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/interactive-post-processor.ts)。这些路径用于理解职责和 Prompt 约束，本项目仍使用自己的 AIAdapter、Zod、调用预算、布局编译和安全门。
 
 后续若要研究“动作生成质量”，可以把 Action 生成重新拆成第三阶段，而不改变前两阶段与 CourseRepository。
 
@@ -89,21 +91,26 @@ flowchart TD
     PersistOutline --> Review["用户审核"]
     Review --> Route{"Scene type"}
 
-    Route -->|slide| SlideV2["scene-slide.v2"]
+    Route -->|slide| SlidePlanV2["scene-slide-plan.v2"]
     Route -->|quiz| QuizV2["scene-quiz.v2"]
     Route -->|interactive| DiagramV1["scene-interactive-diagram.v1"]
 
-    Memory["covered / remaining / bounded summaries"] --> SlideV2
+    Memory["covered / remaining / bounded summaries"] --> SlidePlanV2
     Memory --> QuizV2
     Memory --> DiagramV1
 
-    SlideV2 --> SceneGate["DTO + deterministic quality report"]
+    SlidePlanV2 --> PlanGate["SlidePlan Schema + layout semantics"]
+    PlanGate --> LayoutCompiler["deterministic layout compiler"]
+    LayoutCompiler --> CanvasGate["canvas.v1 Schema + geometry + density"]
+    CanvasGate --> SceneGate["assemble Scene + quality report"]
     QuizV2 --> SceneGate
     DiagramV1 --> HtmlGate["HTML parse + safety + runtime contract"]
     HtmlGate --> SceneGate
     SceneGate --> Persist["assemble + expectedRevision transaction"]
 
-    SceneGate -.invalid.-> RepairOnce["type-specific repair once"]
+    PlanGate -.invalid.-> RepairOnce["type-specific repair once"]
+    CanvasGate -.programming/rule error.-> Stop["fail without model repair"]
+    SceneGate -.invalid.-> RepairOnce
     HtmlGate -.invalid.-> RepairOnce
     RepairOnce --> Route
 ```
@@ -381,14 +388,14 @@ Prompt 要求：
 - 不把 Zod Schema 原样无限展开到 Prompt，可维护一份紧凑格式说明；
 - 不能依赖“模型应该懂”来代替运行时校验。
 
-### 7.1 Prompt v2 设计（M7 计划）
+### 7.1 Prompt v2 设计（M7～M9 计划）
 
 v2 不覆盖 v1 文件，而是新增并保留版本元数据：
 
 ```text
 prompts/
 ├─ outline.v2.ts
-├─ scene-slide.v2.ts
+├─ scene-slide-plan.v2.ts
 ├─ scene-quiz.v2.ts
 ├─ scene-interactive-diagram.v1.ts
 ├─ scene-regenerate.v1.ts
@@ -421,7 +428,7 @@ export interface OutlineGenerationV2DTO {
 
 原始 topic 在 User Prompt 中使用清晰的数据边界和 JSON 转义传入。描述中即使包含“忽略此前规则”等文本，也只是课程需求数据，不能改变 System Prompt、字段优先级、输出 Schema、安全门或调用预算。Prompt 边界降低误遵循风险，严格解析、服务端复算和领域校验才是最终约束。
 
-大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定模板强加给所有主题。slide.v2 明确“页面是视觉提示，不是讲稿”，细节进入 narration；quiz.v2 必须说明每题对应哪个 objective，并生成可机械验证的答案与解析。
+大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定布局强加给所有主题。`scene-slide-plan.v2` 明确“页面是视觉提示，不是讲稿”，细节进入 narration；它只返回六种布局意图和对应语义内容，不返回 id、坐标、zIndex、CSS、React 或 HTML。服务端布局编译器随后生成 `canvas.v1`，编译器错误不触发额外模型修复。quiz.v2 必须说明每题对应哪个 objective，并生成可机械验证的答案与解析。
 
 diagram Prompt 只生成一个完整 HTML 文档和 fallback DTO，不使用 Markdown。它必须遵守宿主提供的元素 ID、reset、ready/completed/error 协议和无网络限制；生成器不得要求 CDN、外部字体或第三方库。完整脚本仍须经过服务端安全门，Prompt 约束不能替代运行时隔离。
 
@@ -611,7 +618,7 @@ MockAIAdapter 根据 stage 和 outline.type 返回固定响应，并可通过测
 - 类型与 content 匹配；
 - quiz 答案索引；
 - 文本长度和数组数量；
-- slide 模板与主 Block 组合、可见内容预算、代码行数和明显重复；
+- slide 布局语义、canvas 元素/几何、可见内容预算、代码行数和明显重复；
 - 不允许字段与危险内容；
 - 调用预算、超时和重试分类。
 
@@ -620,7 +627,8 @@ MockAIAdapter 根据 stage 和 outline.type 返回固定响应，并可通过测
 - Prompt golden test：关键规则和 JSON 示例未丢失；
 - parser test：纯 JSON、代码围栏、截断和多对象；
 - Schema test：每个字段边界；
-- semantic gate test：重复标题、非法 slide 模板组合、内容密度超限、缺少 quiz、索引越界；
+- semantic gate test：重复标题、非法 slide 布局计划、内容密度超限、缺少 quiz、索引越界；
+- canvas compiler test：六种布局的确定性 fixture、非有限数字、负尺寸、越界、连接线端点、允许包含关系和非预期重叠；
 - retry test：429/5xx 重试，401 不重试，Abort 立即停止；
 - assembler test：模型无法控制 id，type/content 绑定正确；
 - fixture contract test：所有 valid fixture 永远通过；
@@ -637,7 +645,7 @@ Schema 通过只表示“数据形状合法且满足可机械检查的规则”�
 - 测验答案在现实学科中没有争议；
 - 内容不存在模型偏见。
 
-M7 必须建立小型固定人工评价集来判断产品质量是否改善；若 MX 选择内容质量作为论文问题，再扩大样本、重复生成并补充一致性分析。LLM-as-judge 只能作为辅助信号，并报告 Judge 自身局限。
+M7 必须建立小型固定人工评价集，M8/M10 使用同一冻结协议判断产品质量是否改善；若 MX 选择内容质量作为论文问题，再扩大样本、重复生成并补充一致性分析。LLM-as-judge 只能作为辅助信号，并报告 Judge 自身局限。
 
 ### 14.4 v0.4 规则质量报告（计划）
 
@@ -646,18 +654,19 @@ M7 必须建立小型固定人工评价集来判断产品质量是否改善；�
 - requiredObjectiveCoverage：要求目标是否有对应场景；
 - keyPointCoverage：规范化关键点的弱覆盖率；
 - duplicateSignals：跨页标题、摘要和高相似内容；
-- slideTemplate：模板是否合法、必需主 Block 是否存在、组合是否在白名单内；
-- visibleDensity：标题、subtitle、页面字符、最长单项、卡片/步骤/表格数量、代码行数和模板预算；
+- slideLayout：布局意图是否合法、语义计划是否完整、编译结果是否为 `canvas.v1`；
+- canvasGeometry：元素数量、数值有限性、尺寸、边界、连接线端点、zIndex 和非预期重叠；
+- visibleDensity：标题、subtitle、页面字符、最长单项、卡片/步骤数量、代码行数和布局预算；
 - quizAlignment：题目是否引用已教学目标、答案索引和选项是否一致；
 - interactiveSafety：HTML 大小、禁止能力、必需元素和消息协议结果。
 
-可以确定性判错的项目进入硬门；只能提供启发的关键词覆盖和相似度进入报告，不得仅凭一个分数拒绝事实正确但措辞不同的内容。服务端报告不能推断浏览器真实换行，M7.2 另在 `1280×720` 与 `390×844` 对 slide surface 和关键子容器执行 DOM 溢出断言并保存截图。
+可以确定性判错的项目进入硬门；只能提供启发的关键词覆盖和相似度进入报告，不得仅凭一个分数拒绝事实正确但措辞不同的内容。服务端报告不能推断浏览器真实换行，M8 另在 `1280×720` 桌面视口对 slide surface 和文本/代码元素执行 DOM 溢出断言并保存截图。移动端、平板和窄屏不执行阻塞性视觉门。
 
-### 14.5 人工成对评价（M7 退出门）
+### 14.5 人工成对评价（M10 退出门）
 
-使用同一主题集、Provider、模型、温度和场景数量分别生成 v0.3 与 v0.4 课程，隐藏版本后评价事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配和测验对齐。截图使用相同视口；互动页另评教学必要性、控件可理解性、重置和完成反馈。报告同时给出生成完成率、首次通过率、修复率、耗时、token、模板分布和关键事实错误，禁止只展示改善的维度。
+使用同一主题集、Provider、模型、温度和场景数量分别生成 v0.3 与 v0.4 课程，隐藏版本后评价事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配和测验对齐。截图使用相同视口；互动页另评教学必要性、控件可理解性、重置和完成反馈。报告同时给出生成完成率、首次通过率、修复率、耗时、token、布局分布、几何/溢出失败和关键事实错误，禁止只展示改善的维度。
 
-## 15. 再生成管线（M7 计划）
+## 15. 再生成管线（M10 计划）
 
 `POST /api/courses/{courseId}/scenes/{outlineId}/regenerate` 接收 `expectedRevision` 与不超过 500 字的 instruction。服务端流程为：
 
@@ -665,7 +674,7 @@ M7 必须建立小型固定人工评价集来判断产品质量是否改善；�
 读取 ready Course 与目标 Scene
   → 构造 CourseBrief + Outline + bounded baseline + instruction
   → 按 scene.type 调用对应 Prompt
-  → 完整解析、Schema、质量/安全门与装配
+  → 完整解析、Schema、质量/安全门；slide 额外执行布局编译与几何门
   → expectedRevision 短事务原位替换
 ```
 
@@ -686,4 +695,4 @@ export interface QualityGate<T> {
 }
 ```
 
-这些接口不要求在 M7 全部实现。MX 可以从 M7 已产生的数据中选择错误感知修复、质量—成本约束模型路由、教学策略 Prompt 对比或互动运行错误修复中的一个问题。实验必须与固定模型、固定 Prompt 版本和明确调用预算的基线比较；LangGraph、多智能体或多模态只有在成为该单一问题的必要变量时才评估。
+这些接口不要求在 M7～M10 全部实现。MX 可以从 M7～M10 已产生的数据中选择错误感知修复、质量—成本约束模型路由、教学策略 Prompt 对比或互动运行错误修复中的一个问题。实验必须与固定模型、固定 Prompt 版本和明确调用预算的基线比较；LangGraph、多智能体或多模态只有在成为该单一问题的必要变量时才评估。

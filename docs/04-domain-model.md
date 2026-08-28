@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 目标：为页面、API、生成管线、播放器和 MySQL Repository 提供唯一数据语言。  
-> 状态说明：第 1～15 节描述已实现的 schemaVersion 1；第 16 节描述 M7 计划中的 schemaVersion 2，实施后仍以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
+> 状态说明：第 1～15 节描述已实现的 schemaVersion 1；第 16 节描述 M7～M10 计划中的 Course schemaVersion 2、`canvas.v1` 和 interactive runtime contract，实施后仍以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
 
 ## 1. 建模原则
 
@@ -237,7 +237,7 @@ interface BadScene {
 
 ## 7. Slide 内容
 
-MVP 幻灯片不是自由坐标画布，而是固定布局的内容块。这样更容易校验、响应式渲染和生成稳定。
+MVP 幻灯片不是自由坐标画布，而是固定布局的内容块。这样更容易校验、保持桌面端渲染稳定并提高生成成功率；移动端重排不属于当前领域契约。M8 计划新增的 `canvas.v1` 是独立判别分支，不能把下面已经持久化的 v1 Block 结构原地改义。
 
 ```ts
 export interface SlideContent {
@@ -292,7 +292,7 @@ export interface CodeBlock {
 - block id 唯一并由装配器生成；
 - 所有页面可见文本总量设置上限，避免模型返回不可阅读的“文字墙”。
 
-自由坐标、图片、图表、公式和动画均不进入 MVP。需要这些能力时新增明确 Block 类型，而不是向现有字段塞入任意 HTML。
+自由坐标、图片、图表、公式和动画均不进入 MVP。M8 只在新 `canvas.v1` 分支增加 `text/shape/line/code` 绝对坐标元素；旧 Block 仍保持原义，任何分支都不允许向普通文本字段塞入任意 HTML。
 
 ## 8. Quiz 内容
 
@@ -690,17 +690,17 @@ create/save 在写入前调用 CourseSchema.parse；get 在读取并组装后再
 ## 15. 演进规则
 
 - 增加可选字段且旧读者允许时，可保持 schemaVersion；
-- 删除字段、改变语义、改变判别联合或存储布局时必须升级版本；
+- 删除字段、改变 Course 顶层语义或存储布局时必须升级 Course schemaVersion；slide/interactive 等嵌套契约使用自己的 `format` 或 `runtimeContractVersion`，新增判别分支仍必须保持旧分支可读且不承诺旧程序降级读取新数据；
 - 每次版本升级提供 `migrateVnToVnPlus1` 纯函数和 fixture 测试；
 - 新 Scene 类型只有在 Schema、Renderer、生成器和测试同时存在时才能加入；
 - 新 Action 类型只有在 Schema、Executor、取消语义和测试同时存在时才能加入；
 - 不允许用 `any` 绕开外部输入校验，也不允许用类型断言代替运行时验证。
 
-## 16. v0.4/M7 计划契约：schemaVersion 2
+## 16. v0.4/M7～M10 计划契约：Course schemaVersion 2 + 内容子版本
 
 ### 16.1 版本兼容策略
 
-v0.4 扩展 Scene 判别联合并增加持久化 CourseBrief，因此升级到 `schemaVersion: 2`。Repository 不能把旧行直接交给 v2 Schema，也不能要求用户清库；读取顺序应为：
+M7 增加持久化 CourseBrief 和 SceneOutlineV2，因此 Course 聚合升级到 `schemaVersion: 2`。M8 的 slide 使用独立 `format: 'canvas.v1'`，M9 的互动消息使用 `runtimeContractVersion: 1`；这些内容子版本不能替代 Course schemaVersion。Repository 不能把旧行直接交给 v2 Schema，也不能要求用户清库；读取顺序应为：
 
 ```text
 MySQL row
@@ -827,10 +827,12 @@ export interface SceneOutlineV2 {
 - interactive 不能是第一场，且其 teachingObjective 必须引用课程中已引入的概念；
 - requestedSceneCount 在 v2 仍为 3～5，至少一个 quiz、最多两个 quiz 的规则不变。
 
-### 16.4 SlideContentV2 与 SlideBlockV2
+### 16.4 SlidePlanDTO、CanvasSlideContentV1 与有限元素
+
+模型输出和持久化实体必须分开。`SlidePlanDTO` 表达内容与关系，布局编译器生成最终坐标、id 和主题 token：
 
 ```ts
-export type SlideTemplate =
+export type SlideLayoutPreset =
   | 'key_points'
   | 'card_grid'
   | 'process'
@@ -838,70 +840,123 @@ export type SlideTemplate =
   | 'code_explainer'
   | 'summary';
 
-export interface CardGridBlock {
-  id: string;
-  type: 'card_grid';
-  cards: Array<{
-    title: string;
-    points: string[];
-  }>;
-}
-
-export interface StepsBlock {
-  id: string;
-  type: 'steps';
-  steps: Array<{
-    title: string;
-    description: string;
-  }>;
-}
-
-export interface ComparisonBlock {
-  id: string;
-  type: 'comparison';
-  leftTitle: string;
-  rightTitle: string;
-  rows: Array<{
-    dimension: string;
-    left: string;
-    right: string;
-  }>;
-}
-
-export interface TableBlock {
-  id: string;
-  type: 'table';
-  caption?: string;
-  headers: string[];
-  rows: string[][];
-}
-
-export type SlideBlockV2 =
-  | SlideBlockV1
-  | CardGridBlock
-  | StepsBlock
-  | ComparisonBlock
-  | TableBlock;
-
-export interface SlideContentV2 {
-  type: 'slide';
-  template: SlideTemplate;
+export interface SlidePlanDTO {
+  layoutPreset: SlideLayoutPreset;
   subtitle?: string;
-  blocks: SlideBlockV2[];
+  content:
+    | KeyPointsPlan
+    | CardGridPlan
+    | ProcessPlan
+    | ComparisonPlan
+    | CodeExplainerPlan
+    | SummaryPlan;
+  narration: string;
+  summary: string;
+}
+
+export type CanvasColorToken =
+  | 'surface'
+  | 'surface_muted'
+  | 'text'
+  | 'text_muted'
+  | 'primary'
+  | 'secondary'
+  | 'accent'
+  | 'warning';
+
+export interface CanvasBackground {
+  color: CanvasColorToken;
+}
+
+export interface CanvasTextStyle {
+  color: CanvasColorToken;
+  fontFamily: 'display' | 'sans' | 'mono';
+  fontSize: number;
+  fontWeight: 400 | 500 | 600 | 700;
+  lineHeight: number;
+  align: 'left' | 'center' | 'right';
+}
+
+export interface CanvasShapeStyle {
+  fill: CanvasColorToken;
+  stroke?: CanvasColorToken;
+  strokeWidth?: number;
+  radius?: number;
+}
+
+export interface CanvasLineStyle {
+  color: CanvasColorToken;
+  width: number;
+  endArrow?: boolean;
+}
+
+export interface CanvasElementBase {
+  id: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  rotate: number;
+  zIndex: number;
+  semanticRole?: 'title' | 'subtitle' | 'body' | 'accent' | 'connector' | 'code';
+}
+
+export interface CanvasTextElement extends CanvasElementBase {
+  type: 'text';
+  text: string;
+  textStyle: CanvasTextStyle;
+}
+
+export interface CanvasShapeElement extends CanvasElementBase {
+  type: 'shape';
+  shape: 'rect' | 'round_rect' | 'ellipse';
+  style: CanvasShapeStyle;
+}
+
+export interface CanvasLineElement extends CanvasElementBase {
+  type: 'line';
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  style: CanvasLineStyle;
+}
+
+export interface CanvasCodeElement extends CanvasElementBase {
+  type: 'code';
+  language: string;
+  code: string;
+  caption?: string;
+}
+
+export type CanvasElement =
+  | CanvasTextElement
+  | CanvasShapeElement
+  | CanvasLineElement
+  | CanvasCodeElement;
+
+export interface CanvasSlideContentV1 {
+  type: 'slide';
+  format: 'canvas.v1';
+  viewport: { width: 1000; height: 562.5 };
+  layoutPreset: SlideLayoutPreset;
+  background: CanvasBackground;
+  elements: CanvasElement[];
+}
+
+export type SlideContentV2 = SlideContent | CanvasSlideContentV1;
+
+export interface SlideSceneV2 extends SceneBase {
+  type: 'slide';
+  content: SlideContentV2;
 }
 ```
 
-约束：
+计划内容的不变量为：card_grid 有 2～4 张卡片；process 有 2～6 步；comparison 有 2～5 个逐行成对的比较维度；code_explainer 必须有源码和 1～5 条注解。模型 DTO 不含任何 id、坐标、zIndex、CSS、React 或 HTML，服务端也不能从模型样式字符串直接构造 className。
 
-- card_grid 为 2～4 张卡片，每张包含 1～3 个短要点；
-- steps 为 2～6 步，每步包含短标题和一句说明；
-- comparison 为 2～5 行，每行必须同时提供 dimension、left 和 right，不能使用两个独立数组造成左右错位；
-- table 为 2～5 列、1～6 行，每行单元格数量必须等于 headers 数量；
-- paragraph 在 v2 每页最多一个，只承担短定义或结论；code 仍只作为转义后的源码文本；
-- 模型 DTO 不包含任何 id，装配器只为 Block 生成 id；静态嵌套项不承担跨请求身份或 Action 目标，因此不额外生成实体 ID；
-- template 与主 Block 组合由语义门校验；读取旧 SlideContent 时使用 `legacy_stack` 兼容分支，`legacy_stack` 不属于模型可输出的 SlideTemplate。
+布局编译后的不变量为：所有几何数字有限，width/height 为正，id 唯一，元素不能完全越界，关键文本满足最小字号和容量，line 端点合法，zIndex 位于有限范围。非预期重叠需要报告，但 shape 作为文字背景、line 连接节点等显式关系允许相交，不能用简单的“矩形相交即失败”代替语义判断。code 仍只作为转义后的源码文本。
 
-SlideContent v2 的 Scene 标题继续使用 `Scene.title`，不在 content 中重复保存。SceneRenderer 将 title 与 content 一起交给新版 SlideRenderer，避免标题副本在再生成后发生漂移。
+布局编译器使用 `Scene.title` 同源生成 `semanticRole='title'` 的元素；M8 期间 `Scene.title` 仍是导航事实来源。若 M11 允许编辑画布标题，必须以一个领域事务同时更新 Scene.title 与标题元素。读取旧 SlideContent 时走 `legacy_stack`，不在迁移时编造坐标；只有 M10 明确再生成才把旧场景替换为 `canvas.v1`。
+
+OpenMAIC 固定提交的 [`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts) 可参考基础几何和元素联合，[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts) 可参考默认值补全边界；本项目只采用有限子集，并以 Zod 和更严格几何门作为可执行契约。
 
 ### 16.5 InteractiveScene
 
@@ -925,6 +980,7 @@ export interface InteractiveScene extends SceneBase {
   content: InteractiveContent;
 }
 
+export type QuizSceneV2 = QuizScene;
 export type SceneV2 = SlideSceneV2 | QuizSceneV2 | InteractiveScene;
 ```
 
@@ -952,15 +1008,19 @@ export type HostToWidgetMessage =
 
 所有消息使用 `.strict()` Schema，message 最多 300 字。宿主必须先验证 `event.source === iframe.contentWindow`，再验证消息；不得仅凭 `event.origin`，因为无同源权限的 srcDoc iframe 使用不透明来源。
 
+OpenMAIC 固定提交的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/interactive.ts) 可参考内容判别，[`InteractiveIframeHost.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/InteractiveIframeHost.tsx) 可参考 iframe 与 `event.source` 绑定；本项目的 sandbox 只允许 `allow-scripts`，不继承参考实现中的 forms/popups 权限。
+
 ### 16.7 再生成替换不变量
 
 - 再生成只允许替换同一个 courseId + outlineId 的 ready Scene；
-- 候选 Scene 沿用 courseId、outlineId、type 和 order，获得新的 scene id、Block id、Action id、GenerationMetadata 和时间戳；
+- 候选 Scene 沿用 courseId、outlineId、type 和 order，获得新的 scene id、CanvasElement/旧 Block id、Action id、GenerationMetadata 和时间戳；
 - 新候选未通过完整校验和事务提交前，旧 Scene 保持在聚合中；
 - 候选生成期间 Course.status、SceneProgress 和持久化 activeOperation 都保持不变；最终 expectedRevision 不匹配时拒绝迟到结果，因此崩溃或取消天然回到旧 ready 场景；
 - quiz 场景再生成必须要求用户确认旧作答会失效；替换 Course Scene 与删除旧 sceneId 的 QuizAttempt 使用同一个 MySQL 事务，任一步失败则全部回滚；
 - 互动场景再生成必须重新走 HTML 安全检查和 iframe E2E fixture，不能只校验通用 Scene 字段。
 
-### 16.8 v2 完成门
+### 16.8 分阶段启用门
 
-schemaVersion 2 只有在以下内容同时进入正式调用链后才能成为 `CURRENT_SCHEMA_VERSION`：v1/v2 读取与迁移、MySQL 列迁移、CourseBrief Prompt 归一/API/来源展示、SlideContent v2、六种受控模板、card_grid/steps/comparison/table 四种 Block、旧 slide 的 `legacy_stack` 恢复、interactive Schema/生成器/Renderer、消息协议、fixture、仓储契约测试和 production E2E。仅提前修改联合类型或数据库版本号会让旧数据不可读，因此禁止分离发布。
+Course `schemaVersion: 2` 只有在 M7 的 v1/v2 读取与迁移、MySQL `brief_json`、CourseBrief 归一/API/来源展示、SceneOutlineV2、fixture 和仓储契约测试同时进入正式调用链后才能成为 `CURRENT_SCHEMA_VERSION`。M7 不等待画布或互动代码，也不能提前产生对应内容。
+
+M8 的 `canvas.v1` 只有在 SlidePlanDTO、布局编译器、有限元素 Schema、只读 Renderer、legacy 恢复、几何/密度门、MySQL 恢复和 production E2E 同时可用后才能进入生产 Scene 联合。M9 的 InteractiveScene 也只有在生成器、安全校验、iframe Renderer、消息协议、fallback、fixture 和 E2E 同时完成后才能产生。只提前修改联合类型或让模型输出下游尚不能处理的分支，都会破坏阶段可运行性，因此禁止分离发布。

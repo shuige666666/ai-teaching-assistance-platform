@@ -1,6 +1,6 @@
 # 08. 部署、恢复与验收手册
 
-> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节是 M7/v0.4 的计划验收，不代表当前已经实现。当前版本没有账户与权限系统，不允许直接暴露到公网。
+> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节是 M7～M10/v0.4 的计划验收，不代表当前已经实现。当前版本没有账户与权限系统，不允许直接暴露到公网。
 
 ## 1. 最小生产启动
 
@@ -133,32 +133,32 @@ pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
 
 M6/M6.5 已按本机、MySQL、mock 与 DeepSeek 的 v0.3 边界完成。百炼真实生成和另一台机器部署不属于当前退出门，后续只有在双 Provider 对比或异机交付确有需要时才补充相应证据。
 
-## 8. M7/v0.4 计划验收
+## 8. M7～M10/v0.4 计划验收
 
-M7 不能用现有 AC-01～AC-12 自动继承完成结论。实施后必须新增 AC-Q01～AC-Q11 证据，并且 M6 证据继续有效。详细范围见 [01-scope.md](01-scope.md)，开发顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程碑先通过自己的退出门，M10 再汇总 AC-Q01～AC-Q11 并宣布 v0.4 完成；M6 证据必须继续有效。详细范围见 [01-scope.md](01-scope.md)，开发顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
 
-截至 2026-08-27，M7.0 评价集、量表、密度协议、双视口和退出阈值已冻结；mock smoke 已通过，6 主题 DeepSeek Prompt v1 自动基线已执行并保留失败样本。当前待人工七维评分，评分完成前不宣布 M7.0 退出。
+截至 2026-08-27，M7.0 评价集、量表、密度协议、双视口和退出阈值已冻结；mock smoke 已通过，6 主题 DeepSeek Prompt v1 自动基线已执行并保留失败样本。2026-08-28 起，M8～M10 只承诺 `1280×720` 及更大桌面视口。既有双视口 v1 作为历史协议保留；任何 M8/v0.4 画布候选生成前必须另行冻结桌面端 v2 协议，再完成当前范围所需的人工评分。
 
 ### 8.1 自动化质量门增量
 
 计划在原有 `verify:full` 之上加入但不混淆以下测试：
 
-| 测试层 | M7 必须覆盖 |
+| 测试层 | M7～M10 必须覆盖 |
 | --- | --- |
-| Domain | Course v1/v2 判别、v1 → v2 迁移、CourseBrief 默认值/字段来源/合并优先级/冲突警告、SlideContent v2/旧 slide 联合读取、模板组合和互动数量规则 |
-| Renderer | 六种模板与 card_grid、steps、comparison、table 的边界、转义、字体层级和响应式布局 |
-| Slide quality | 可见字符、最长单项、代码行数、重复信号、模板预算以及 `1280×720`/`390×844` DOM 溢出断言和截图 |
+| Domain | Course v1/v2 判别、v1 → v2 迁移、CourseBrief 默认值/字段来源/合并优先级/冲突警告、SlidePlanDTO、canvas.v1/旧 slide 联合读取、有限元素、布局语义和互动数量规则 |
+| Canvas/Renderer | 六种布局的确定性编译，`text/shape/line/code` 的边界、纯文本转义、16:9 缩放、桌面字体层级和未知元素 fallback |
+| Slide quality | 可见字符、最长单项、代码行数、元素数量、坐标边界、非预期重叠、重复、布局预算以及 `1280×720` 桌面 DOM 溢出断言和截图 |
 | Interactive security | HTML 大小与禁用标签、CSP、sandbox、消息来源和消息 Schema |
 | MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、新旧行读取、互动内容恢复、再生成原位替换和 conflict |
-| API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 模板/密度失败分类、interactive 失败分类、ready 场景再生成 |
-| Playwright | 双视口 slide 布局，以及 required diagram 的生成、操作、重置、完成、刷新、fallback 和迟到事件 |
+| API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 计划/编译/几何失败分类、interactive 失败分类、ready 场景再生成 |
+| Playwright | `1280×720` 桌面只读 SlideCanvas，以及 required diagram 的生成、操作、重置、完成、刷新、fallback 和迟到事件 |
 | Regression | 原 M6 创建、slide/quiz、播放、作答、删除和 mock E2E 全部保持通过 |
 
 mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。恶意 fixture 至少覆盖外部 fetch、读写父页面、`eval`、子 iframe、meta refresh 和伪造 postMessage。
 
-### 8.2 DeepSeek 互动 smoke test
+### 8.2 M9 DeepSeek 互动 smoke test
 
-M7 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `interactionMode=required` 的 5 场景课程。验收必须核对：
+M9 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `interactionMode=required` 的 5 场景课程。验收必须核对：
 
 - MySQL 中存在且只存在一个 interactive/diagram，保存 promptVersion、耗时、upstreamCalls 和修复标记；
 - iframe 在 production Chromium 中报告 ready，核心节点/步骤可操作，reset 恢复初始状态，completed 可以解除 learner pause；
@@ -168,29 +168,29 @@ M7 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `i
 
 ### 8.3 课程质量验收
 
-M7.0 先冻结主题集、七维评分说明、`slide-density.v1`、截图视口和阈值。M7.4 使用同一 DeepSeek 模型、温度、场景数量和主题，分别生成 v0.3 与 v0.4 课程，使用相同视口截图并隐藏版本后成对评分。报告至少包含：
+双视口 v1 基线保持不可变。M7 在生成 M8/v0.4 画布候选前另行冻结桌面端 v2 主题集、七维评分说明、密度规则、`1280×720` 视口和阈值。M10 使用同一 DeepSeek 模型、温度、场景数量和主题，分别使用 v0.3 的既有桌面证据与 v0.4 桌面候选，隐藏版本后成对评分。报告至少包含：
 
 - 事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配、quiz 对齐；
 - 互动页的教学必要性、控件可理解性、重置和完成反馈；
-- 课程完成率、首次结构/密度通过率、修复次数、请求耗时、token、模板分布、硬溢出和关键事实错误；
+- 课程完成率、首次结构/密度通过率、修复次数、请求耗时、token、布局分布、几何失败、硬溢出和关键事实错误；
 - 每个失败样本的保留/排除规则，不能只展示成功课程。
 
-建议初始退出阈值为目标匹配、教学组织、案例/练习价值、可见内容可读性、视觉层级与版式适配五项平均提升至少 0.5/5，事实正确性不下降，标准视口不存在硬溢出，至少 70% 的课程对更偏好 v0.4。正式阈值必须在看到 v0.4 结果前由 M7.0 冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
+建议初始退出阈值为目标匹配、教学组织、案例/练习价值、可见内容可读性、视觉层级与版式适配五项平均提升至少 0.5/5，事实正确性不下降，`1280×720` 桌面视口不存在硬溢出，至少 70% 的课程对更偏好 v0.4。桌面端 v2 阈值必须在看到 v0.4 结果前冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
 
-### 8.4 M7 证据矩阵模板
+### 8.4 M7～M10 证据矩阵模板
 
-| 条件 | 预期证据 | 当前状态 |
-| --- | --- | --- |
-| AC-Q01 CourseBrief 解析、来源、警告与同 revision 保存恢复 | Schema + API + MySQL integration | 未实现 |
-| AC-Q02 v1 → v2 兼容 | migration fixture + 旧库读取 | 未实现 |
-| AC-Q03 outline.v2 同调用解析与大纲生成，场景 Prompt 使用完整上下文 | golden + 调用计数 + 生成元数据 | 未实现 |
-| AC-Q04 SlideContent v2、模板、新 Block 与双视口安全渲染 | Schema + component + DOM 断言 + 截图 | 未实现 |
-| AC-Q05 required diagram 数量 | domain + API | 未实现 |
-| AC-Q06 HTML 安全门 | validator 恶意 fixture | 未实现 |
-| AC-Q07 iframe 协议 | Playwright + network/console 记录 | 未实现 |
-| AC-Q08 fallback 与失败隔离 | 故障注入 + E2E | 未实现 |
-| AC-Q09 ready 场景再生成 | application + MySQL conflict | 未实现 |
-| AC-Q10 成对质量提升 | 固定量表报告 | 未实现 |
-| AC-Q11 M6 全量回归 | `pnpm verify:full` | 待 M7 完成时复跑 |
+| 条件 | 里程碑 | 预期证据 | 当前状态 |
+| --- | --- | --- | --- |
+| AC-Q01 CourseBrief 解析、来源、警告与同 revision 保存恢复 | M7 | Schema + API + MySQL integration | 未实现 |
+| AC-Q02 v1 → v2 兼容 | M7 | migration fixture + 旧库读取 | 未实现 |
+| AC-Q03 outline.v2 同调用解析与大纲生成，场景 Prompt 使用完整上下文 | M7/M8 | golden + 调用计数 + 生成元数据 | 未实现 |
+| AC-Q04 canvas.v1、布局编译、有限元素与桌面端安全渲染 | M8 | Schema + compiler + component + 桌面 DOM 断言 + 截图 | 未实现 |
+| AC-Q05 required diagram 数量 | M9 | domain + API | 未实现 |
+| AC-Q06 HTML 安全门 | M9 | validator 恶意 fixture | 未实现 |
+| AC-Q07 iframe 协议 | M9 | Playwright + network/console 记录 | 未实现 |
+| AC-Q08 fallback 与失败隔离 | M9 | 故障注入 + E2E | 未实现 |
+| AC-Q09 ready 场景再生成 | M10 | application + MySQL conflict | 未实现 |
+| AC-Q10 桌面端成对质量提升 | M10 | 冻结的桌面 v2 量表报告 | 未实现 |
+| AC-Q11 M6 全量回归 | M7～M10 | `pnpm verify:full` | 每个里程碑退出时复跑 |
 
-只有表中所有“未实现”都被真实证据替换后，才能把 [07-development-status.md](07-development-status.md) 更新为“M7 完成”。
+M7、M8、M9 可以在各自相关行具备证据后单独更新为完成；只有表中所有“未实现”都被真实证据替换后，才能把 [07-development-status.md](07-development-status.md) 更新为“M10 完成、v0.4 完成”。

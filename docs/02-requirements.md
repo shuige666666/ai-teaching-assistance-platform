@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)  
-> 状态说明：FR-001～FR-705 对应已完成的 v0.3；带 `Q` 或 `I` 前缀的需求对应计划中的 v0.4/M7，不能描述成当前已实现能力。
+> 状态说明：FR-001～FR-705 对应已完成的 v0.3；带 `Q` 或 `I` 前缀的需求对应计划中的 v0.4/M7～M10，不能描述成当前已实现能力。
 
 ## 1. 系统目标
 
@@ -237,8 +237,8 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-Q106 | 场景 Prompt 必须接收有长度上限的已覆盖关键点、待覆盖目标和前文摘要，不能无限累计整课原文。 |
 | FR-Q107 | slide 必须继续区分可见短内容和 narration，不得通过生成长段落伪造课程深度。 |
 | FR-Q108 | 系统必须生成可机器检查的密度、重复、关键点覆盖和 quiz—objective 对齐报告；该报告不宣称事实正确。 |
-| FR-Q109 | `scene-slide.v2` 必须根据 SceneRole 和内容关系从受控模板集合中选择一个模板，不得生成自由坐标、CSS、React 或模板外字段。 |
-| FR-Q110 | 模板组合、可见内容硬上限和明显重复失败可以进入现有一次 repair，但 repair 与传输重试仍共享单请求最多四次上游调用预算。 |
+| FR-Q109 | `scene-slide-plan.v2` 必须根据 SceneRole 和内容关系选择一个受控布局意图，并返回对应语义内容；不得生成实体 id、坐标、zIndex、CSS、React、HTML 或布局外字段。 |
+| FR-Q110 | 布局语义、可见内容硬上限和明显重复失败可以进入现有一次 repair；服务端布局编译器的确定性错误不得消耗模型 repair，且 repair 与传输重试仍共享单请求最多四次上游调用预算。 |
 | FR-Q111 | `outline.v2` 只能提取原始描述中明确出现的教学要求，不能仅按学科难度推断受众、水平或用户偏好。 |
 | FR-Q112 | CourseBrief 字段合并优先级必须固定为 `explicit_setting > prompt > default`；显式空数组与字段缺失必须保持不同语义。 |
 | FR-Q113 | 正常路径下，Prompt 字段检测、解析警告、resolved CourseBrief 和 outlines 必须由同一次 `outline.v2` 结构化响应返回，不增加独立 LLM 解析调用。 |
@@ -247,21 +247,21 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-Q116 | 用户在大纲确认前修改 resolved Brief 时，新值必须作为显式设置保存并使旧大纲失效；M7.1 不支持场景生成后直接修改整课 Brief。 |
 | FR-Q117 | 原始 topic 只能作为待解析数据进入 User Prompt，其中的指令不得覆盖 System Prompt、输出 Schema、字段优先级或安全校验。 |
 
-### 4.10 丰富固定渲染（v0.4 计划）
+### 4.10 PPT 式只读受控自由画布（M8 计划）
 
 | 编号 | 需求 |
 |---|---|
-| FR-Q201 | SlideBlock 在保留现有类型的基础上增加 card_grid、steps、comparison 和 table。 |
-| FR-Q202 | card_grid 包含 2～4 张短文本卡片；steps 包含 2～6 个有序步骤；comparison 只比较两个对象的同维度项目；table 限制为短文本小表格。 |
-| FR-Q203 | 新 Block 必须由固定 React 组件渲染，不能包含模型 CSS、React、HTML 或可执行代码。 |
-| FR-Q204 | 桌面 Renderer 必须以有限 16:9 slide surface 展示完整主要内容；窄屏按 DOM 语义顺序重排，可由课堂页面纵向滚动，但模板内部不得横向裁切或隐藏关键内容。 |
-| FR-Q205 | 旧 SlideContent 必须通过 `legacy_stack` 兼容路径恢复；未知 Block、非法模板组合或版本不兼容时显示可诊断 fallback，不能导致整个课堂白屏。 |
-| FR-Q206 | SlideContent v2 的 template 只能是 key_points、card_grid、process、comparison、code_explainer 或 summary，并按模板语义限制主 Block 组合。 |
-| FR-Q207 | 展示字体只用于短标题或关键结论，关键正文和要点使用无衬线字体且不得低于 16px；不能靠缩小、隐藏或内部滚动规避内容超载。 |
-| FR-Q208 | 系统必须对标题、subtitle、单项、整页可见字符、代码行数和重复信号生成确定性 SlideQualityReport。 |
-| FR-Q209 | 浏览器测试必须在 `1280×720` 和 `390×844` 检查关键容器的水平/垂直溢出并保存截图；DOM 溢出断言阻塞合并，首版截图由人工审查。 |
+| FR-Q201 | 系统必须增加 `CanvasSlideContentV1`：`format='canvas.v1'`、`1000 × 562.5` 逻辑画布、背景和带稳定 id 的元素数组；持久化结果使用绝对坐标。 |
+| FR-Q202 | M8 只支持 `text/shape/line/code` 四类 CanvasElement；共同字段包含 left、top、width、height、rotate 和 zIndex，模型 DTO 不得提供这些身份或几何字段。 |
+| FR-Q203 | `SlidePlanDTO` 只能选择 key_points、card_grid、process、comparison、code_explainer 或 summary，并由服务端布局编译器确定性生成元素 id、坐标、尺寸和主题 token。 |
+| FR-Q204 | 通用只读 SlideCanvas 必须在 `1280×720` 及更大桌面视口等比缩放 16:9 逻辑画布并完整展示主要内容；M8～M10 不要求为移动端、平板或窄屏实现专门重排。 |
+| FR-Q205 | 旧 SlideContent 必须通过 `legacy_stack` 兼容路径恢复；未知元素、非法几何、编译失败或版本不兼容时显示可诊断 fallback，不能导致整个课堂白屏。 |
+| FR-Q206 | 布局编译必须检查有限数字、id 唯一、正尺寸、画布边界、zIndex、最小字号、文本容量、连接线端点和非预期重叠；允许的包含/连接关系不能被一概判错。 |
+| FR-Q207 | 展示字体只用于短标题或关键结论，关键正文和要点使用无衬线字体且不得低于 16px 等效字号；不能靠缩小、隐藏、画布外元素或内部滚动规避内容超载。 |
+| FR-Q208 | 系统必须对布局、元素数量、标题、subtitle、单项、整页可见字符、代码行数、越界、非预期重叠和重复信号生成确定性 SlideQualityReport。 |
+| FR-Q209 | 浏览器测试必须在 `1280×720` 桌面视口检查 slide surface 和文本/代码元素的水平/垂直溢出并保存截图；DOM 溢出断言阻塞合并，首版截图由人工审查。移动端和窄屏截图不属于 M8～M10 硬门。 |
 
-### 4.11 互动场景（v0.4 计划）
+### 4.11 互动场景（M9 计划）
 
 | 编号 | 需求 |
 |---|---|
@@ -276,13 +276,13 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-I109 | 互动场景使用 speech + learner pause；合法 completed 事件解除等待，切页或卸载必须拒绝迟到事件。 |
 | FR-I110 | 互动 HTML、fallback、生成元数据和失败状态必须通过 CourseRepository 持久化并可在刷新后恢复。 |
 
-### 4.12 单场景再生成与质量评价（v0.4 计划）
+### 4.12 单场景再生成与质量评价（M10 计划）
 
 | 编号 | 需求 |
 |---|---|
 | FR-Q301 | 用户可以对 ready 场景提交不超过 500 字的修改指令；失败场景继续使用原有重试流程。 |
 | FR-Q302 | 再生成必须读取现有场景作为受限 baseline，但模型不能修改 courseId、outlineId、order、status 或实体 ID。 |
-| FR-Q303 | 新场景只有在解析、Schema、语义/安全门和 MySQL expectedRevision 提交全部成功后才能替换旧场景。 |
+| FR-Q303 | 新场景只有在解析、Schema、语义/安全门、slide 的布局编译与几何门，以及 MySQL expectedRevision 提交全部成功后才能替换旧场景。 |
 | FR-Q304 | 再生成失败、取消或冲突时必须保留旧 ready 场景和其他场景。 |
 | FR-Q305 | 项目必须保存固定评价集、量表版本、Prompt/模型元数据和汇总分数，评价产物不得包含真实用户隐私。 |
 | FR-Q306 | v0.4 退出前必须在同一模型配置下与 v0.3 做成对人工比较，并同时报告质量、延迟、token、修复和完成率。 |
@@ -331,6 +331,7 @@ MVP 只有一个逻辑参与者：本地用户。
 | NFR-UX-05 | 1280×720 及更大桌面视口必须完整可用。 |
 | NFR-UX-06 | 互动场景必须支持键盘操作、可见焦点、最小 44×44px 操作目标和重置入口。 |
 | NFR-UX-07 | iframe 加载、可操作、完成和失败状态必须对用户可见，不能用空白区域代表等待。 |
+| NFR-UX-08 | M7～M10 不承诺小于 1280px 的窄屏、平板或移动端适配；现有页面在这些视口的表现仅为 best-effort，不阻塞开发与退出。 |
 
 ### 5.4 可维护性与可测试性
 
@@ -341,8 +342,8 @@ MVP 只有一个逻辑参与者：本地用户。
 | NFR-MNT-03 | AI 适配器、存储仓储和语音接口必须可替换为测试实现。 |
 | NFR-MNT-04 | 业务方法新增时使用简洁中文注释说明职责和关键防御场景。 |
 | NFR-MNT-05 | 每个里程碑结束时同步更新 README 和相关设计文档。 |
-| NFR-MNT-06 | 每种新 Scene/Block 必须同时具有 Schema、模型 DTO、装配、Renderer、fixture 和测试。 |
-| NFR-MNT-07 | LangGraph、多智能体、多模态与 RAG 不得成为 M7 的隐式依赖。 |
+| NFR-MNT-06 | 每种新 Scene、旧格式 Block 或 CanvasElement 必须同时具有 Schema、模型/编译输入 DTO、装配、Renderer、fixture 和测试。 |
+| NFR-MNT-07 | LangGraph、多智能体、多模态与 RAG 不得成为 M7～M10 的隐式依赖。 |
 
 ## 6. 验收场景
 
@@ -400,6 +401,12 @@ MVP 只有一个逻辑参与者：本地用户。
 **When** 系统解析并保存大纲<br>
 **Then** learnerLevel 最终为 advanced、来源为 `explicit_setting`，同时保存并展示 `SETTING_PROMPT_CONFLICT`；用户确认前修改 Brief 时旧大纲失效。
 
+### 场景 G-4：只读画布生成与恢复（M8）
+
+**Given** 一个 process 类型的 slide 计划已经通过语义校验<br>
+**When** 服务端布局编译器装配并保存场景，用户在 `1280×720` 课堂中打开并刷新页面<br>
+**Then** MySQL 中保存的是 id 和几何字段完整的 `canvas.v1`，只读 SlideCanvas 稳定恢复同一布局；模型没有提交坐标或 CSS，越界、非预期重叠和文本溢出均已被质量门或浏览器断言拦截。
+
 ### 场景 H：互动脚本异常（v0.4）
 
 **Given** 互动 HTML 尝试访问外部网络或运行时抛出异常<br>
@@ -422,9 +429,11 @@ MVP 只有一个逻辑参与者：本地用户。
 | 逐场景生成与失败隔离 | FR-201～209 | M4 |
 | 课堂、测验和可选语音 | FR-401～408 | M5 |
 | 可验收交付 | 全部 NFR、AC-01～12 | M6 |
-| 质量上下文、Prompt v2 与幻灯片表达系统 | FR-Q101～117、FR-Q201～209 | M7.1～M7.2 |
-| 受控互动场景 | FR-I101～110、NFR-SEC-08～10 | M7.3 |
-| 单场景再生成与质量验收 | FR-Q301～307 | M7.4 |
-| 单一可度量研究问题 | 从 M7 数据中另行立项 | MX |
+| 质量上下文与 outline v2 | FR-Q101～117 | M7.1 |
+| PPT 式只读受控自由画布 | FR-Q201～209 | M8 |
+| 受控互动场景 | FR-I101～110、NFR-SEC-08～10 | M9 |
+| 单场景再生成与质量验收 | FR-Q301～307 | M10 |
+| 可视化画布编辑器 | 当前不形成 v0.4 强制需求，确认范围后另补需求编号 | M11（可选） |
+| 单一可度量研究问题 | 从 M7～M10 数据中另行立项 | MX |
 
 当需求编号或范围发生变化时，必须同步更新 [01-scope.md](01-scope.md)、[03-architecture.md](03-architecture.md)、[06-roadmap.md](06-roadmap.md) 和 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。

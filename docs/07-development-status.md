@@ -141,7 +141,7 @@ M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表�
 - slide 只有 paragraph、bullet_list、callout、code，quiz 只有 single_choice；
 - scene-slide.v1 主要约束 JSON 字段和宽松长度上限，paragraph 最多 500 字符、列表单项最多 180 字符、callout 最多 400 字符，没有“屏幕摘要与讲解稿分工”或整页密度预算；
 - SlideRenderer 将全部 Block 放入单列文档流，正文继续使用 21～30px 的展示型衬线字体；长段落因此获得接近标题的视觉重量，结构合法但容易呈现为纵向讲义；
-- 当前 JSON 没有 card/process/comparison 等内容关系和模板字段，即使只修改 Prompt，Renderer 也无法稳定生成类似幻灯片的并列、流程或对比布局；
+- 当前 JSON 没有 card/process/comparison 等内容关系，也没有可持久化的绝对坐标画布；即使只修改 Prompt，Renderer 也无法稳定生成类似幻灯片的并列、流程或对比布局；
 - 场景上下文只有课程标题计划和前一 ready 场景摘要，不能显式追踪已覆盖/待覆盖目标；
 - Action 由程序装配为 speech/pause，没有页面元素动作或互动协议；
 - 当前 repair 与质量门主要保证 JSON/Schema/领域结构，不评价事实正确性、教学深度和案例价值。
@@ -164,6 +164,10 @@ M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` �
 
 正式基线运行 ID 为 `2026-08-27T13-36-18-569Z`：4/6 课程为 `ready`，2/6 为 `partial_failed`，保存 28/30 个场景；共记录 50 次上游调用、31711 输入 token、62567 输出 token 和 44 张截图。两个第 5 场景在修复后仍不符合契约，以 `INVALID_MODEL_OUTPUT` 保留；22 个 slide 的密度 pass/warning/fail 为 0/6/16，6 张窄屏截图存在容器溢出。六门课程均已从 MySQL 重新读取并核对 ID、状态、revision 和场景数，失败样本未补跑。
 
-实施中还发现并修复了一个原有契约缺陷：用户 topic 允许 500 字符，而草稿 title 最多 120 字符，原实现直接复制会让长主题在创建阶段失败。现在保留完整 topic，只为草稿 title 派生 120 字符内摘要，并补充回归测试。完整回归为 16 个文件、69 项单元测试、9 项 MySQL 集成测试、ESLint 和 production build 通过。当前只剩人工七维评分，完成前不宣布 M7.0 退出。
+实施中还发现并修复了一个原有契约缺陷：用户 topic 允许 500 字符，而草稿 title 最多 120 字符，原实现直接复制会让长主题在创建阶段失败。现在保留完整 topic，只为草稿 title 派生 120 字符内摘要，并补充回归测试。完整回归为 16 个文件、69 项单元测试、9 项 MySQL 集成测试、ESLint 和 production build 通过。
 
-M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7 仍按 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md) 的 M7.0 → M7.4 原序执行，不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。
+2026-08-28 范围调整后，M8～M10 只承诺 `1280×720` 及更大桌面视口。已冻结的双视口 v1 配置、44 张截图和其中 6 张窄屏溢出证据继续保留，不能回写或删除；它们只作为范围调整前的历史资料。当前在进入 Course v2 之前，还需先版本化并冻结桌面端 v2 评价协议，再使用既有桌面基线证据完成人工评分。移动端、平板和窄屏不再是 M7～M10 的实现任务或退出条件。
+
+M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。原 M7.2、M7.3、M7.4 均未进入代码，现已分别升格为 M8、M9、M10；当前顺序为 M7.0/M7.1 课程质量基础 → M8 只读受控自由画布 → M9 diagram 互动 → M10 单场景再生成与 v0.4 验收。M11 可视化画布编辑器是可选项，不阻塞 v0.4 或 MX。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
+
+M8 计划保存标准 `canvas.v1`，但让 LLM 只返回语义 SlidePlan 和布局意图，由服务端布局编译器生成坐标；M8 不允许用户直接编辑。M9 独立实现自包含 diagram 与严格 sandbox。以上阶段均不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。

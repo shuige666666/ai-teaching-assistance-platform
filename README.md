@@ -19,7 +19,7 @@
 
 M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部完成。
 
-当前已进入 **M7.0 质量基线**：6 主题评价集、七维人工量表、`slide-density.v1`、双视口和退出阈值已于 2026-08-27 冻结，mock 采集 smoke 和 DeepSeek Prompt v1 自动基线已完成。基线得到 4/6 `ready`、28/30 场景保存、50 次上游调用、44 张双视口截图；两门课程的第 5 场景因 `INVALID_MODEL_OUTPUT` 保留为 `partial_failed`。M7.0 仍等待人工七维评分，本阶段没有修改生产 Prompt、Schema、Renderer 或 CSS。
+当前已进入 **M7 课程质量基础**：6 主题评价集、七维人工量表、`slide-density.v1`、双视口和退出阈值已于 2026-08-27 冻结，mock 采集 smoke 和 DeepSeek Prompt v1 自动基线已完成。基线得到 4/6 `ready`、28/30 场景保存、50 次上游调用、44 张双视口截图；两门课程的第 5 场景因 `INVALID_MODEL_OUTPUT` 保留为 `partial_failed`。冻结的 M7.0/v1 证据不改名、不回写；下一步先冻结只含 `1280×720` 桌面视口的评价协议并完成基线人工评分，再实现 M7.1 CourseBrief/outline v2。后续能力已拆为 M8 只读受控自由画布、M9 `interactive/diagram`、M10 单场景再生成与 v0.4 验收；M11 可视化画布编辑器是可选项。M7～M10 不承诺移动端、平板或窄屏专项适配。
 
 ## v0.3 MVP 已实现什么
 
@@ -29,7 +29,7 @@ MVP 面向“教师或学生输入一个主题，生成并运行一门微型课�
 - 大纲与场景分阶段生成，模型输出经过 Schema 和语义校验；
 - 固定渲染器展示 slide/quiz 和只读代码块，确定性播放引擎执行 speech/pause。
 
-v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 只从这份排除项中选择一种受控 diagram 互动页，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
+v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 引入只读、桌面端的受控自由画布，在 M9 只加入一种受控 diagram 互动页；可视化画布编辑器留到可选 M11，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
 
 ## 为什么不一比一照搬 OpenMAIC
 
@@ -46,13 +46,13 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 | [03. 系统架构设计](docs/03-architecture.md) | OpenMAIC 实际如何运行，目标系统如何分层和调用 |
 | [04. 领域模型与数据契约](docs/04-domain-model.md) | Course、Scene、Action、状态和 DTO 如何定义 |
 | [05. AI 生成管线设计](docs/05-generation-pipeline.md) | Prompt、解析、校验、修复、重试和预算如何控制 |
-| [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M7 与暂存 MX 如何分阶段，每阶段用什么证据退出 |
+| [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M10、可选 M11 与暂存 MX 如何分阶段，每阶段用什么证据退出 |
 | [07. 当前开发状态](docs/07-development-status.md) | 哪些代码已进入调用链、通过了什么验证、下一步是什么 |
 | [08. 部署、恢复与验收手册](docs/08-deployment-and-acceptance.md) | 如何生产启动、备份恢复、排障并复现 AC-01～AC-12 |
-| [09. v0.4 课程质量与互动能力开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | CourseBrief、幻灯片模板/Prompt v2、视觉质量门、互动沙箱和推荐提交顺序 |
+| [09. v0.4 课程质量、画布与互动开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | M7～M10 的 CourseBrief、受控自由画布、互动沙箱、再生成和 OpenMAIC 参考路径 |
 | [10. M6.5 远端响应韧性与可观测性开发方案](docs/10-m6.5-remote-response-resilience-plan.md) | DeepSeek 响应分类、受限重试、安全日志和验收证据 |
 
-01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，09 是 M7 的可执行开发方案，10 是插入 M6 与 M7 之间的 M6.5 工程加固方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
+01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，09 是 M7～M10 的可执行开发方案，10 是插入 M6 与 M7 之间的 M6.5 工程加固方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
 
 ## 目标架构
 
@@ -69,7 +69,8 @@ app/
   api/health/config/             # [M6 已实现] 当前 AI 档位的无密钥配置检查
 components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
-  interactive/                   # [M7 计划] sandbox iframe 宿主与消息桥
+  canvas/                        # [M8 计划] 只读 SlideCanvas 与有限元素 Renderer
+  interactive/                   # [M9 计划] sandbox iframe 宿主与消息桥
 lib/
   domain/                        # [M1 已实现] Schema、状态转换与 fixture
   repository/                    # [M2 已实现] InMemory / MySQL 仓储与错误映射
@@ -78,8 +79,9 @@ lib/
   ai/                            # [M3/M6.5 已实现] mock、OpenAI-compatible 适配器与响应诊断
   generation/                    # [M4/M6.5 已实现] Prompt、解析、修复、预算与受限重试
   playback/                      # [M5 已实现] 播放 reducer、Action executor 与语音适配器
-  quality/                       # [M7 计划] 确定性质量报告与评价 DTO
-  interactive/                   # [M7 计划] HTML 校验、CSP patch 与运行协议
+  quality/                       # [M7/M8 计划] 内容、几何与视觉质量报告
+  canvas/                        # [M8 计划] 布局编译、规范化与几何语义门
+  interactive/                   # [M9 计划] HTML 校验、CSP patch 与运行协议
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
 scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
 e2e/                             # [M6 已实现] production mock 完整浏览器回归
@@ -87,7 +89,7 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
-标记为 M1～M6.5 的目录已经进入正式调用链，标记为 M7 的目录只是计划结构，目前不应在开发状态中写成已实现。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M6.5 的目录已经进入正式调用链，标记为 M7～M9 的目录只是计划结构，目前不应在开发状态中写成已实现。fixture 只保留给领域和仓储测试，不再属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 ## 技术栈
 
@@ -105,7 +107,7 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 
 M2 选用 `mysql2/promise`，直接使用连接池、参数化 SQL 和事务，不引入 ORM；数据库差异仍封装在 `MySQLCourseRepository` 中。Vitest 分别运行无数据库单元测试和真实 MySQL 集成测试，Playwright CLI 用于跨进程恢复验证。
 
-LangGraph 不是 M7 前置依赖。OpenMAIC 的主课程生成和自包含互动页面本身不依赖多智能体；只有暂存的 MX 单一研究问题确实需要有状态图编排并且能够设计对照实验时，再考虑引入。
+LangGraph 不是 M7～M10 的前置依赖。OpenMAIC 的主课程生成和自包含互动页面本身不依赖多智能体；只有暂存的 MX 单一研究问题确实需要有状态图编排并且能够设计对照实验时，再考虑引入。
 
 ## 本地运行
 
@@ -166,8 +168,12 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 5. **M5（已完成）**：Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
 6. **M6（已完成）**：本机自动化测试、故障注入、生产构建、恢复和 DeepSeek 真实生成证据均已通过。
 7. **M6.5（已完成）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
-8. **M7（M7.0 进行中）**：质量协议已冻结，mock smoke 和 DeepSeek v0.3 双视口自动基线已留存，待开发者完成人工七维评分；随后进入 Prompt 归一化 CourseBrief/outline v2（字段来源、默认值与冲突处理）→ 幻灯片表达系统 v2（模板、Block、Prompt、密度/溢出门）→ diagram 互动沙箱 → 单场景再生成与成对质量验收；
-9. **MX（暂时搁置）（未选题）**：待基础程序完成后选择一个可度量的毕业论文研究问题。
+8. **M7（进行中）**：保留 M7.0 冻结证据，完成桌面评价协议、人工基线、CourseBrief、Course v2 和 outline v2；
+9. **M8（计划）**：建立 `canvas.v1`、受控布局编译器、只读 SlideCanvas、场景 Prompt v2、MySQL 恢复和桌面质量门；
+10. **M9（计划）**：实现唯一一种 `interactive/diagram` 的生成、严格校验、沙箱运行、消息协议和 fallback；
+11. **M10（计划）**：实现 ready 场景按指令再生成、事务替换和 v0.3/v0.4 成对质量验收；
+12. **M11（可选）**：在稳定的 `canvas.v1` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不阻塞 v0.4；
+13. **MX（暂时搁置）（未选题）**：待 M10 产品质量闭环完成后选择一个可度量的毕业论文研究问题。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。
 
