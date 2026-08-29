@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createCourseDraft } from "@/lib/domain/fixture";
+import { CourseBriefOverridesSchema } from "@/lib/domain/course-brief";
 import { resolveRequestId, startServerOperation } from "@/lib/observability/server-log";
 import { getCourseRepository } from "@/lib/repository";
 import { createApiError, mapRepositoryError } from "@/lib/repository/error-response";
@@ -8,7 +9,8 @@ import { createApiError, mapRepositoryError } from "@/lib/repository/error-respo
 const CreateCourseInputSchema = z.object({
   topic: z.string().trim().min(2, "主题至少需要 2 个字符").max(500, "主题不能超过 500 个字符"),
   requestedSceneCount: z.number().int().min(3).max(5),
-});
+  briefOverrides: CourseBriefOverridesSchema.optional(),
+}).strict();
 
 export async function GET() {
   try {
@@ -19,13 +21,13 @@ export async function GET() {
   }
 }
 
-/** 创建只包含主题和场景数量的草稿；正式大纲由独立生成接口完成。 */
+/** 创建包含 provisional Brief 的课程草稿；模型解析结果在大纲生成成功后再固化。 */
 export async function POST(request: Request) {
   const requestId = resolveRequestId(request);
   const operation = startServerOperation("course.create", { requestId, stage: "course" });
   try {
     const input = CreateCourseInputSchema.parse(await request.json());
-    const course = await getCourseRepository().create(createCourseDraft(input.topic, input.requestedSceneCount));
+    const course = await getCourseRepository().create(createCourseDraft(input.topic, input.requestedSceneCount, input.briefOverrides));
     operation.success({ courseId: course.id, sceneCount: course.requestedSceneCount });
     return NextResponse.json({ course, meta: { requestId } }, { status: 201 });
   } catch (error) {

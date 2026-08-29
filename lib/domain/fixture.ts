@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Course, GenerationMetadata, Scene, SceneOutline } from "./schemas";
-import { CourseSchema } from "./schemas";
+import { CourseSchema, CURRENT_SCHEMA_VERSION } from "./schemas";
+import { createProvisionalCourseBrief, type CourseBriefOverrides } from "./course-brief";
 
 /** 从原始课程描述派生草稿标题；完整描述仍保存在 topic，不能因标题上限丢失。 */
 function deriveDraftTitle(topic: string, maxLength: number = 120) {
@@ -12,19 +13,22 @@ function deriveDraftTitle(topic: string, maxLength: number = 120) {
   return title;
 }
 
-/** 创建尚未调用模型的课程草稿，主题和场景数量是后续生成管线的唯一输入事实。 */
-export function createCourseDraft(topic: string, requestedSceneCount: number): Course {
+/** 创建尚未调用模型的课程草稿，并记录用户显式设置和默认值的来源。 */
+export function createCourseDraft(topic: string, requestedSceneCount: number, briefOverrides: CourseBriefOverrides = {}): Course {
   const normalizedTopic = topic.trim();
   const parsedCount = Math.min(5, Math.max(3, Math.trunc(requestedSceneCount)));
   const now = Date.now();
+  const { brief, resolution } = createProvisionalCourseBrief(normalizedTopic, briefOverrides);
   return CourseSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     id: randomUUID(),
     topic: normalizedTopic,
     title: deriveDraftTitle(normalizedTopic),
     requestedSceneCount: parsedCount,
     status: "draft",
     revision: 0,
+    brief,
+    briefResolution: resolution,
     outlines: [],
     scenes: [],
     sceneProgress: [],
@@ -45,15 +49,28 @@ export function createFixtureCourse(topic: string, requestedSceneCount: number):
   const titles = ["建立问题地图", "拆解核心机制", "检查关键理解", "连接工程实践", "形成复习路径"];
   const outlines: SceneOutline[] = Array.from({ length: parsedCount }, (_, index) => {
     const type = index === 2 ? ("quiz" as const) : ("slide" as const);
+    const role: SceneOutline["role"] = type === "quiz"
+      ? "assessment"
+      : index === 0
+        ? "hook"
+        : index === parsedCount - 1
+          ? "summary"
+          : index === 1
+            ? "mechanism"
+            : "worked_example";
     return {
-      id: randomUUID(), type, title: titles[index], order: index + 1, estimatedMinutes: type === "quiz" ? 3 : 5,
+      id: randomUUID(), type, role, title: titles[index], order: index + 1, estimatedMinutes: type === "quiz" ? 3 : 5,
       teachingObjective: type === "quiz" ? `通过单选题检查对“${normalizedTopic}”关键概念的理解。` : `理解“${normalizedTopic}”的第 ${index + 1} 个学习层次，并能说明其作用。`,
       keyPoints: type === "quiz" ? ["识别核心概念", "辨析常见误区"] : [`${normalizedTopic}的核心概念`, "概念之间的因果关系", "工程中的使用边界"],
+      ...(type === "quiz" ? { assessmentFocus: `检查学习者能否辨析“${normalizedTopic}”的核心概念与常见误区。` } : {}),
     };
   });
   const courseId = randomUUID();
+  const provisional = createProvisionalCourseBrief(normalizedTopic);
   return CourseSchema.parse({
-    schemaVersion: 1, id: courseId, topic: normalizedTopic, title: `${normalizedTopic}：从概念到实践`, requestedSceneCount: parsedCount,
+    schemaVersion: CURRENT_SCHEMA_VERSION, id: courseId, topic: normalizedTopic, title: `${normalizedTopic}：从概念到实践`, requestedSceneCount: parsedCount,
+    brief: provisional.brief,
+    briefResolution: { ...provisional.resolution, status: "resolved", resolvedAt: new Date(now).toISOString() },
     status: "outline_ready", revision: 0, outlines, scenes: [],
     sceneProgress: outlines.map((outline) => ({ outlineId: outline.id, status: "pending", attempts: 0, updatedAt: now })),
     outlineGeneration: mockMetadata(now), createdAt: now, updatedAt: now,

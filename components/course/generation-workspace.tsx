@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { Course, SceneOutline } from "@/lib/domain/schemas";
+import type { Course, CourseBrief, CourseBriefField, SceneOutline } from "@/lib/domain/schemas";
 
 type ErrorNotice = { code: string; message: string; retryable: boolean };
 type OperationView = {
@@ -59,6 +59,31 @@ function recoveryGuidance(error: ErrorNotice) {
   return "该错误不会自动重试，请根据 requestId 检查终端日志。";
 }
 
+const briefFieldLabels: Array<{ field: CourseBriefField; label: string }> = [
+  { field: "audience", label: "目标受众" },
+  { field: "learnerLevel", label: "学习水平" },
+  { field: "learningGoal", label: "学习目标" },
+  { field: "prerequisites", label: "先修知识" },
+  { field: "durationMinutes", label: "预计时长" },
+  { field: "teachingStyle", label: "教学风格" },
+  { field: "interactionMode", label: "互动模式" },
+  { field: "additionalRequirements", label: "附加要求" },
+];
+
+const sourceLabels = { explicit_setting: "高级设置", prompt: "课程描述", default: "系统默认" } as const;
+const levelLabels = { beginner: "入门", intermediate: "进阶", advanced: "高级" } as const;
+const styleLabels = { structured: "结构化讲解", case_based: "案例导向", practice_oriented: "练习导向" } as const;
+
+function displayBriefValue(brief: CourseBrief, field: CourseBriefField) {
+  const value = brief[field];
+  if (Array.isArray(value)) return value.length > 0 ? value.join("；") : "无";
+  if (field === "learnerLevel") return levelLabels[value as CourseBrief["learnerLevel"]];
+  if (field === "teachingStyle") return styleLabels[value as CourseBrief["teachingStyle"]];
+  if (field === "durationMinutes") return `${value} 分钟`;
+  if (field === "interactionMode") return "关闭（M7.1）";
+  return String(value);
+}
+
 export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }) {
   const router = useRouter();
   const [course, setCourse] = useState(initialCourse);
@@ -68,6 +93,8 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
   const [operationView, setOperationView] = useState<OperationView | null>(null);
   const [operationElapsedMs, setOperationElapsedMs] = useState(0);
   const [dirty, setDirty] = useState(false);
+  const [briefEditing, setBriefEditing] = useState(false);
+  const [briefDraft, setBriefDraft] = useState<CourseBrief>(() => structuredClone(initialCourse.brief));
   const [leaseClock, setLeaseClock] = useState(initialCourse.updatedAt);
   const activeRequests = useRef(new Set<AbortController>());
   const cancellationRequested = useRef(false);
@@ -151,6 +178,44 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
     }));
     setDirty(true);
     setSavedNotice(null);
+  }
+
+  /** 保存真正发生变化的 Brief 字段；服务端负责标记来源并使旧大纲失效。 */
+  async function saveBriefChanges() {
+    const changes = Object.fromEntries(
+      briefFieldLabels
+        .filter(({ field }) => JSON.stringify(briefDraft[field]) !== JSON.stringify(course.brief[field]))
+        .map(({ field }) => [field, briefDraft[field]]),
+    );
+    if (Object.keys(changes).length === 0) {
+      setBriefEditing(false);
+      return;
+    }
+    setBusy("brief");
+    setError(null);
+    setSavedNotice(null);
+    const requestId = beginOperation("正在保存课程要求并使旧大纲失效");
+    try {
+      const response = await request(`/api/courses/${course.id}/brief`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-request-id": requestId },
+        body: JSON.stringify({ expectedRevision: course.revision, changes }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw responseError(payload, "课程要求保存失败");
+      setCourse(payload.data.course);
+      setBriefDraft(structuredClone(payload.data.course.brief));
+      setBriefEditing(false);
+      setDirty(false);
+      finishOperation("succeeded", "课程要求已保存，请重新生成大纲");
+      setSavedNotice("课程要求已更新；依赖旧要求的大纲已失效，请重新生成。 ");
+      router.refresh();
+    } catch (caught) {
+      finishOperation(caught instanceof DOMException && caught.name === "AbortError" ? "cancelled" : "failed");
+      setError(caughtNotice(caught, "课程要求保存失败"));
+    } finally {
+      setBusy(null);
+    }
   }
 
   /** 请求服务端正式大纲管线；主题、场景数量和 Provider 均不由浏览器覆盖。 */
@@ -393,6 +458,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
   const editable = course.status === "outline_ready";
   const metadata = course.outlineGeneration;
   const pendingCount = course.sceneProgress.filter((item) => item.status === "pending").length;
+  const briefEditable = course.scenes.length === 0 && ["draft", "failed", "outline_ready"].includes(course.status);
 
   return (
     <main className="workspace-shell">
@@ -434,6 +500,30 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
       </section>
 
       <div className="generation-layout">
+        <section className="brief-panel reveal reveal--two">
+          <div className="brief-panel__head">
+            <div><span>COURSE BRIEF / {course.briefResolution.status.toUpperCase()}</span><h2>系统采用的课程要求</h2></div>
+            {briefEditable ? <button type="button" onClick={() => { if (!briefEditing) setBriefDraft(structuredClone(course.brief)); setBriefEditing(!briefEditing); }} disabled={busy !== null}>{briefEditing ? "取消修改" : "修改要求"}</button> : <small>场景生成后锁定</small>}
+          </div>
+          {briefEditing ? (
+            <div className="brief-editor">
+              <label><span>目标受众</span><input value={briefDraft.audience} maxLength={120} onChange={(event) => setBriefDraft({ ...briefDraft, audience: event.target.value })} /></label>
+              <label><span>学习水平</span><select value={briefDraft.learnerLevel} onChange={(event) => setBriefDraft({ ...briefDraft, learnerLevel: event.target.value as CourseBrief["learnerLevel"] })}><option value="beginner">入门</option><option value="intermediate">进阶</option><option value="advanced">高级</option></select></label>
+              <label className="brief-editor__wide"><span>学习目标</span><input value={briefDraft.learningGoal} maxLength={300} onChange={(event) => setBriefDraft({ ...briefDraft, learningGoal: event.target.value })} /></label>
+              <label><span>预计时长</span><select value={briefDraft.durationMinutes} onChange={(event) => setBriefDraft({ ...briefDraft, durationMinutes: Number(event.target.value) as 10 | 15 | 20 })}><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="20">20 分钟</option></select></label>
+              <label><span>教学风格</span><select value={briefDraft.teachingStyle} onChange={(event) => setBriefDraft({ ...briefDraft, teachingStyle: event.target.value as CourseBrief["teachingStyle"] })}><option value="structured">结构化讲解</option><option value="case_based">案例导向</option><option value="practice_oriented">练习导向</option></select></label>
+              <label><span>先修知识（每行一项）</span><textarea value={briefDraft.prerequisites.join("\n")} onChange={(event) => setBriefDraft({ ...briefDraft, prerequisites: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) })} /></label>
+              <label><span>附加要求（每行一项）</span><textarea value={briefDraft.additionalRequirements.join("\n")} onChange={(event) => setBriefDraft({ ...briefDraft, additionalRequirements: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) })} /></label>
+              <div className="brief-editor__notice">保存后旧大纲会失效，但不会调用模型；重新生成大纲时才会产生一次 outline.v2 请求。</div>
+              <button className="button button--accent" type="button" onClick={saveBriefChanges} disabled={busy !== null}>保存要求并重置大纲 <span>→</span></button>
+            </div>
+          ) : (
+            <div className="brief-facts">
+              {briefFieldLabels.map(({ field, label }) => <div key={field}><span>{label}</span><strong>{displayBriefValue(course.brief, field)}</strong><small>{sourceLabels[course.briefResolution.sources[field]]}</small></div>)}
+            </div>
+          )}
+          {course.briefResolution.warnings.length > 0 ? <div className="brief-warnings">{course.briefResolution.warnings.map((warning, index) => <p key={`${warning.code}-${index}`}><strong>{warning.code}</strong>{warning.message}</p>)}</div> : null}
+        </section>
         <section className="outline-panel reveal reveal--two">
           <div className="panel-heading">
             <div>
@@ -489,6 +579,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
                       <div className="outline-content outline-content--editable">
                         <div>
                           <span className={`type-chip type-chip--${outline.type}`}>{outline.type}</span>
+                          <span className="role-chip">{outline.role}</span>
                           <input
                             className="outline-title-input"
                             aria-label={`第 ${outline.order} 场标题`}
@@ -592,7 +683,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
             </div>
           </div>
           <div className="boundary-card">
-            <span>M6.5 RESILIENT PIPELINE</span>
+            <span>M7.1 BRIEF-AWARE PIPELINE</span>
             <h3>
               {readyCount > 0
                 ? `${String(readyCount).padStart(2, "0")} 个场景已独立提交`

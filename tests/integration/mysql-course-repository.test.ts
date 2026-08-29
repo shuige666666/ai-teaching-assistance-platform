@@ -7,7 +7,7 @@ import { OutlineGenerationService } from "@/lib/application/outline-generation-s
 import { SceneGenerationService } from "@/lib/application/scene-generation-service";
 import { QuizAttemptService } from "@/lib/application/quiz-attempt-service";
 import { courseRepositoryContract } from "@/tests/domain/course-repository-contract";
-import { DatabaseUnavailableError, StoredCourseInvalidError } from "@/lib/repository/course-repository";
+import { DatabaseUnavailableError, LegacyCourseUnsupportedError, StoredCourseInvalidError } from "@/lib/repository/course-repository";
 import { MySQLCourseRepository } from "@/lib/repository/mysql-course-repository";
 import { MySQLQuizAttemptRepository } from "@/lib/repository/mysql-quiz-attempt-repository";
 
@@ -38,7 +38,17 @@ describe("MySQLCourseRepository integration", () => {
     const recovered = await new MySQLCourseRepository(pool).get(draft.id);
     expect(generated).toMatchObject({ status: "outline_ready", revision: 2 });
     expect(recovered?.outlineGeneration).toMatchObject({ provider: "mock", requestId: "mysql-outline-request", upstreamCalls: 1 });
+    expect(recovered?.briefResolution).toMatchObject({ status: "resolved" });
     expect(recovered?.outlines).toHaveLength(4);
+  });
+
+  it("列表隐藏 v1 行，按 ID 访问时明确报告旧课程不支持", async () => {
+    const repository = new MySQLCourseRepository(pool);
+    const created = await repository.create(createCourseDraft(`旧版课程 ${crypto.randomUUID()}`, 3));
+    cleanupIds.push(created.id);
+    await pool.execute("UPDATE courses SET schema_version = 1, brief_json = NULL WHERE id = ?", [created.id]);
+    await expect(repository.get(created.id)).rejects.toBeInstanceOf(LegacyCourseUnsupportedError);
+    expect((await repository.list()).some((course) => course.id === created.id)).toBe(false);
   });
 
   it("三个场景逐项提交后可恢复为包含 slide 与 quiz 的 ready 课程", async () => {

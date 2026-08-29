@@ -1,6 +1,50 @@
 import { z } from "zod";
 
-export const CURRENT_SCHEMA_VERSION = 1 as const;
+export const CURRENT_SCHEMA_VERSION = 2 as const;
+
+export const CourseBriefSchema = z.object({
+  audience: z.string().trim().min(1).max(120),
+  learnerLevel: z.enum(["beginner", "intermediate", "advanced"]),
+  learningGoal: z.string().trim().min(2).max(300),
+  prerequisites: z.array(z.string().trim().min(1).max(120)).max(5),
+  durationMinutes: z.union([z.literal(10), z.literal(15), z.literal(20)]),
+  teachingStyle: z.enum(["structured", "case_based", "practice_oriented"]),
+  interactionMode: z.enum(["off", "auto", "required"]),
+  additionalRequirements: z.array(z.string().trim().min(1).max(160)).max(5),
+}).strict();
+
+export const CourseBriefFieldSchema = z.enum([
+  "audience",
+  "learnerLevel",
+  "learningGoal",
+  "prerequisites",
+  "durationMinutes",
+  "teachingStyle",
+  "interactionMode",
+  "additionalRequirements",
+]);
+
+export const BriefValueSourceSchema = z.enum(["explicit_setting", "prompt", "default"]);
+export const BriefResolutionWarningSchema = z.object({
+  code: z.enum(["SETTING_PROMPT_CONFLICT", "PROMPT_AMBIGUOUS", "SCOPE_TOO_BROAD"]),
+  field: CourseBriefFieldSchema.optional(),
+  message: z.string().trim().min(1).max(300),
+}).strict();
+export const CourseBriefResolutionSchema = z.object({
+  status: z.enum(["provisional", "resolved"]),
+  sources: z.object({
+    audience: BriefValueSourceSchema,
+    learnerLevel: BriefValueSourceSchema,
+    learningGoal: BriefValueSourceSchema,
+    prerequisites: BriefValueSourceSchema,
+    durationMinutes: BriefValueSourceSchema,
+    teachingStyle: BriefValueSourceSchema,
+    interactionMode: BriefValueSourceSchema,
+    additionalRequirements: BriefValueSourceSchema,
+  }).strict(),
+  warnings: z.array(BriefResolutionWarningSchema).max(16),
+  resolvedAt: z.string().datetime().optional(),
+}).strict();
 
 export const DomainErrorSchema = z.object({
   code: z.string().min(1),
@@ -30,12 +74,15 @@ export const GenerationMetadataSchema = z.object({
 export const SceneOutlineSchema = z.object({
   id: z.string().min(1),
   type: z.enum(["slide", "quiz"]),
+  role: z.enum(["hook", "concept", "mechanism", "worked_example", "practice", "summary", "assessment"]),
   title: z.string().trim().min(1).max(80),
   teachingObjective: z.string().trim().min(1).max(300),
   keyPoints: z.array(z.string().trim().min(1).max(160)).min(2).max(5),
+  misconceptions: z.array(z.string().trim().min(1).max(160)).max(3).optional(),
+  assessmentFocus: z.string().trim().min(1).max(300).optional(),
   order: z.number().int().positive(),
   estimatedMinutes: z.number().int().min(1).max(20).optional(),
-});
+}).strict();
 
 const ParagraphBlockSchema = z.object({
   id: z.string().min(1),
@@ -153,6 +200,8 @@ export const CourseSchema = z
       "failed",
     ]),
     revision: z.number().int().nonnegative(),
+    brief: CourseBriefSchema,
+    briefResolution: CourseBriefResolutionSchema,
     outlines: z.array(SceneOutlineSchema).max(5),
     scenes: z.array(SceneSchema).max(5),
     sceneProgress: z.array(SceneProgressSchema).max(5),
@@ -171,6 +220,15 @@ export const CourseSchema = z
     updatedAt: z.number().int().nonnegative(),
   })
   .superRefine((course, context) => {
+    if (course.brief.interactionMode !== "off") {
+      context.addIssue({ code: "custom", path: ["brief", "interactionMode"], message: "M7.1 暂不开放互动课程，interactionMode 必须为 off" });
+    }
+    if (course.briefResolution.status === "provisional" && course.briefResolution.resolvedAt !== undefined) {
+      context.addIssue({ code: "custom", path: ["briefResolution", "resolvedAt"], message: "provisional Brief 不能记录 resolvedAt" });
+    }
+    if (course.briefResolution.status === "resolved" && !course.briefResolution.resolvedAt) {
+      context.addIssue({ code: "custom", path: ["briefResolution", "resolvedAt"], message: "resolved Brief 必须记录 resolvedAt" });
+    }
     const outlineIds = course.outlines.map((outline) => outline.id);
     const orders = course.outlines.map((outline) => outline.order);
     if (new Set(outlineIds).size !== outlineIds.length)
@@ -183,6 +241,14 @@ export const CourseSchema = z
       const quizCount = course.outlines.filter((outline) => outline.type === "quiz").length;
       if (quizCount < 1 || quizCount > 2 || course.outlines[0]?.type === "quiz")
         context.addIssue({ code: "custom", message: "课程必须包含 1～2 个且非首场景的测验" });
+      for (const outline of course.outlines) {
+        if (outline.type === "quiz" && !["assessment", "practice"].includes(outline.role)) {
+          context.addIssue({ code: "custom", path: ["outlines"], message: "quiz 大纲必须使用 assessment 或 practice 角色" });
+        }
+        if (outline.type === "slide" && outline.role === "assessment") {
+          context.addIssue({ code: "custom", path: ["outlines"], message: "slide 大纲不能使用 assessment 角色" });
+        }
+      }
     }
     const progressIds = course.sceneProgress.map((progress) => progress.outlineId);
     if (course.outlines.length > 0 && progressIds.join("|") !== outlineIds.join("|"))
@@ -259,6 +325,11 @@ export const CourseSchema = z
 
 export type DomainError = z.infer<typeof DomainErrorSchema>;
 export type GenerationMetadata = z.infer<typeof GenerationMetadataSchema>;
+export type CourseBrief = z.infer<typeof CourseBriefSchema>;
+export type CourseBriefField = z.infer<typeof CourseBriefFieldSchema>;
+export type BriefValueSource = z.infer<typeof BriefValueSourceSchema>;
+export type BriefResolutionWarning = z.infer<typeof BriefResolutionWarningSchema>;
+export type CourseBriefResolution = z.infer<typeof CourseBriefResolutionSchema>;
 export type SceneOutline = z.infer<typeof SceneOutlineSchema>;
 export type SlideBlock = z.infer<typeof SlideBlockSchema>;
 export type SlideContent = z.infer<typeof SlideContentSchema>;

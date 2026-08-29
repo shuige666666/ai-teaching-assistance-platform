@@ -1,9 +1,10 @@
 import type { AIAdapter, GenerateTextInput, GenerateTextResult } from "@/lib/ai/contracts";
 import { AIAdapterError, type AIErrorCode } from "@/lib/ai/contracts";
-import type { GenerationMetadata, SceneOutline } from "@/lib/domain/schemas";
+import { resolveCourseBrief } from "@/lib/domain/course-brief";
+import type { CourseBrief, CourseBriefResolution, GenerationMetadata, SceneOutline } from "@/lib/domain/schemas";
 import { parseModelJson } from "./parse-json";
-import { assembleSceneOutlines, InvalidOutlineError, validateAndNormalizeOutline } from "./outline-schema";
-import { buildOutlineUserPrompt, OUTLINE_PROMPT_VERSION, OUTLINE_SYSTEM_PROMPT } from "./prompts/outline.v1";
+import { assembleSceneOutlines, InvalidOutlineError, validateAndNormalizeOutline, validateResolvedBrief } from "./outline-schema";
+import { buildOutlineUserPrompt, OUTLINE_PROMPT_VERSION, OUTLINE_SYSTEM_PROMPT } from "./prompts/outline.v2";
 import { buildRepairUserPrompt, REPAIR_SYSTEM_PROMPT } from "./prompts/repair.v1";
 import { logUpstreamFailure, retryDelayMs, waitForRetry } from "./retry-policy";
 
@@ -21,7 +22,13 @@ export class OutlineGenerationError extends Error {
   }
 }
 
-export type OutlinePipelineResult = { courseTitle: string; outlines: SceneOutline[]; metadata: GenerationMetadata };
+export type OutlinePipelineResult = {
+  courseTitle: string;
+  brief: CourseBrief;
+  briefResolution: CourseBriefResolution;
+  outlines: SceneOutline[];
+  metadata: GenerationMetadata;
+};
 
 function mergeUsage(results: GenerateTextResult[]) {
   const inputTokens = results.reduce((sum, result) => sum + (result.usage?.inputTokens ?? 0), 0);
@@ -32,14 +39,36 @@ function mergeUsage(results: GenerateTextResult[]) {
 /** 执行大纲调用、受限传输重试、解析、语义门和最多一次模型修复。 */
 export async function generateOutline(
   adapter: AIAdapter,
-  input: { topic: string; sceneCount: number; requestId: string; signal: AbortSignal },
+  input: {
+    topic: string;
+    sceneCount: number;
+    provisionalBrief: CourseBrief;
+    provisionalResolution: CourseBriefResolution;
+    requestId: string;
+    signal: AbortSignal;
+  },
 ): Promise<OutlinePipelineResult> {
   const startedAt = Date.now();
   const successfulResults: GenerateTextResult[] = [];
   let upstreamCalls = 0;
   const maxCalls = 4;
   // 1. 用课程主题和场景数量拼出发给模型的提示词。
-  const userPrompt = buildOutlineUserPrompt(input.topic, input.sceneCount);
+  const userPrompt = buildOutlineUserPrompt(input);
+
+  /** 对单次模型结果同时执行 outline.v2 校验和服务端 Brief 复算。 */
+  function validateResponse(value: unknown) {
+    const output = validateAndNormalizeOutline(value, input.sceneCount);
+    const resolved = resolveCourseBrief({
+      topic: input.topic,
+      provisionalBrief: input.provisionalBrief,
+      provisionalResolution: input.provisionalResolution,
+      detectedBrief: output.detectedBrief,
+      modelWarnings: output.warnings,
+      resolvedAt: Date.now(),
+    });
+    validateResolvedBrief(output.resolvedBrief, resolved.brief);
+    return { output, resolved };
+  }
 
   async function callAI(call: Omit<GenerateTextInput, "requestId" | "signal" | "maxOutputTokens">): Promise<GenerateTextResult> {
     let lastError: AIAdapterError | undefined;
@@ -75,10 +104,10 @@ export async function generateOutline(
 
   // 4. 第一次调用模型，得到大纲文本。
   const first = await callAI({ stage: "outline", systemPrompt: OUTLINE_SYSTEM_PROMPT, userPrompt });
-  let output;
+  let validated;
   let repaired = false;
   try {
-    output = validateAndNormalizeOutline(parseModelJson(first.text), input.sceneCount);
+    validated = validateResponse(parseModelJson(first.text));
   } catch (error) {
     // 5. 把文本解析成 JSON，并检查大纲数量、测验数量、标题等是否正确。
     const invalid = error instanceof InvalidOutlineError ? error : new InvalidOutlineError([{ path: "", message: "无法验证模型输出" }], { cause: error });
@@ -87,7 +116,7 @@ export async function generateOutline(
     const repair = await callAI({ stage: "repair", systemPrompt: REPAIR_SYSTEM_PROMPT, userPrompt: buildRepairUserPrompt(userPrompt, first.text, invalid.issues) });
     repaired = true;
     try {
-      output = validateAndNormalizeOutline(parseModelJson(repair.text), input.sceneCount);
+      validated = validateResponse(parseModelJson(repair.text));
     } catch (repairError) {
       const finalError = repairError instanceof InvalidOutlineError ? repairError : invalid;
       // 本次修复预算已经耗尽，但下一次请求会重新采样，仍允许用户显式重试。
@@ -98,9 +127,11 @@ export async function generateOutline(
   const successful = successfulResults.at(-1) ?? first;
   const now = Date.now();
   return {
-    courseTitle: output.courseTitle,
+    courseTitle: validated.output.courseTitle,
+    brief: validated.resolved.brief,
+    briefResolution: validated.resolved.resolution,
     // 8. 给每一项大纲生成系统 ID，供后续生成场景时引用。
-    outlines: assembleSceneOutlines(output),
+    outlines: assembleSceneOutlines(validated.output),
     metadata: {
       provider: successful.provider,
       model: successful.model,

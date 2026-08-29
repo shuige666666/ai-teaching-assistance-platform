@@ -1,6 +1,6 @@
 # 08. 部署、恢复与验收手册
 
-> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节是 M7～M10/v0.4 的计划验收，不代表当前已经实现。当前版本没有账户与权限系统，不允许直接暴露到公网。
+> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M10/v0.4 的增量验收，其中 M7.1 已完成。当前版本没有账户与权限系统，不允许直接暴露到公网。
 
 ## 1. 最小生产启动
 
@@ -145,11 +145,11 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 
 | 测试层 | M7～M10 必须覆盖 |
 | --- | --- |
-| Domain | Course v1/v2 判别、v1 → v2 迁移、CourseBrief 默认值/字段来源/合并优先级/冲突警告、GeneratedSlideData、Slide/旧 block 联合读取、四类 PPTElement 和互动数量规则 |
+| Domain | Course v1/v2 判别与旧行隔离、CourseBrief 默认值/字段来源/合并优先级/冲突警告、GeneratedSlideData、Slide/M7.1 block 联合读取、四类 PPTElement 和互动数量规则 |
 | Slide/Renderer | 未支持元素过滤、必要默认值、非有限坐标/非正尺寸、text 白名单净化、code 文本转义、`text/shape/line/code` 渲染、16:9 缩放和未知元素 fallback |
 | Slide visual | 2～3 个 DeepSeek 代表主题在 `1280×720` 的截图与人工检查，确认主次、可读性、关系表达和主要内容未被裁掉；不建立自动美学评分 |
 | Interactive boundary | 完整自包含 HTML、外部依赖拒绝、CSP、`sandbox="allow-scripts"`、消息来源/Schema 和 fallback |
-| MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、新旧行读取、互动内容恢复、再生成原位替换和 conflict |
+| MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、v1 隐藏与明确拒绝、互动内容恢复、再生成原位替换和 conflict |
 | API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 解析/规范化失败、interactive 失败分类、ready 场景再生成 |
 | Playwright | `1280×720` 桌面只读 SlideCanvas 的四类元素与恢复，以及 required diagram 的操作、重置、完成、刷新和 fallback |
 | Regression | 原 M6 创建、slide/quiz、播放、作答、删除和 mock E2E 全部保持通过 |
@@ -181,9 +181,9 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 
 | 条件 | 里程碑 | 预期证据 | 当前状态 |
 | --- | --- | --- | --- |
-| AC-Q01 CourseBrief 解析、来源、警告与同 revision 保存恢复 | M7 | Schema + API + MySQL integration | 未实现 |
-| AC-Q02 v1 → v2 兼容 | M7 | migration fixture + 旧库读取 | 未实现 |
-| AC-Q03 outline.v2 同调用解析与大纲生成，场景 Prompt 使用完整上下文 | M7/M8 | golden + 调用计数 + 生成元数据 | 未实现 |
+| AC-Q01 CourseBrief 解析、来源、警告与同 revision 保存恢复 | M7 | Schema + API + MySQL integration | 已通过 |
+| AC-Q02 v1 隔离与明确错误 | M7 | repository integration + 旧行读取 | 已通过 |
+| AC-Q03 outline.v2 同调用解析与大纲生成；后续场景 Prompt 使用完整上下文 | M7/M8 | golden + 调用计数 + 生成元数据 | outline.v2 已通过；scene v2 随 M8 接入 |
 | AC-Q04 OpenMAIC 式 Slide/PPTElement 生成、规范化、保存恢复与桌面只读渲染 | M8 | Schema + normalize + component + 真实模型截图 + 桌面 E2E | 未实现 |
 | AC-Q05 required diagram 数量 | M9 | domain + API | 未实现 |
 | AC-Q06 HTML 安全门 | M9 | validator 恶意 fixture | 未实现 |

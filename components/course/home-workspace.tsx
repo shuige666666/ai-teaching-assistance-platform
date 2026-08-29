@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
+import type { CourseBriefOverrides } from "@/lib/domain/course-brief";
 import type { CourseSummary } from "@/lib/domain/schemas";
 
 type CreationProgress = {
@@ -24,6 +25,13 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
   // 1. 状态
   const [topic, setTopic] = useState("TCP 拥塞控制");
   const [sceneCount, setSceneCount] = useState(4);
+  const [audience, setAudience] = useState("");
+  const [learnerLevel, setLearnerLevel] = useState<CourseBriefOverrides["learnerLevel"]>();
+  const [learningGoal, setLearningGoal] = useState("");
+  const [prerequisites, setPrerequisites] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState<CourseBriefOverrides["durationMinutes"]>();
+  const [teachingStyle, setTeachingStyle] = useState<CourseBriefOverrides["teachingStyle"]>();
+  const [additionalRequirements, setAdditionalRequirements] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [creationProgress, setCreationProgress] = useState<CreationProgress | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -51,10 +59,19 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
     setCreationProgress({ phase: "saving", requestId, startedAt });
     setError(null);
     try {
+      const briefOverrides: CourseBriefOverrides = {
+        ...(audience.trim() ? { audience: audience.trim() } : {}),
+        ...(learnerLevel ? { learnerLevel } : {}),
+        ...(learningGoal.trim() ? { learningGoal: learningGoal.trim() } : {}),
+        ...(prerequisites.trim() ? { prerequisites: prerequisites.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) } : {}),
+        ...(durationMinutes ? { durationMinutes } : {}),
+        ...(teachingStyle ? { teachingStyle } : {}),
+        ...(additionalRequirements.trim() ? { additionalRequirements: additionalRequirements.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) } : {}),
+      };
       const response = await fetch("/api/courses", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-request-id": requestId },
-        body: JSON.stringify({ topic, requestedSceneCount: sceneCount }),
+        body: JSON.stringify({ topic, requestedSceneCount: sceneCount, briefOverrides }),
         signal: controller.signal,
       });
       const payload = await response.json();
@@ -99,7 +116,7 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
     <main className="home-shell">
       <header className="site-header">
         <Link className="brand" href="/" aria-label="课序首页"><span className="brand-mark">课</span><span><strong>课序</strong><small>COURSE COMPOSER</small></span></Link>
-        <div className="header-status"><span className="status-dot" /> M6 · ACCEPTANCE READY</div>
+        <div className="header-status"><span className="status-dot" /> M7.1 · COURSE V2</div>
       </header>
 
       <section className="hero-grid">
@@ -118,6 +135,19 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
             <div><span className="field-label">场景数量</span><div className="segment-control" aria-label="场景数量">{[3, 4, 5].map((count) => <button className={sceneCount === count ? "is-active" : ""} type="button" key={count} onClick={() => setSceneCount(count)}>{count}</button>)}</div></div>
             <div className="mode-note"><span>运行模式</span><strong>AI PIPELINE + MYSQL</strong></div>
           </div>
+          <details className="brief-settings">
+            <summary><span>高级课程要求</span><small>可选 · 留空时由描述和默认值补齐</small></summary>
+            <div className="brief-settings__grid">
+              <label><span>目标受众</span><input value={audience} maxLength={120} onChange={(event) => setAudience(event.target.value)} placeholder="例如：有 Java 基础的本科生" /></label>
+              <label><span>学习水平</span><select value={learnerLevel ?? ""} onChange={(event) => setLearnerLevel((event.target.value || undefined) as CourseBriefOverrides["learnerLevel"])}><option value="">自动判断</option><option value="beginner">入门</option><option value="intermediate">进阶</option><option value="advanced">高级</option></select></label>
+              <label className="brief-settings__wide"><span>学习目标</span><input value={learningGoal} maxLength={300} onChange={(event) => setLearningGoal(event.target.value)} placeholder="例如：能够解释拥塞窗口变化并分析常见抓包现象" /></label>
+              <label><span>预计时长</span><select value={durationMinutes ?? ""} onChange={(event) => setDurationMinutes(event.target.value ? Number(event.target.value) as 10 | 15 | 20 : undefined)}><option value="">默认 15 分钟</option><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="20">20 分钟</option></select></label>
+              <label><span>教学风格</span><select value={teachingStyle ?? ""} onChange={(event) => setTeachingStyle((event.target.value || undefined) as CourseBriefOverrides["teachingStyle"])}><option value="">默认案例导向</option><option value="structured">结构化讲解</option><option value="case_based">案例导向</option><option value="practice_oriented">练习导向</option></select></label>
+              <label><span>先修知识（每行一项）</span><textarea value={prerequisites} onChange={(event) => setPrerequisites(event.target.value)} placeholder="例如：计算机网络基础" /></label>
+              <label><span>附加要求（每行一项）</span><textarea value={additionalRequirements} onChange={(event) => setAdditionalRequirements(event.target.value)} placeholder="例如：包含一次抓包案例" /></label>
+            </div>
+            <p>互动模式在 M7.1 固定关闭；M9 才会开放 diagram 互动。</p>
+          </details>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
           {creationProgress ? (
             <div className="creation-progress" role="status" aria-live="polite">

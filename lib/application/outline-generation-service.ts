@@ -58,6 +58,8 @@ export class OutlineGenerationService {
       const generated = await generateOutline(this.adapter, {
         topic: registered.topic,
         sceneCount: registered.requestedSceneCount,
+        provisionalBrief: registered.brief,
+        provisionalResolution: registered.briefResolution,
         requestId,
         signal,
       });
@@ -69,6 +71,8 @@ export class OutlineGenerationService {
       return await this.repository.save(CourseSchema.parse({
         ...latest,
         title: generated.courseTitle,
+        brief: generated.brief,
+        briefResolution: generated.briefResolution,
         status: "outline_ready",
         outlines: generated.outlines,
         scenes: [],
@@ -94,23 +98,23 @@ export class OutlineGenerationService {
     }
   }
 
-  /** 保存人工审核后的文案；ID、类型和顺序仍由原始服务端大纲控制。 */
+  /** 保存人工审核后的文案；ID、类型、角色和顺序仍由原始服务端大纲控制。 */
   async edit(courseId: string, expectedRevision: number, courseTitle: string, outlines: SceneOutline[]): Promise<Course> {
     // 1. 读取课程，并检查浏览器提交的版本号是否仍有效。
     const current = await this.repository.get(courseId);
     if (!current) throw new OutlineApplicationError("COURSE_NOT_FOUND", "课程不存在，请返回首页重新创建");
     if (current.revision !== expectedRevision) throw new CourseConflictError();
     if (current.status !== "outline_ready") throw new OutlineApplicationError("INVALID_COURSE_STATE", "只有待审核的大纲可以编辑");
-    // 2. 检查用户没有修改大纲 ID、类型和顺序。
+    // 2. 检查用户没有修改大纲 ID、类型、角色和顺序。
     const structureMatches = current.outlines.every((item, index) => {
       const edited = outlines[index];
-      return edited && edited.id === item.id && edited.type === item.type && edited.order === item.order;
+      return edited && edited.id === item.id && edited.type === item.type && edited.role === item.role && edited.order === item.order;
     });
     if (!structureMatches || outlines.length !== current.outlines.length) {
-      throw new OutlineApplicationError("INVALID_COURSE_STATE", "不能通过编辑接口修改大纲 ID、类型或顺序");
+      throw new OutlineApplicationError("INVALID_COURSE_STATE", "不能通过编辑接口修改大纲 ID、类型、角色或顺序");
     }
     // 3. 校验用户修改后的标题、目标和关键点。
-    const validated = validateEditedOutline(courseTitle, outlines, current.requestedSceneCount);
+    const validated = validateEditedOutline(courseTitle, outlines, current.requestedSceneCount, current.brief);
     // 4. 保存修改后的大纲，并把课程版本号加一。
     return this.repository.save(CourseSchema.parse({ ...current, title: validated.courseTitle, outlines: validated.outlines, updatedAt: this.now() }), expectedRevision);
   }

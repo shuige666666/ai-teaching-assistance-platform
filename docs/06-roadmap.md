@@ -10,7 +10,7 @@
 
 M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读幻灯片、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的可选 PPT 式幻灯片编辑器，M12 是可选的 PPTX + interactive HTML 简化资源包导出；暂存的 MX 才选择一个可度量研究问题。
 
-**当前进度：M1～M6.5 已按“本机 + MySQL + mock + DeepSeek”范围完成；M7.0 的 6 主题 Prompt v1 自动基线、生成事实与逐场景 MHTML 已留存，人工评分延后到 M10 的 v0.3/v0.4 配对验收。下一步实现 M7.1 CourseBrief/outline v2。原 M7.2、M7.3、M7.4 尚未进入代码，现分别升格为 M8、M9、M10；M8～M10 只承诺 `1280×720` 及更大桌面视口。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M7.1 功能已进入正式调用链；M7.0 的 6 主题 Prompt v1 自动基线、生成事实与逐场景 MHTML 保持冻结，人工评分延后到 M10 的 v0.3/v0.4 配对验收。下一步是 M8。原 M7.2、M7.3、M7.4 分别升格为 M8、M9、M10；M8～M10 只承诺 `1280×720` 及更大桌面视口。** 已实现能力与验证证据持续记录在 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
@@ -277,7 +277,7 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 ## 11. M7：课程质量基础
 
-> 状态：M7.0 自动基线和逐场景 MHTML 已完成；人工评分延后到 M10，M7.1 代码尚未实现。完整任务、字段和退出门见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+> 状态：M7.0 自动基线和逐场景 MHTML 已完成；人工评分延后到 M10。M7.1 功能已实现，完整字段和边界见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
 
 ### M7.0：质量基线与评价协议
 
@@ -291,11 +291,11 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 把 CourseBrief 定义为“原始描述 + 可选高级设置 + 服务端默认值”的结构化归一结果，而不是新增一张必填表单。创建接口原样保存 topic，并先写入 provisional Brief；原有一次 `outline.v2` 调用同时返回 Prompt 中明确检测到的字段、警告、resolved Brief 和 outlines，服务端按 `explicit_setting > prompt > default` 复算并同事务保存。MySQL `brief_json` 同时保存有效值、每字段来源和解析状态；大纲页展示系统理解和冲突警告，确认前修改 Brief 会使旧大纲失效。
 
-本阶段同时完成 Course v1/v2 判别、确定性 v1 → v2 迁移、受众/水平/目标/先修/时长/风格/互动/附加要求契约，以及 SceneRole、误区/评估意图和可选 diagram 计划。旧课程无需清库、无需重新调用模型即可恢复；正常大纲路径不因 Brief 解析固定增加一次 LLM 调用。M7 只建立后续场景生成需要的语义上下文，不提前实现画布 Renderer 或互动 iframe。
+本阶段同时完成 Course v1/v2 判别、v1 明确拒绝、受众/水平/目标/先修/时长/风格/互动/附加要求契约，以及 SceneRole、误区/评估意图。旧行无需清库且不会被修改，但不迁移、不展示；正常大纲路径不因 Brief 解析固定增加一次 LLM 调用。M7 只建立后续场景生成需要的语义上下文，不提前实现画布 Renderer 或互动 iframe。
 
 **退出门**：只有主题、信息完整 Prompt、部分信息 Prompt 和设置冲突四类 fixture 均能得到可解释的字段值、来源与警告；同一原始描述按默认值和显式受众/目标生成的计划有可解释差异；Brief 与大纲同 revision 恢复，修改 Brief 不会遗留旧大纲；Prompt 注入不能越过 System Prompt/Schema；v1 fixture、MySQL 恢复和 M6 E2E 均通过。
 
-**M7 退出门**：M7.0 六题输入、生成报告和逐场景 MHTML 已保存；四类 Brief fixture、Course v1/v2 兼容、MySQL 恢复和 M6 全量回归通过；同一主题在默认值与显式受众/目标下得到可解释差异。达到此门后才开始 M8。
+**M7 退出门**：M7.0 六题输入、生成报告和逐场景 MHTML 已保存；四类 Brief fixture、v1 隔离、v2 MySQL 恢复和 M6 全量回归通过；同一主题在默认值与显式受众/目标下得到可解释差异。达到此门后才开始 M8。
 
 ## 12. M8：PPT 式只读幻灯片画布
 
@@ -353,7 +353,7 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、code/si
 | 演示依赖网络 | 无 Key 就无法进入课堂 | mock 走同一数据库和生成链路 |
 | 语音拖慢主线 | 调试集中在音色或兼容性 | TextOnly 为默认，BrowserSpeech 可关闭 |
 | 生成脚本越权 | iframe 可访问网络、主页面或存储 | 关闭 interactive 入口，先修复 sandbox/CSP/消息边界 |
-| 旧课程无法读取 | schemaVersion 2 直接替换 v1 | 停止 UI/Prompt 开发，先完成迁移与 fixture 回归 |
+| 用户误以为旧课程仍兼容 | v1 行留在数据库但不再进入 v2 运行链 | 列表过滤 v1，按 ID 返回明确错误，并要求新建课程 |
 | 裁剪上游时牵入过多依赖 | 为一个 slide 同时引入媒体、编辑器、动效和存储包 | 只移植四类元素需要的类型、纯函数和 Renderer，记录来源 |
 | 模型坐标不稳定 | 多个真实主题反复出现相同重叠、越界或超长正文 | 先缩小 Prompt/元素字段并调整示例；稳定复现后只补针对性规则 |
 | 用视觉手段掩盖超载 | 依赖小字体、隐藏或画布内滚动才不溢出 | 回退 Prompt 中的可见内容预算，细节移入 narration |
@@ -364,4 +364,4 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、code/si
 
 ## 20. 推荐的下一次开发迭代
 
-当前 M7.0 已保留冻结的六题输入、6 门 MySQL 课程、生成元数据、失败样本和 28 份逐场景 MHTML，并保持 Prompt、Schema、Renderer、CSS 与 iframe 不变。下一次开发迭代直接进入 M7.1 CourseBrief、Course v2 和 outline v2；人工评分等 M8/M9/M10 形成同题 v0.4 课程后再做。不得提前开始 M8 画布、M9 互动或把移动端适配重新加入当前硬门。
+当前 M7.0 已保留冻结的六题输入、6 门 MySQL 课程、生成元数据、失败样本和 28 份逐场景 MHTML；M7.1 已引入 CourseBrief、Course v2 和 outline.v2，但不修改这些基线产物。下一次开发迭代进入 M8；人工评分等 M8/M9/M10 形成同题 v0.4 课程后再做。不得提前开始 M9 互动或把移动端适配重新加入当前硬门。

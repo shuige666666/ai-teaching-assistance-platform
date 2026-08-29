@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 目标：为页面、API、生成管线、播放器和 MySQL Repository 提供唯一数据语言。  
-> 状态说明：第 1～15 节描述已实现的 schemaVersion 1；第 16 节描述 M7～M10 计划中的 Course schemaVersion 2、OpenMAIC 式 `Slide/PPTElement` 和 interactive runtime contract，实施后仍以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
+> 状态说明：Course schemaVersion 2、CourseBrief 与 SceneOutlineV2 已在 M7.1 实现；第 1～15 节保留 v0.3 基础契约说明，第 16 节同时记录当前 v2 增量与 M8～M10 后续契约。冲突时以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
 
 ## 1. 建模原则
 
@@ -63,7 +63,7 @@ Course 是聚合根。外部代码不能单独持久化 Scene 或 SceneOutline�
 ## 3. 基础类型
 
 ```ts
-export const CURRENT_SCHEMA_VERSION = 1 as const;
+export const CURRENT_SCHEMA_VERSION = 2 as const;
 
 export type CourseStatus =
   | 'draft'
@@ -128,6 +128,8 @@ export interface Course {
   requestedSceneCount: number;
   status: CourseStatus;
   revision: number;
+  brief: CourseBrief;
+  briefResolution: CourseBriefResolution;
   outlines: SceneOutline[];
   scenes: Scene[];
   sceneProgress: SceneProgress[];
@@ -149,7 +151,8 @@ export interface SceneProgress {
 
 ### Course 不变量
 
-- `schemaVersion === 1`；
+- `schemaVersion === 2`；
+- 新课程必须包含非空 CourseBrief；M7.1 中 `interactionMode === 'off'`；
 - `id` 非空且创建后不可修改；
 - `topic.trim().length` 为 2～500；
 - `requestedSceneCount` 为 3～5 的整数；
@@ -700,17 +703,17 @@ create/save 在写入前调用 CourseSchema.parse；get 在读取并组装后再
 
 ### 16.1 版本兼容策略
 
-M7 增加持久化 CourseBrief 和 SceneOutlineV2，因此 Course 聚合升级到 `schemaVersion: 2`。M8 的新 slide 通过 `content.canvas` 与旧 `content.blocks` 区分，M9 的互动消息使用 `runtimeContractVersion: 1`；这些内容分支不能替代 Course schemaVersion。Repository 不能把旧行直接交给 v2 Schema，也不能要求用户清库；读取顺序应为：
+M7 增加持久化 CourseBrief 和 SceneOutlineV2，因此 Course 聚合升级到 `schemaVersion: 2`。M8 的新 slide 通过 `content.canvas` 与 M7.1 v2 的 `content.blocks` 区分，M9 的互动消息使用 `runtimeContractVersion: 1`；这些内容分支不能替代 Course schemaVersion。Repository 不能把旧行直接交给 v2 Schema，也不自动删除或改写旧行；读取顺序为：
 
 ```text
 MySQL row
-  → 按 schema_version 解析 StoredCourseV1 | StoredCourseV2
-  → v1 执行 migrateCourseV1ToV2
-  → CurrentCourseSchema(v2)
+  → schema_version = 2：CurrentCourseSchema(v2)
+  → schema_version = 1：LEGACY_COURSE_UNSUPPORTED
+  → schema_version > 2：FUTURE_COURSE_SCHEMA_VERSION
   → 应用服务
 ```
 
-MySQL 增加可空的 `brief_json` 列以兼容已有行。该列存储 `{ brief, resolution }`，而不是只存表单值。新建 v2 Course 必须写入非空 provisional brief；`outline.v2` 成功后在保存大纲的同一事务中写入 resolved brief 和来源信息。旧 v1 行在纯迁移函数中获得确定性默认值，并在下一次明确保存时升级 schema_version。迁移不得调用模型、重新生成大纲或场景，也不得改变已有 topic、id、order、revision、生成元数据和测验引用。
+MySQL 增加可空的 `brief_json` 列，让既有 v1 行可以原样留在表中；该列存储 `{ brief, resolution }`，而不是只存表单值。新建 v2 Course 必须写入非空 provisional brief；`outline.v2` 成功后在保存大纲的同一事务中写入 resolved brief 和来源信息。M7.1 不提供 v1 → v2 内容迁移：`list()` 只查询 v2，按旧 ID 读取明确拒绝；旧行既不会丢失，也不会被伪装成符合新教学要求的课程。
 
 ### 16.2 CourseBrief
 
@@ -731,7 +734,7 @@ export type CourseBriefField = keyof CourseBrief;
 export type BriefValueSource = 'explicit_setting' | 'prompt' | 'default';
 
 export interface BriefResolutionWarning {
-  code: 'SETTING_PROMPT_CONFLICT' | 'PROMPT_AMBIGUOUS' | 'SCOPE_TOO_BROAD' | 'LEGACY_DEFAULT_APPLIED';
+  code: 'SETTING_PROMPT_CONFLICT' | 'PROMPT_AMBIGUOUS' | 'SCOPE_TOO_BROAD';
   field?: CourseBriefField;
   message: string;
 }
@@ -766,7 +769,7 @@ export interface CourseV2 extends Omit<CourseV1, 'schemaVersion' | 'outlines' | 
 - prerequisites 为 0～5 项，每项 1～120 个字符，规范化后不能重复；
 - additionalRequirements 为 0～5 项，每项 1～160 个字符，规范化后不能重复；
 - 只有 topic 仍为必填用户输入；`briefOverrides` 中字段缺失表示“未显式设置”，显式 `[]` 表示用户确认列表为空，两者不能在请求解析时合并；
-- 默认值为“无特定专业背景的学习者”、beginner、15 分钟、case_based、auto、空先修知识和空附加要求，并从 topic 构造不超过 300 字的通用学习目标；
+- 默认值为“无特定专业背景的学习者”、beginner、15 分钟、case_based、off、空先修知识和空附加要求，并从 topic 构造不超过 300 字的通用学习目标；M9 才开放 auto/required；
 - 字段来源优先级固定为 `explicit_setting > prompt > default`，模型只能报告 Prompt 中能定位到的明确要求；
 - 创建成功时 resolution 为 provisional；outline.v2 成功后变为 resolved，并和大纲使用同一个 Course revision；
 - 场景生成接口不得接受另一份 brief 覆盖 Course.brief；它只使用仓储加载的 resolved Brief。
@@ -786,7 +789,7 @@ CreateCourseRequest(topic, briefOverrides?)
 
 Prompt 已经写明的字段使用 `prompt` 来源，未写明的字段逐项回落到 `default`，不能把一次“部分解析”当成整份 Brief 都来自 Prompt。描述与高级设置冲突时保留高级设置并记录 `SETTING_PROMPT_CONFLICT`；相同值不产生冲突警告。用户在确认大纲前通过 Brief 编辑接口修改字段时，这些字段改为 `explicit_setting`，旧 outlines 被清空或标记失效，Course 返回可重新生成大纲的状态。场景已开始生成后 M7.1 拒绝直接修改整课 Brief。
 
-v1 → v2 迁移为保证纯函数和旧内容可读，直接写入全字段 `default` 来源、`status=resolved` 和 `LEGACY_DEFAULT_APPLIED`，但不填写依赖当前时间的 `resolvedAt`。这里的 resolved 只表示旧课程不会再等待 Prompt 解析，不宣称默认 Brief 与历史生成内容完全一致。
+不为 v1 历史内容补造默认 Brief 或字段来源。这样避免把当前默认值错误归因到旧生成结果，也避免为了兼容旧场景长期保留双写和双校验分支。
 
 ### 16.3 SceneOutlineV2
 
@@ -999,6 +1002,6 @@ OpenMAIC 固定提交的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC
 
 ### 16.8 分阶段启用门
 
-Course `schemaVersion: 2` 只有在 M7 的 v1/v2 读取与迁移、MySQL `brief_json`、CourseBrief 归一/API/来源展示、SceneOutlineV2、fixture 和仓储契约测试同时进入正式调用链后才能成为 `CURRENT_SCHEMA_VERSION`。M7 不等待画布或互动代码，也不能提前产生对应内容。
+Course `schemaVersion: 2` 已在 M7.1 随 MySQL `brief_json`、CourseBrief 归一/API/来源展示、SceneOutlineV2、fixture 和仓储契约测试进入正式调用链。v1 只保留明确拒绝分支，不参与运行时迁移。M7 不等待画布或互动代码，也不能提前产生对应内容。
 
 M8 的 `content.canvas` 分支只有在 GeneratedSlideData/Slide/PPTElement Schema、轻量规范化、文本净化、只读 Renderer、旧 block 恢复、MySQL 恢复、真实模型 smoke 和 production E2E 同时可用后才能进入生产 Scene 联合。M9 的 InteractiveScene 也只有在生成器、必要安全边界、iframe Renderer、消息协议、fallback、fixture 和 E2E 同时完成后才能产生。只提前修改联合类型或让模型输出下游尚不能处理的分支，都会破坏阶段可运行性，因此禁止分离发布。

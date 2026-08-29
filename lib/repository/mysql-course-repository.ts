@@ -1,10 +1,12 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { Pool, PoolConnection } from "mysql2/promise";
-import { CourseSchema, type Course, type CourseSummary } from "@/lib/domain/schemas";
+import { CourseSchema, CURRENT_SCHEMA_VERSION, type Course, type CourseSummary } from "@/lib/domain/schemas";
 import { getDatabasePool } from "@/lib/db/pool";
 import {
   CourseConflictError,
   DatabaseUnavailableError,
+  FutureCourseSchemaVersionError,
+  LegacyCourseUnsupportedError,
   StoredCourseInvalidError,
   type CourseRepository,
 } from "./course-repository";
@@ -17,6 +19,7 @@ interface CourseRow extends RowDataPacket {
   title: string;
   status: Course["status"];
   requested_scene_count: number;
+  brief_json: unknown | null;
   outlines_json: unknown;
   scenes_json: unknown;
   scene_progress_json: unknown;
@@ -33,16 +36,22 @@ function decodeJson<T>(value: unknown): T {
 
 /** 将数据库行恢复成 Course，并在返回业务层之前重新执行完整 Schema。 */
 function mapCourseRow(row: CourseRow): Course {
+  const schemaVersion = Number(row.schema_version);
+  if (schemaVersion < CURRENT_SCHEMA_VERSION) throw new LegacyCourseUnsupportedError();
+  if (schemaVersion > CURRENT_SCHEMA_VERSION) throw new FutureCourseSchemaVersionError();
   try {
     // 1. 把数据库中的 JSON 还原成课程对象，并检查字段是否完整。
+    const briefDocument = decodeJson<{ brief: Course["brief"]; resolution: Course["briefResolution"] }>(row.brief_json);
     return CourseSchema.parse({
-      schemaVersion: Number(row.schema_version),
+      schemaVersion,
       id: row.id,
       topic: row.topic,
       title: row.title,
       requestedSceneCount: Number(row.requested_scene_count),
       status: row.status,
       revision: Number(row.revision),
+      brief: briefDocument?.brief,
+      briefResolution: briefDocument?.resolution,
       outlines: decodeJson(row.outlines_json),
       scenes: decodeJson(row.scenes_json),
       sceneProgress: decodeJson(row.scene_progress_json),
@@ -67,6 +76,7 @@ function valuesForCourse(course: Course): Array<string | number | null> {
     course.title,
     course.status,
     course.requestedSceneCount,
+    JSON.stringify({ brief: course.brief, resolution: course.briefResolution }),
     JSON.stringify(course.outlines),
     JSON.stringify(course.scenes),
     JSON.stringify(course.sceneProgress),
@@ -83,7 +93,7 @@ function isMysqlError(error: unknown): error is { code?: string } {
 }
 
 function rethrowQueryError(error: unknown): never {
-  if (error instanceof CourseConflictError || error instanceof StoredCourseInvalidError) throw error;
+  if (error instanceof CourseConflictError || error instanceof StoredCourseInvalidError || error instanceof LegacyCourseUnsupportedError || error instanceof FutureCourseSchemaVersionError) throw error;
   if (isMysqlError(error) && error.code === "ER_DUP_ENTRY") throw new CourseConflictError();
   throw new DatabaseUnavailableError({ cause: error });
 }
@@ -99,9 +109,9 @@ export class MySQLCourseRepository implements CourseRepository {
       await this.pool.execute<ResultSetHeader>(
         `INSERT INTO courses (
           id, schema_version, revision, topic, title, status, requested_scene_count,
-          outlines_json, scenes_json, scene_progress_json, outline_generation_json,
+          brief_json, outlines_json, scenes_json, scene_progress_json, outline_generation_json,
           active_operation_json, last_error_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         valuesForCourse(parsed),
       );
       return structuredClone(parsed);
@@ -125,7 +135,7 @@ export class MySQLCourseRepository implements CourseRepository {
   async list(): Promise<CourseSummary[]> {
     let rows: CourseRow[];
     try {
-      [rows] = await this.pool.query<CourseRow[]>("SELECT * FROM courses ORDER BY updated_at DESC");
+      [rows] = await this.pool.query<CourseRow[]>("SELECT * FROM courses WHERE schema_version = ? ORDER BY updated_at DESC", [CURRENT_SCHEMA_VERSION]);
     } catch (error) {
       rethrowQueryError(error);
     }
@@ -158,7 +168,7 @@ export class MySQLCourseRepository implements CourseRepository {
       const [result] = await connection.execute<ResultSetHeader>(
         `UPDATE courses SET
           schema_version = ?, revision = ?, topic = ?, title = ?, status = ?, requested_scene_count = ?,
-          outlines_json = ?, scenes_json = ?, scene_progress_json = ?, outline_generation_json = ?,
+          brief_json = ?, outlines_json = ?, scenes_json = ?, scene_progress_json = ?, outline_generation_json = ?,
           active_operation_json = ?, last_error_json = ?, created_at = ?, updated_at = ?
         WHERE id = ? AND revision = ?`,
         [
@@ -168,6 +178,7 @@ export class MySQLCourseRepository implements CourseRepository {
           nextCourse.title,
           nextCourse.status,
           nextCourse.requestedSceneCount,
+          JSON.stringify({ brief: nextCourse.brief, resolution: nextCourse.briefResolution }),
           JSON.stringify(nextCourse.outlines),
           JSON.stringify(nextCourse.scenes),
           JSON.stringify(nextCourse.sceneProgress),

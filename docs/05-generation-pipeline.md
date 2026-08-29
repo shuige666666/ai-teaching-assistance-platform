@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-27）：大纲与逐场景 v1 链路均已进入正式调用路径，并在 mock + MySQL 下验证；slide/quiz DTO、装配、短事务、失败隔离与单场重试已经实现。M7.0 已冻结评价输入，并通过正式 API 完成 6 主题 DeepSeek Prompt v1 自动基线；本文标记为 outline v2、OpenMAIC 式 Slide/PPTElement、interactive 或 regenerate 的 M7～M10 生产管线内容仍是计划。
+> 实现状态（2026-08-29）：`outline.v2`、CourseBrief 服务端复算、同 revision 提交与有限 repair 已进入正式调用路径；逐场景仍使用 v1 slide/quiz DTO，并保留短事务、失败隔离与单场重试。M7.0 的 6 主题 DeepSeek Prompt v1 基线保持冻结。OpenMAIC 式 Slide/PPTElement、interactive 与 regenerate 仍分别属于 M8～M10 计划。
 
 ## 1. 设计结论
 

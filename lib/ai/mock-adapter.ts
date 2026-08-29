@@ -1,6 +1,13 @@
 import type { AIAdapter, GenerateTextInput, GenerateTextResult } from "./contracts";
+import type { CourseBrief, SceneOutline } from "@/lib/domain/schemas";
 
-type MockOutline = { courseTitle: string; outlines: Array<{ type: "slide" | "quiz"; title: string; teachingObjective: string; keyPoints: string[]; order: number; estimatedMinutes: number }> };
+type MockOutline = {
+  courseTitle: string;
+  detectedBrief: Record<string, never>;
+  warnings: [];
+  resolvedBrief: CourseBrief;
+  outlines: Array<Omit<SceneOutline, "id">>;
+};
 type MockScene = {
   type: "slide" | "quiz";
   title: string;
@@ -11,6 +18,12 @@ type MockScene = {
 
 function readPromptValue(prompt: string, label: string): string | undefined {
   return prompt.split("\n").find((line) => line.startsWith(`${label}：`))?.slice(label.length + 1).trim();
+}
+
+function readPromptJson<T>(prompt: string, label: string): T | undefined {
+  const value = readPromptValue(prompt, label);
+  if (value === undefined) return undefined;
+  try { return JSON.parse(value) as T; } catch { return undefined; }
 }
 
 function createMockScene(prompt: string): MockScene {
@@ -61,23 +74,46 @@ export class MockAIAdapter implements AIAdapter {
       return { text: JSON.stringify(createMockScene(input.userPrompt)), provider: "mock", model: "mock-scene-v1", usage: { inputTokens: 0, outputTokens: 0 } };
     }
 
-    const topic = readPromptValue(input.userPrompt, "教学主题") ?? "示例主题";
+    const topic = readPromptJson<string>(input.userPrompt, "课程描述 JSON") ?? readPromptValue(input.userPrompt, "教学主题") ?? "示例主题";
     const count = Number(readPromptValue(input.userPrompt, "场景数量") ?? 4);
+    const defaultBrief = readPromptJson<CourseBrief>(input.userPrompt, "默认 Brief JSON");
+    const explicitBrief = readPromptJson<Partial<CourseBrief>>(input.userPrompt, "显式设置 JSON") ?? {};
+    if (!defaultBrief) throw new Error("mock outline prompt missing default brief");
+    // mock 不猜测原文字段，因此用同一优先级确定性合并显式设置与默认值。
+    const resolvedBrief = { ...defaultBrief, ...explicitBrief, interactionMode: "off" as const };
     const titles = ["建立问题地图", "拆解核心机制", "检验关键理解", "连接工程实践", "形成复习路径"];
     const output: MockOutline = {
       courseTitle: `${topic}：从概念到实践`,
+      detectedBrief: {},
+      warnings: [],
+      resolvedBrief,
       outlines: Array.from({ length: count }, (_, index) => {
         const type = index === 2 ? "quiz" as const : "slide" as const;
+        const role: SceneOutline["role"] = type === "quiz"
+          ? "assessment"
+          : index === 0
+            ? "hook"
+            : index === count - 1
+              ? "summary"
+              : index === 1
+                ? "mechanism"
+                : "worked_example";
         return {
           type,
+          role,
           title: `${titles[index]}：${topic}`,
-          teachingObjective: type === "quiz" ? `检查学习者能否辨析${topic}的核心概念与常见误区` : `理解${topic}在第 ${index + 1} 个学习层次中的作用与边界`,
+          teachingObjective: type === "quiz"
+            ? `检查${resolvedBrief.audience}能否围绕“${resolvedBrief.learningGoal}”辨析核心概念与常见误区`
+            : index === 0
+              ? `帮助${resolvedBrief.audience}建立${topic}的问题背景，并进入目标“${resolvedBrief.learningGoal}”`
+              : `围绕“${resolvedBrief.learningGoal}”理解${topic}在第 ${index + 1} 个学习层次中的作用与边界`,
           keyPoints: type === "quiz" ? ["核心概念辨析", "常见误区判断"] : [`${topic}的核心概念`, "机制之间的因果关系", "实际应用边界"],
           order: index + 1,
           estimatedMinutes: type === "quiz" ? 3 : 5,
+          ...(type === "quiz" ? { assessmentFocus: `检查是否达到学习目标：${resolvedBrief.learningGoal}` } : {}),
         };
       }),
     };
-    return { text: JSON.stringify(output), provider: "mock", model: "mock-outline-v1", usage: { inputTokens: 0, outputTokens: 0 } };
+    return { text: JSON.stringify(output), provider: "mock", model: "mock-outline-v2", usage: { inputTokens: 0, outputTokens: 0 } };
   }
 }

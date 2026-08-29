@@ -5,7 +5,7 @@ import { SceneOutlineSchema } from "@/lib/domain/schemas";
 import { InvalidOutlineError } from "@/lib/generation/outline-schema";
 import { OutlineGenerationError } from "@/lib/generation/outline-pipeline";
 import { SceneGenerationError } from "@/lib/generation/scene-pipeline";
-import { CourseConflictError, DatabaseUnavailableError, StoredCourseInvalidError } from "@/lib/repository/course-repository";
+import { CourseConflictError, DatabaseUnavailableError, FutureCourseSchemaVersionError, LegacyCourseUnsupportedError, StoredCourseInvalidError } from "@/lib/repository/course-repository";
 import { OutlineApplicationError } from "./outline-generation-service";
 import { SceneApplicationError } from "./scene-generation-service";
 
@@ -36,6 +36,8 @@ export function mapOutlineError(error: unknown, requestId: string = randomUUID()
   else if (error instanceof CourseConflictError) { status = 409; code = "COURSE_CONFLICT"; message = "课程已被其他操作更新，请刷新后重试"; }
   else if (error instanceof DatabaseUnavailableError) { status = 503; code = "DATABASE_UNAVAILABLE"; message = "数据库暂时不可用，请检查 MySQL 服务和连接配置"; }
   else if (error instanceof StoredCourseInvalidError) { code = "STORED_COURSE_INVALID"; message = "数据库中的课程不符合当前数据契约"; retryable = false; }
+  else if (error instanceof LegacyCourseUnsupportedError) { status = 410; code = "LEGACY_COURSE_UNSUPPORTED"; message = "该课程使用旧版数据结构，请新建课程后重新生成"; retryable = false; }
+  else if (error instanceof FutureCourseSchemaVersionError) { status = 409; code = "FUTURE_COURSE_SCHEMA_VERSION"; message = "该课程由更高版本创建，当前服务无法读取"; retryable = false; }
   else if (error instanceof OutlineGenerationError) { status = error.code === "AI_AUTH_FAILED" || error.code === "AI_NOT_CONFIGURED" ? 503 : 502; code = error.code; message = error.message; retryable = error.retryable; upstreamCalls = error.upstreamCalls; issues = error.issues; }
   else if (error instanceof SceneGenerationError) { status = error.code === "AI_AUTH_FAILED" || error.code === "AI_NOT_CONFIGURED" ? 503 : 502; code = error.code; message = error.message; retryable = error.retryable; upstreamCalls = error.upstreamCalls; issues = error.issues; }
   else if (error instanceof AIAdapterError) { status = 503; code = error.code; message = error.message; retryable = error.retryable; }

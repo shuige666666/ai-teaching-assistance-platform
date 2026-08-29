@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 状态说明：M1～M6.5 架构已经实现；M7.0 已冻结离线评价输入并留存 DeepSeek v0.3 自动基线，但没有改变生产架构；标记为 CourseBrief、Schema v2、OpenMAIC 式 Slide/PPTElement、interactive 或再生成的 M7～M10 增量设计仍未进入正式调用链。
+> 状态说明：M1～M7.1 已进入正式调用链；M7.0 的 DeepSeek v0.3 基线保持冻结，M7.1 已实现 CourseBrief、Course schema v2 与 outline.v2。Slide/PPTElement、interactive 和再生成仍分别属于 M8～M10。
 
 ## 1. 架构结论
 
@@ -155,7 +155,7 @@ mock 和 DeepSeek 返回相同 DTO，并经过同一套 Zod/领域校验。代�
 
 slide 可以包含 code block，其中 HTML、JSX、TSX 只作为源码字符串保存，渲染器仅进行文本转义和语法高亮，不运行代码。标题、正文、提示块、讲解稿等普通字段仍拒绝 HTML 与外链。v0.4 的 interactive iframe 是独立 Scene 类型和独立安全边界，不能借“代码块”创建执行路径。
 
-**AD-09～AD-13 是 v0.4/M7～M10 增量决策，尚未实现。**
+**AD-09 已在 M7.1 实现；AD-10～AD-13 仍是 M8～M10 增量决策。**
 
 ### AD-09：原始描述可追溯，CourseBrief 在 outline.v2 中一次定稿
 
@@ -252,7 +252,7 @@ v0.4 不替换上图，只增加下面的受控分支：
 flowchart LR
     Input["原始描述 + 可选高级设置"] --> CourseAPI["Course API"]
     CourseAPI --> Provisional["BriefResolver<br/>设置 > 默认值"]
-    Provisional --> Repo["CourseRepository + v1/v2 Migrator"]
+    Provisional --> Repo["CourseRepository v2 + legacy guard"]
     Repo --> DB[(MySQL)]
 
     DB --> Generation["GenerationService"]

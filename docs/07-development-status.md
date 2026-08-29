@@ -4,13 +4,13 @@
 
 ## 1. 当前结论
 
-项目已完成 **M1～M6.5 的代码实现、mock 自动验收与 DeepSeek 真实 smoke test**，达到当前“本机 + MySQL + mock + DeepSeek”的工程基线。mock 下的大纲、场景、课堂、刷新恢复和自动清理均进入可重复 Chromium E2E；DeepSeek 已完成真实生成、输出修复、局部重试和偶发空 content 的自动恢复。当前在无模型 Key、无模型网络的环境中可以完成：
+项目已完成 **M1～M7.1 的功能实现与 mock 全量验收**；M1～M6.5 已具备 DeepSeek 真实 smoke 证据，M7.1 已通过新增单元测试、MySQL 集成测试、production build 和 Chromium E2E。当前在无模型 Key、无模型网络的环境中可以完成：
 
 ```text
-首页填写主题并选择 3～5 个场景
-  → 在 MySQL 创建 draft 课程
-  → 登记 activeOperation 后通过 MockAIAdapter 生成大纲
-  → JSON 提取、严格 Schema、语义门与必要时一次模型修复
+首页填写主题、选择 3～5 个场景并可选展开高级要求
+  → 在 MySQL 创建带 provisional CourseBrief 的 v2 draft 课程
+  → outline.v2 同一次调用检测明确要求并生成带角色的大纲
+  → 服务端按设置 > 描述 > 默认值复算 Brief，再执行 Schema、语义门与必要时一次模型修复
   → 用 operation id + expectedRevision 短事务提交 outline_ready
   → 人工编辑并由服务端复验、保存、确认
   → 按 outline 顺序逐个登记和生成 slide / quiz
@@ -168,6 +168,16 @@ M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` �
 
 2026-08-28 需求澄清后，提交 `85be4b9f` 遗留的 `slide-density.v1.json`、44 张 PNG、DOM/密度报告、`scores.json` 和独立汇总脚本被删除或收束。`report.json` 继续保存原课程、narration、quiz、生成耗时、调用、token、repair 和错误；`summary.md` 只做事实索引，`scenes/` 保存逐场景 MHTML。人工七维评分延后到 M10 的 v0.3/v0.4 配对验收。M8～M10 只承诺 `1280×720` 及更大桌面视口。
 
-M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。下一步是 M7.1 CourseBrief/outline v2；之后依次为 M8 PPT 式只读幻灯片画布、M9 diagram 互动和 M10 单场景再生成与 v0.4 配对验收。M11 PPT 式幻灯片编辑器和 M12 PPTX + interactive HTML 简化资源包均为可选项，不阻塞 v0.4 或 MX。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
+M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7.1 已在不改写这些基线产物的前提下升级正式运行链；下一步依次为 M8 PPT 式只读幻灯片画布、M9 diagram 互动和 M10 单场景再生成与 v0.4 配对验收。M11 编辑器和 M12 导出均为可选项。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
+
+## 8. 已实现：M7.1 CourseBrief、Course v2 与 outline.v2
+
+新建课程统一写入 `schemaVersion: 2` 和非空 `brief_json`。首页保留 topic 为唯一必填输入，并增加可折叠高级设置；字段缺失由原始描述或默认值补齐，显式空数组仍表示用户明确选择“无”。`interactionMode` 在当前 Schema 中固定为 `off`，M7.1 不产生 interactive 场景。
+
+`outline.v2` 在一次正常模型调用中返回 `detectedBrief`、有限 warning、`resolvedBrief`、courseTitle 和带 `role/misconceptions/assessmentFocus` 的 outlines。服务端不信任模型合并结果，会按 `explicit_setting > prompt > default` 重新计算；不一致与其他结构错误共用一次 repair 和四次调用总预算。成功时 Brief、来源、警告和大纲在同一个 expectedRevision 提交。大纲页展示每字段采用值和来源；场景生成前修改 Brief 会把变化字段提升为显式设置，清空旧大纲、进度和生成元数据。
+
+本阶段不实现旧课程迁移。已有 v1 行原样留在 MySQL，列表只查询 v2；按 v1 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`，按未来版本访问返回 `FUTURE_COURSE_SCHEMA_VERSION`。这样不需要清库，也不会把当前默认值错误套到历史课程。M7.0 的 `report.json`、`summary.md` 和 MHTML 未被修改。
+
+最终自动证据为：`002_course_brief.sql` 成功应用；17 个文件、75 项单元测试通过；1 个文件、10 项 MySQL 集成测试通过；ESLint、production build 和 Chromium E2E 1/1 通过。单元测试确认同一主题采用默认 Brief 与显式受众/目标时会形成不同教学计划；E2E 覆盖高级设置、Course v2 创建、outline.v2、逐场景生成、课堂播放、测验、刷新恢复和自动清理。M7.1 完整退出门已经关闭。
 
 M8 计划裁剪 OpenMAIC 已验证的幻灯片纵向链：LLM 按 `slide-content` Prompt 直接返回带坐标的有限 PPTElement，服务端完成过滤、默认值、text 净化、id 分配和 Slide 装配，再由只读 SlideCanvas 渲染并保存到 MySQL。首版只支持 `text/shape/line/code`，不增加类 Markdown/纵向讲义视图，也不提前实现编辑器、导出、通用自动排版或复杂几何报告。M9 独立裁剪 OpenMAIC diagram Prompt、HTML 后处理和 iframe Renderer，形成一个自包含 diagram 闭环。以上阶段均不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。

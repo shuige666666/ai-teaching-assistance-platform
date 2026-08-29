@@ -1,6 +1,8 @@
 import {
   CourseConflictError,
   DatabaseUnavailableError,
+  FutureCourseSchemaVersionError,
+  LegacyCourseUnsupportedError,
   RepositoryConfigurationError,
   StoredCourseInvalidError,
 } from "./course-repository";
@@ -24,6 +26,12 @@ export function mapRepositoryError(error: unknown, requestId?: string): Reposito
   }
   if (error instanceof StoredCourseInvalidError) {
     return { status: 500, body: createApiError("STORED_COURSE_INVALID", "数据库中的课程不符合当前数据契约", false, requestId) };
+  }
+  if (error instanceof LegacyCourseUnsupportedError) {
+    return { status: 410, body: createApiError("LEGACY_COURSE_UNSUPPORTED", "该课程使用旧版数据结构，请新建课程后重新生成", false, requestId) };
+  }
+  if (error instanceof FutureCourseSchemaVersionError) {
+    return { status: 409, body: createApiError("FUTURE_COURSE_SCHEMA_VERSION", "该课程由更高版本创建，当前服务无法读取", false, requestId) };
   }
   if (error instanceof RepositoryConfigurationError) {
     return { status: 500, body: createApiError("REPOSITORY_CONFIGURATION_INVALID", "服务端课程仓储配置无效", false, requestId) };

@@ -14,6 +14,9 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     await expect(page.getByRole("heading", { name: /把一个主题/ })).toBeVisible();
     await page.getByLabel("这堂课要讲什么？").fill(topic);
     await page.getByRole("button", { name: "3", exact: true }).click();
+    await page.getByText("高级课程要求").click();
+    await page.getByLabel("目标受众").fill("有 Java 基础的本科生");
+    await page.getByLabel("学习目标").fill("能够解释核心机制并辨析常见误区");
 
     // 暂存成功响应，确保用户在真实等待期间能看到阶段、耗时和请求编号。
     await page.route("**/api/courses", async (route) => {
@@ -34,6 +37,9 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     expect(interceptedCourseId).toBeTruthy();
     courseId = interceptedCourseId;
     await expect(page).toHaveURL(new RegExp(`/generation/${courseId}$`));
+    await expect(page.getByRole("heading", { name: "系统采用的课程要求" })).toBeVisible();
+    await expect(page.getByText("有 Java 基础的本科生", { exact: true })).toBeVisible();
+    await expect(page.getByText("高级设置", { exact: true }).first()).toBeVisible();
 
     // 暂存大纲成功响应，验证用户在等待远端调用时能看到心跳、预算和 requestId。
     await page.route(`**/api/courses/${courseId}/outline/generate`, async (route) => {
