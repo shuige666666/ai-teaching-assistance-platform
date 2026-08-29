@@ -34,4 +34,27 @@ describe("OutlineGenerationService", () => {
       .rejects.toBeInstanceOf(CourseConflictError);
     expect((await repository.get(draft.id))?.title).toBe("并发请求已经更新");
   });
+
+  it("失败课程保存 requestId、调用次数、校验阶段和问题", async () => {
+    const repository = new InMemoryCourseRepository();
+    const draft = await repository.create(createCourseDraft("失败诊断课程", 3));
+    const service = new OutlineGenerationService(repository, new MockAIAdapter(["{}", "{}"]));
+
+    await expect(service.generate(draft.id, 0, "outline-diagnostic-request")).rejects.toMatchObject({
+      code: "INVALID_MODEL_OUTPUT",
+      upstreamCalls: 2,
+      validationKind: "schema",
+    });
+
+    const failed = await repository.get(draft.id);
+    expect(failed?.lastError).toMatchObject({
+      code: "INVALID_MODEL_OUTPUT",
+      details: {
+        requestId: "outline-diagnostic-request",
+        upstreamCalls: 2,
+        validationKind: "schema",
+        issues: expect.any(Array),
+      },
+    });
+  });
 });

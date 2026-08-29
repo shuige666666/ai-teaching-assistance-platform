@@ -289,7 +289,7 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 ### M7.1：CourseBrief、Schema v2 与大纲质量
 
-把 CourseBrief 定义为“原始描述 + 可选高级设置 + 服务端默认值”的结构化归一结果，而不是新增一张必填表单。创建接口原样保存 topic，并先写入 provisional Brief；原有一次 `outline.v2` 调用同时返回 Prompt 中明确检测到的字段、警告、resolved Brief 和 outlines，服务端按 `explicit_setting > prompt > default` 复算并同事务保存。MySQL `brief_json` 同时保存有效值、每字段来源和解析状态；大纲页展示系统理解和冲突警告，确认前修改 Brief 会使旧大纲失效。
+把 CourseBrief 定义为“原始描述 + 可选高级设置 + 服务端默认值”的结构化归一结果，而不是新增一张必填表单。创建接口原样保存 topic，并先写入 provisional Brief；一次 `outline.v2.1` 调用同时返回 Prompt 中明确检测到的字段、警告和 outlines，服务端按 `explicit_setting > prompt > default` 独占计算 resolved Brief 并同事务保存。MySQL `brief_json` 同时保存有效值、每字段来源和解析状态；大纲页展示系统理解和冲突警告，确认前修改 Brief 会使旧大纲失效。
 
 本阶段同时完成 Course v1/v2 判别、v1 明确拒绝、受众/水平/目标/先修/时长/风格/互动/附加要求契约，以及 SceneRole、误区/评估意图。旧行无需清库且不会被修改，但不迁移、不展示；正常大纲路径不因 Brief 解析固定增加一次 LLM 调用。M7 只建立后续场景生成需要的语义上下文，不提前实现画布 Renderer 或互动 iframe。
 

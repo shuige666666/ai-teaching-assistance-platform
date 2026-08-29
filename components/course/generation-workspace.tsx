@@ -5,7 +5,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { Course, CourseBrief, CourseBriefField, SceneOutline } from "@/lib/domain/schemas";
 
-type ErrorNotice = { code: string; message: string; retryable: boolean };
+type ErrorIssue = { path: string; message: string };
+type ErrorNotice = {
+  code: string;
+  message: string;
+  retryable: boolean;
+  requestId?: string;
+  upstreamCalls?: number;
+  validationKind?: string;
+  issues?: ErrorIssue[];
+};
 type OperationView = {
   requestId: string;
   label: string;
@@ -25,7 +34,31 @@ function responseError(payload: { error?: Partial<ErrorNotice> }, fallback: stri
     code: payload.error?.code ?? "REQUEST_FAILED",
     message: payload.error?.message ?? fallback,
     retryable: payload.error?.retryable ?? true,
+    requestId: payload.error?.requestId,
+    upstreamCalls: payload.error?.upstreamCalls,
+    validationKind: payload.error?.validationKind,
+    issues: payload.error?.issues,
   });
+}
+
+/** 从课程持久化错误中恢复可展示的脱敏诊断，刷新页面后仍能继续排查。 */
+function storedErrorNotice(error?: Course["lastError"]): ErrorNotice | null {
+  if (!error) return null;
+  const details = error.details;
+  const issues = Array.isArray(details?.issues)
+    ? details.issues.filter((issue): issue is ErrorIssue => Boolean(
+      issue && typeof issue === "object" && typeof (issue as { path?: unknown }).path === "string" && typeof (issue as { message?: unknown }).message === "string",
+    ))
+    : undefined;
+  return {
+    code: error.code,
+    message: error.message,
+    retryable: error.retryable,
+    requestId: typeof details?.requestId === "string" ? details.requestId : undefined,
+    upstreamCalls: typeof details?.upstreamCalls === "number" ? details.upstreamCalls : undefined,
+    validationKind: typeof details?.validationKind === "string" ? details.validationKind : undefined,
+    issues,
+  };
 }
 
 function caughtNotice(caught: unknown, fallback: string): ErrorNotice {
@@ -73,6 +106,11 @@ const briefFieldLabels: Array<{ field: CourseBriefField; label: string }> = [
 const sourceLabels = { explicit_setting: "高级设置", prompt: "课程描述", default: "系统默认" } as const;
 const levelLabels = { beginner: "入门", intermediate: "进阶", advanced: "高级" } as const;
 const styleLabels = { structured: "结构化讲解", case_based: "案例导向", practice_oriented: "练习导向" } as const;
+const validationKindLabels: Record<string, string> = {
+  json: "JSON 解析",
+  schema: "Schema 结构校验",
+  semantic: "课程语义校验",
+};
 
 function displayBriefValue(brief: CourseBrief, field: CourseBriefField) {
   const value = brief[field];
@@ -88,7 +126,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
   const router = useRouter();
   const [course, setCourse] = useState(initialCourse);
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<ErrorNotice | null>(null);
+  const [error, setError] = useState<ErrorNotice | null>(() => storedErrorNotice(initialCourse.lastError));
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [operationView, setOperationView] = useState<OperationView | null>(null);
   const [operationElapsedMs, setOperationElapsedMs] = useState(0);
@@ -731,6 +769,22 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
                 {error.code} · {requiresServerConfiguration(error) ? "需修正配置" : error.retryable ? "可手动重试" : "需人工处理"}
               </span>
               <p>{error.message}</p>
+              {error.requestId || error.upstreamCalls !== undefined || error.validationKind ? (
+                <div className="error-diagnostics">
+                  {error.requestId ? <code>requestId: {error.requestId}</code> : null}
+                  {error.upstreamCalls !== undefined ? <code>上游调用: {error.upstreamCalls}</code> : null}
+                  {error.validationKind ? <code>失败阶段: {validationKindLabels[error.validationKind] ?? error.validationKind}</code> : null}
+                </div>
+              ) : null}
+              {error.issues && error.issues.length > 0 ? (
+                <ul className="error-issues">
+                  {error.issues.slice(0, 5).map((issue, index) => (
+                    <li key={`${issue.path}-${index}`}>
+                      <code>{issue.path || "root"}</code>：{issue.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <small>{recoveryGuidance(error)}</small>
             </div>
           ) : null}

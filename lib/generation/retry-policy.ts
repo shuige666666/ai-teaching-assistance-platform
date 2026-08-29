@@ -1,6 +1,21 @@
 import { AIAdapterError, type GenerationStage } from "@/lib/ai/contracts";
 import { writeServerEvent } from "@/lib/observability/server-log";
 
+/** 记录一次成功取得模型文本的调用，只保留响应状态和 token 元数据。 */
+export function logUpstreamSuccess(
+  result: { finishReason?: string; usage?: { inputTokens?: number; outputTokens?: number } },
+  fields: { requestId: string; stage: GenerationStage; upstreamAttempt: number },
+) {
+  writeServerEvent("info", "ai.upstream.succeeded", {
+    requestId: fields.requestId,
+    stage: fields.stage,
+    upstreamAttempt: fields.upstreamAttempt,
+    finishReason: result.finishReason,
+    inputTokens: result.usage?.inputTokens,
+    outputTokens: result.usage?.outputTokens,
+  });
+}
+
 /** 使用 requestId 生成稳定抖动，既避免同时重试，也保持测试可复现。 */
 export function retryDelayMs(requestId: string, attempt: number): number {
   let hash = attempt + 17;

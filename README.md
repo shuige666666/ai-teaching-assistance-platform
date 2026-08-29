@@ -13,13 +13,13 @@
 
 ## 当前状态
 
-项目的 **M1～M7.1 功能代码已进入正式调用链**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建带可追溯 CourseBrief 的 v2 草稿，经 `outline.v2` 在同一次调用中解析明确要求并生成 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂自动播放并从 MySQL 恢复课程。
+项目的 **M1～M7.1 功能代码已进入正式调用链**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建带可追溯 CourseBrief 的 v2 草稿，经 `outline.v2.1` 在同一次调用中解析明确要求并生成 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂自动播放并从 MySQL 恢复课程。
 
 大纲和场景阶段共用 `MockAIAdapter` 与 OpenAI-compatible 远端适配器，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 可在讲解前直接作答；自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。DeepSeek 已完成一门 5 场景真实课程的大纲、场景、修复与失败后重试验证。代码中保留百炼兼容配置，但百炼联调和异机部署均属于后续可选扩展，不再作为第一阶段完成条件。
 
 M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部完成。
 
-**M7.0 课程质量基线现已完成，M7.1 功能实现已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v2；首页高级设置可选，Brief 字段记录 `explicit_setting / prompt / default` 来源，`outline.v2` 的模型合并结果会由服务端复算，Brief 修改会使旧大纲失效。M7.1 不迁移旧 v1 课程：数据库行原样保留但不出现在列表，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。互动模式暂时固定为 `off`，到 M9 才开放。下一步是 M8；M8～M10 只承诺桌面端，M11 编辑器和 M12 导出均为可选扩展。
+**M7.0 课程质量基线现已完成，M7.1 功能实现已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v2；首页高级设置可选，Brief 字段记录 `explicit_setting / prompt / default` 来源，`outline.v2.1` 返回检测字段和大纲，resolved Brief 由服务端独占计算，Brief 修改会使旧大纲失效。M7.1 不迁移旧 v1 课程：数据库行原样保留但不出现在列表，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。互动模式暂时固定为 `off`，到 M9 才开放。下一步是 M8；M8～M10 只承诺桌面端，M11 编辑器和 M12 导出均为可选扩展。
 
 ## v0.3 MVP 已实现什么
 
@@ -149,7 +149,7 @@ AI_MODE=mock
 
 # AI_MODE=remote 时选择一个配置档
 AI_PROVIDER=deepseek
-AI_OUTLINE_TIMEOUT_MS=90000
+AI_OUTLINE_TIMEOUT_MS=120000
 AI_SCENE_TIMEOUT_MS=120000
 
 DEEPSEEK_API_KEY=

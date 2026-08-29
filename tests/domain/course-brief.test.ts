@@ -37,6 +37,8 @@ describe("CourseBrief", () => {
     const prompt = buildOutlineUserPrompt({ topic, sceneCount: 3, provisionalBrief: provisional.brief, provisionalResolution: provisional.resolution });
     expect(prompt).toContain(`课程描述 JSON：${JSON.stringify(topic)}`);
     expect(prompt).toContain("显式设置 JSON：{}");
+    expect(prompt).not.toContain("当前 provisional Brief JSON");
+    expect(prompt).toContain("不要回传合并后的 Brief");
   });
 
   it("修改 Brief 会提升字段来源并清空依赖旧要求的大纲", async () => {

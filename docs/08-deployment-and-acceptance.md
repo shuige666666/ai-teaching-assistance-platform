@@ -150,7 +150,7 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 | Slide visual | 2～3 个 DeepSeek 代表主题在 `1280×720` 的截图与人工检查，确认主次、可读性、关系表达和主要内容未被裁掉；不建立自动美学评分 |
 | Interactive boundary | 完整自包含 HTML、外部依赖拒绝、CSP、`sandbox="allow-scripts"`、消息来源/Schema 和 fallback |
 | MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、v1 隐藏与明确拒绝、互动内容恢复、再生成原位替换和 conflict |
-| API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 解析/规范化失败、interactive 失败分类、ready 场景再生成 |
+| API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2.1 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 解析/规范化失败、interactive 失败分类、ready 场景再生成 |
 | Playwright | `1280×720` 桌面只读 SlideCanvas 的四类元素与恢复，以及 required diagram 的操作、重置、完成、刷新和 fallback |
 | Regression | 原 M6 创建、slide/quiz、播放、作答、删除和 mock E2E 全部保持通过 |
 
@@ -183,7 +183,7 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 | --- | --- | --- | --- |
 | AC-Q01 CourseBrief 解析、来源、警告与同 revision 保存恢复 | M7 | Schema + API + MySQL integration | 已通过 |
 | AC-Q02 v1 隔离与明确错误 | M7 | repository integration + 旧行读取 | 已通过 |
-| AC-Q03 outline.v2 同调用解析与大纲生成；后续场景 Prompt 使用完整上下文 | M7/M8 | golden + 调用计数 + 生成元数据 | outline.v2 已通过；scene v2 随 M8 接入 |
+| AC-Q03 outline.v2.1 同调用解析与大纲生成；后续场景 Prompt 使用完整上下文 | M7/M8 | golden + 调用计数 + 生成元数据 | outline.v2.1 已通过；scene v2 随 M8 接入 |
 | AC-Q04 OpenMAIC 式 Slide/PPTElement 生成、规范化、保存恢复与桌面只读渲染 | M8 | Schema + normalize + component + 真实模型截图 + 桌面 E2E | 未实现 |
 | AC-Q05 required diagram 数量 | M9 | domain + API | 未实现 |
 | AC-Q06 HTML 安全门 | M9 | validator 恶意 fixture | 未实现 |

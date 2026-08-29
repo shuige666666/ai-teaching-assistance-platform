@@ -1,16 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MockAIAdapter } from "@/lib/ai/mock-adapter";
 import { AIAdapterError, type AIAdapter } from "@/lib/ai/contracts";
-import { generateOutline } from "@/lib/generation/outline-pipeline";
+import { generateOutline, OUTLINE_MAX_OUTPUT_TOKENS } from "@/lib/generation/outline-pipeline";
 import { parseModelJson } from "@/lib/generation/parse-json";
-import { createDefaultCourseBrief, createProvisionalCourseBrief } from "@/lib/domain/course-brief";
+import { createProvisionalCourseBrief } from "@/lib/domain/course-brief";
 
-function validOutline(topic = "测试主题", resolvedBrief = createDefaultCourseBrief("测试主题")) {
+function validOutline(topic = "测试主题", detectedBrief: Record<string, unknown> = {}) {
   return JSON.stringify({
     courseTitle: `${topic}课程`,
-    detectedBrief: {},
+    detectedBrief,
     warnings: [],
-    resolvedBrief,
     outlines: [
       { type: "slide", role: "hook", title: "概念入口", teachingObjective: "建立问题背景", keyPoints: ["问题", "背景"], order: 1, estimatedMinutes: 4 },
       { type: "slide", role: "mechanism", title: "机制拆解", teachingObjective: "理解运行机制", keyPoints: ["结构", "过程"], order: 2, estimatedMinutes: 5 },
@@ -24,6 +23,8 @@ function outlineInput(requestId: string, overrides: Parameters<typeof createProv
   return { topic: "测试主题", sceneCount: 3, provisionalBrief: provisional.brief, provisionalResolution: provisional.resolution, requestId, signal: new AbortController().signal };
 }
 
+afterEach(() => vi.restoreAllMocks());
+
 describe("outline generation pipeline", () => {
   it("可从代码围栏提取唯一 JSON 对象", () => {
     expect(parseModelJson(`说明\n\`\`\`json\n${validOutline()}\n\`\`\``)).toMatchObject({ courseTitle: "测试主题课程" });
@@ -36,6 +37,41 @@ describe("outline generation pipeline", () => {
     expect(result.metadata).toMatchObject({ provider: "mock", upstreamCalls: 1, repaired: false, requestId: "request-1" });
   });
 
+  it("一次生成时确定性清理冗余字段、缺省数组和 optional null", async () => {
+    const value = JSON.parse(validOutline("JSON Prompt 工程"));
+    delete value.detectedBrief;
+    delete value.warnings;
+    value.resolvedBrief = { shouldBeIgnored: true };
+    value.explanation = "不进入领域对象";
+    value.outlines[0].misconceptions = null;
+    value.outlines[0].assessmentFocus = null;
+    value.outlines[0].estimatedMinutes = null;
+    value.outlines[0].rationale = "不进入领域对象";
+
+    const result = await generateOutline(new MockAIAdapter([JSON.stringify(value)]), outlineInput("deterministic-normalization"));
+
+    expect(result.metadata).toMatchObject({ upstreamCalls: 1, repaired: false });
+    expect(result.courseTitle).toBe("JSON Prompt 工程课程");
+    expect(result.outlines[0]).not.toHaveProperty("rationale");
+    expect(result.outlines[0].misconceptions).toBeUndefined();
+    expect(result.outlines[0].estimatedMinutes).toBeUndefined();
+  });
+
+  it("outline.v2 使用能够容纳 Brief 与完整场景计划的输出预算", async () => {
+    let receivedMaxOutputTokens = 0;
+    const adapter: AIAdapter = {
+      async generateText(input) {
+        receivedMaxOutputTokens = input.maxOutputTokens;
+        return { text: validOutline(), provider: "deepseek", model: "test" };
+      },
+    };
+
+    await generateOutline(adapter, outlineInput("token-budget"));
+
+    expect(receivedMaxOutputTokens).toBe(OUTLINE_MAX_OUTPUT_TOKENS);
+    expect(OUTLINE_MAX_OUTPUT_TOKENS).toBe(8_000);
+  });
+
   it("首次语义失败只进行一次修复", async () => {
     const invalid = JSON.stringify({ courseTitle: "失败课程", outlines: [] });
     const result = await generateOutline(new MockAIAdapter([invalid, validOutline("修复后")]), outlineInput("request-2"));
@@ -43,20 +79,29 @@ describe("outline generation pipeline", () => {
     expect(result.courseTitle).toBe("修复后课程");
   });
 
-  it("模型 resolvedBrief 与服务端复算不一致时进入同一次受限修复", async () => {
-    const input = outlineInput("brief-mismatch", { audience: "显式受众" });
-    const mismatched = validOutline("错误合并");
-    const repaired = validOutline("正确合并", input.provisionalBrief);
-    const result = await generateOutline(new MockAIAdapter([mismatched, repaired]), input);
-    expect(result.metadata).toMatchObject({ upstreamCalls: 2, repaired: true, promptVersion: "outline.v2" });
+  it("服务端独占合并检测字段与显式设置，不要求模型回传 resolvedBrief", async () => {
+    const input = outlineInput("brief-resolution", { audience: "显式受众" });
+    const result = await generateOutline(
+      new MockAIAdapter([validOutline("一次生成", { audience: "描述受众", learnerLevel: "intermediate" })]),
+      input,
+    );
+    expect(result.metadata).toMatchObject({ upstreamCalls: 1, repaired: false, promptVersion: "outline.v2.1" });
     expect(result.brief.audience).toBe("显式受众");
+    expect(result.brief.learnerLevel).toBe("intermediate");
     expect(result.briefResolution.sources.audience).toBe("explicit_setting");
+    expect(result.briefResolution.sources.learnerLevel).toBe("prompt");
+    expect(result.briefResolution.warnings[0]?.code).toBe("SETTING_PROMPT_CONFLICT");
   });
 
   it("修复后仍失败时停止，不静默写入", async () => {
     const invalid = JSON.stringify({ courseTitle: "失败课程", outlines: [] });
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await expect(generateOutline(new MockAIAdapter([invalid, invalid]), outlineInput("request-3")))
-      .rejects.toMatchObject({ code: "INVALID_MODEL_OUTPUT", retryable: true, upstreamCalls: 2 });
+      .rejects.toMatchObject({ code: "INVALID_MODEL_OUTPUT", retryable: true, upstreamCalls: 2, validationKind: "schema" });
+    const events = [...info.mock.calls, ...error.mock.calls].map(([line]) => JSON.parse(String(line)).event);
+    expect(events).toContain("outline.validation.failed");
+    expect(events).toContain("outline.repair.failed");
   });
 
   it("首次远端响应异常时在预算内自动恢复", async () => {

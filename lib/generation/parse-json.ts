@@ -27,8 +27,8 @@ export function parseModelJson(text: string): unknown {
   try { return JSON.parse(trimmed); } catch { /* 继续执行受限提取。 */ }
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
   const candidate = fenced ?? extractBalancedObject(trimmed);
-  if (!candidate) throw new InvalidOutlineError([{ path: "", message: "模型输出不是 JSON 对象" }]);
+  if (!candidate) throw new InvalidOutlineError([{ path: "", message: "模型输出不是 JSON 对象" }], { validationKind: "json" });
   try { return JSON.parse(candidate); } catch (error) {
-    throw new InvalidOutlineError([{ path: "", message: "提取到的 JSON 对象仍无法解析" }], { cause: error });
+    throw new InvalidOutlineError([{ path: "", message: "提取到的 JSON 对象仍无法解析" }], { cause: error, validationKind: "json" });
   }
 }

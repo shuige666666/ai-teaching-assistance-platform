@@ -6,7 +6,7 @@ import { assembleScene, InvalidSceneError, validateSceneOutput } from "./scene-s
 import { buildQuizUserPrompt, QUIZ_PROMPT_VERSION, QUIZ_SYSTEM_PROMPT } from "./prompts/scene-quiz.v1";
 import { buildSceneRepairPrompt, SCENE_REPAIR_SYSTEM_PROMPT } from "./prompts/scene-repair.v1";
 import { buildSlideUserPrompt, SLIDE_PROMPT_VERSION, SLIDE_SYSTEM_PROMPT } from "./prompts/scene-slide.v1";
-import { logUpstreamFailure, retryDelayMs, waitForRetry } from "./retry-policy";
+import { logUpstreamFailure, logUpstreamSuccess, retryDelayMs, waitForRetry } from "./retry-policy";
 
 export class SceneGenerationError extends Error {
   constructor(
@@ -59,6 +59,7 @@ export async function generateScene(
         // 3. 调用当前配置的模型，并拿到它返回的文本。
         const result = await adapter.generateText({ ...call, requestId: input.requestId, signal: input.signal, maxOutputTokens: 3_500 });
         successfulResults.push(result);
+        logUpstreamSuccess(result, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls });
         return result;
       } catch (error) {
         const mapped = error instanceof AIAdapterError ? error : new AIAdapterError("AI_UPSTREAM_ERROR", "模型调用失败", false, { cause: error });

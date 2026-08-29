@@ -9,7 +9,7 @@
 ```text
 首页填写主题、选择 3～5 个场景并可选展开高级要求
   → 在 MySQL 创建带 provisional CourseBrief 的 v2 draft 课程
-  → outline.v2 同一次调用检测明确要求并生成带角色的大纲
+  → outline.v2.1 同一次调用检测明确要求并生成带角色的大纲
   → 服务端按设置 > 描述 > 默认值复算 Brief，再执行 Schema、语义门与必要时一次模型修复
   → 用 operation id + expectedRevision 短事务提交 outline_ready
   → 人工编辑并由服务端复验、保存、确认
@@ -170,14 +170,20 @@ M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` �
 
 M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7.1 已在不改写这些基线产物的前提下升级正式运行链；下一步依次为 M8 PPT 式只读幻灯片画布、M9 diagram 互动和 M10 单场景再生成与 v0.4 配对验收。M11 编辑器和 M12 导出均为可选项。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
 
-## 8. 已实现：M7.1 CourseBrief、Course v2 与 outline.v2
+## 8. 已实现：M7.1 CourseBrief、Course v2 与 outline.v2.1
 
 新建课程统一写入 `schemaVersion: 2` 和非空 `brief_json`。首页保留 topic 为唯一必填输入，并增加可折叠高级设置；字段缺失由原始描述或默认值补齐，显式空数组仍表示用户明确选择“无”。`interactionMode` 在当前 Schema 中固定为 `off`，M7.1 不产生 interactive 场景。
 
-`outline.v2` 在一次正常模型调用中返回 `detectedBrief`、有限 warning、`resolvedBrief`、courseTitle 和带 `role/misconceptions/assessmentFocus` 的 outlines。服务端不信任模型合并结果，会按 `explicit_setting > prompt > default` 重新计算；不一致与其他结构错误共用一次 repair 和四次调用总预算。成功时 Brief、来源、警告和大纲在同一个 expectedRevision 提交。大纲页展示每字段采用值和来源；场景生成前修改 Brief 会把变化字段提升为显式设置，清空旧大纲、进度和生成元数据。
+`outline.v2.1` 在一次正常模型调用中返回 `detectedBrief`、有限 warning、courseTitle 和带 `role/misconceptions/assessmentFocus` 的 outlines。模型不再重复回传 resolved Brief；服务端按 `explicit_setting > prompt > default` 独占计算最终值。成功时 Brief、来源、警告和大纲在同一个 expectedRevision 提交。大纲页展示每字段采用值和来源；场景生成前修改 Brief 会把变化字段提升为显式设置，清空旧大纲、进度和生成元数据。
 
 本阶段不实现旧课程迁移。已有 v1 行原样留在 MySQL，列表只查询 v2；按 v1 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`，按未来版本访问返回 `FUTURE_COURSE_SCHEMA_VERSION`。这样不需要清库，也不会把当前默认值错误套到历史课程。M7.0 的 `report.json`、`summary.md` 和 MHTML 未被修改。
 
 最终自动证据为：`002_course_brief.sql` 成功应用；17 个文件、75 项单元测试通过；1 个文件、10 项 MySQL 集成测试通过；ESLint、production build 和 Chromium E2E 1/1 通过。单元测试确认同一主题采用默认 Brief 与显式受众/目标时会形成不同教学计划；E2E 覆盖高级设置、Course v2 创建、outline.v2、逐场景生成、课堂播放、测验、刷新恢复和自动清理。M7.1 完整退出门已经关闭。
+
+2026-08-29 首次真实运行 `outline.v2` 时发现管线仍沿用 M1～M4 为 `outline.v1` 设置的 2,000 输出 token 上限。5 场景请求连续三次以 `empty_content + finish_reason=length` 结束。现已将 `outline.v2` 单次输出预算调整为 6,000，并增加预算回归测试。随后使用 `deepseek-v4-flash` 重新执行 5 场景大纲 smoke：请求 `m71-outline-token-budget-smoke-20260829` 在 41,564ms 内成功保存为 `outline_ready`，包含 5 项大纲；共 2 次上游调用、一次结构修复、2,223 输入 token 和 5,699 输出 token，全程未再出现长度截断。临时课程验收后删除，不生成场景。
+
+同日继续补齐大纲失败可追溯性：成功上游调用、首次校验失败和 repair 失败均有独立结构化事件，最终失败日志不再只有 `errorName`；API、课程 `lastError.details` 和前端错误卡会共同显示 requestId、上游调用次数、`json/schema/semantic` 阶段及最多 5 条脱敏问题。刷新失败课程后诊断仍保留，后续成功会按既有规则清空 `lastError`，历史事实以终端结构化日志为准。日志和数据库仍不记录 Prompt、模型返回原文、cause、Key 或连接信息。
+
+2026-08-30 按“一次成功优先”把 Prompt/DTO 修订为 `outline.v2.1`：删除模型回传的冗余 resolvedBrief 和逐字一致门，补齐 JSON 骨架、role/CourseBrief 枚举与 optional 规则；服务端丢弃无害额外字段、把 optional `null` 归一为空缺，并移除会误伤 JSON/Prompt 正常课程标题的关键词门。第一轮 6 主题、6,000 tokens、90 秒测试得到 5/6 最终成功、4/6 首次上游调用成功、0 repair；唯一失败及一次恢复都源于 `empty_content + finish_reason=length`，没有 Schema/语义失败。随后调整为 8,000 tokens 与 120 秒，并用相同 6 个冻结公开主题复测：6/6 均在第一次上游调用通过，0 repair、0 失败、每门均保存 5 项大纲；总计 5,462 输入 token、24,310 输出 token，单门耗时 19,843～39,173ms。最终版本标签 smoke `outline-v21-final-smoke-20260830` 记录 `promptVersion=outline.v2.1`，28,241ms 内一次成功、0 repair、849 输入 token、3,903 输出 token。全部临时课程验收后删除，未生成场景。本轮最终 `pnpm verify:full` 通过：17 个文件、80 项单元测试，10 项 MySQL 集成测试，production build 和 Chromium E2E 1/1。
 
 M8 计划裁剪 OpenMAIC 已验证的幻灯片纵向链：LLM 按 `slide-content` Prompt 直接返回带坐标的有限 PPTElement，服务端完成过滤、默认值、text 净化、id 分配和 Slide 装配，再由只读 SlideCanvas 渲染并保存到 MySQL。首版只支持 `text/shape/line/code`，不增加类 Markdown/纵向讲义视图，也不提前实现编辑器、导出、通用自动排版或复杂几何报告。M9 独立裁剪 OpenMAIC diagram Prompt、HTML 后处理和 iframe Renderer，形成一个自包含 diagram 闭环。以上阶段均不引入 LangGraph、多智能体、多模态、RAG、媒体或第二种 widget。

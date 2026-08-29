@@ -24,7 +24,7 @@ function requireValue(value: string | undefined, name: string): string {
 
 /** 只解析当前启用的服务端配置档，未启用 Provider 的空配置不会阻塞启动。 */
 export function resolveAIConfig(environment: Record<string, string | undefined> = process.env): AIConfig {
-  const parsedTimeout = TimeoutSchema.safeParse(environment.AI_OUTLINE_TIMEOUT_MS ?? 90_000);
+  const parsedTimeout = TimeoutSchema.safeParse(environment.AI_OUTLINE_TIMEOUT_MS ?? 120_000);
   if (!parsedTimeout.success) throw new AIAdapterError("AI_NOT_CONFIGURED", "AI_OUTLINE_TIMEOUT_MS 必须是 1000～300000 的整数", false);
   const timeoutMs = parsedTimeout.data;
   const parsedSceneTimeout = TimeoutSchema.safeParse(environment.AI_SCENE_TIMEOUT_MS ?? 120_000);

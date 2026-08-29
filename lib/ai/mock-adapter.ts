@@ -5,7 +5,6 @@ type MockOutline = {
   courseTitle: string;
   detectedBrief: Record<string, never>;
   warnings: [];
-  resolvedBrief: CourseBrief;
   outlines: Array<Omit<SceneOutline, "id">>;
 };
 type MockScene = {
@@ -86,7 +85,6 @@ export class MockAIAdapter implements AIAdapter {
       courseTitle: `${topic}：从概念到实践`,
       detectedBrief: {},
       warnings: [],
-      resolvedBrief,
       outlines: Array.from({ length: count }, (_, index) => {
         const type = index === 2 ? "quiz" as const : "slide" as const;
         const role: SceneOutline["role"] = type === "quiz"

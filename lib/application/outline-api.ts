@@ -30,6 +30,7 @@ export function mapOutlineError(error: unknown, requestId: string = randomUUID()
   let retryable = true;
   let upstreamCalls = 0;
   let issues: Array<{ path: string; message: string }> | undefined;
+  let validationKind: string | undefined;
   if (error instanceof z.ZodError || error instanceof SyntaxError) { status = 400; code = "INVALID_REQUEST"; message = error instanceof z.ZodError ? error.issues[0]?.message ?? "请求不合法" : "请求体必须是合法 JSON"; retryable = false; }
   else if (error instanceof OutlineApplicationError) { status = error.code === "COURSE_NOT_FOUND" ? 404 : 409; code = error.code; message = error.message; retryable = false; }
   else if (error instanceof SceneApplicationError) { status = error.code === "COURSE_NOT_FOUND" || error.code === "OUTLINE_NOT_FOUND" ? 404 : 409; code = error.code; message = error.message; retryable = false; }
@@ -38,9 +39,9 @@ export function mapOutlineError(error: unknown, requestId: string = randomUUID()
   else if (error instanceof StoredCourseInvalidError) { code = "STORED_COURSE_INVALID"; message = "数据库中的课程不符合当前数据契约"; retryable = false; }
   else if (error instanceof LegacyCourseUnsupportedError) { status = 410; code = "LEGACY_COURSE_UNSUPPORTED"; message = "该课程使用旧版数据结构，请新建课程后重新生成"; retryable = false; }
   else if (error instanceof FutureCourseSchemaVersionError) { status = 409; code = "FUTURE_COURSE_SCHEMA_VERSION"; message = "该课程由更高版本创建，当前服务无法读取"; retryable = false; }
-  else if (error instanceof OutlineGenerationError) { status = error.code === "AI_AUTH_FAILED" || error.code === "AI_NOT_CONFIGURED" ? 503 : 502; code = error.code; message = error.message; retryable = error.retryable; upstreamCalls = error.upstreamCalls; issues = error.issues; }
+  else if (error instanceof OutlineGenerationError) { status = error.code === "AI_AUTH_FAILED" || error.code === "AI_NOT_CONFIGURED" ? 503 : 502; code = error.code; message = error.message; retryable = error.retryable; upstreamCalls = error.upstreamCalls; issues = error.issues; validationKind = error.validationKind; }
   else if (error instanceof SceneGenerationError) { status = error.code === "AI_AUTH_FAILED" || error.code === "AI_NOT_CONFIGURED" ? 503 : 502; code = error.code; message = error.message; retryable = error.retryable; upstreamCalls = error.upstreamCalls; issues = error.issues; }
   else if (error instanceof AIAdapterError) { status = 503; code = error.code; message = error.message; retryable = error.retryable; }
   else if (error instanceof InvalidOutlineError) { status = 400; code = "INVALID_REQUEST"; message = "编辑后的大纲不符合课程约束"; retryable = false; issues = error.issues; }
-  return { status, body: { success: false as const, error: { code, message, retryable, requestId, upstreamCalls, issues } } };
+  return { status, body: { success: false as const, error: { code, message, retryable, requestId, upstreamCalls, validationKind, issues } } };
 }

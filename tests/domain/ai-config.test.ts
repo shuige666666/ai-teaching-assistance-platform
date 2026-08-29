@@ -4,7 +4,7 @@ import { resolveAIConfig } from "@/lib/ai/config";
 
 describe("ProviderConfigResolver", () => {
   it("默认选择不访问网络的 mock 配置", () => {
-    expect(resolveAIConfig({})).toMatchObject({ mode: "mock", provider: "mock", model: "mock-outline-v1" });
+    expect(resolveAIConfig({})).toMatchObject({ mode: "mock", provider: "mock", model: "mock-outline-v1", timeoutMs: 120_000, sceneTimeoutMs: 120_000 });
   });
 
   it.each([

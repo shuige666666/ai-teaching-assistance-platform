@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 状态说明：M1～M7.1 已进入正式调用链；M7.0 的 DeepSeek v0.3 基线保持冻结，M7.1 已实现 CourseBrief、Course schema v2 与 outline.v2。Slide/PPTElement、interactive 和再生成仍分别属于 M8～M10。
+> 状态说明：M1～M7.1 已进入正式调用链；M7.0 的 DeepSeek v0.3 基线保持冻结，M7.1 已实现 CourseBrief、Course schema v2 与 outline.v2.1。Slide/PPTElement、interactive 和再生成仍分别属于 M8～M10。
 
 ## 1. 架构结论
 
@@ -161,7 +161,7 @@ slide 可以包含 code block，其中 HTML、JSX、TSX 只作为源码字符串
 
 CourseBrief 是系统最终采用的教学上下文，不等同于一张必填表单。原始 topic 按用户提交内容保存；受众、学习者水平、学习目标、先修知识、时长、教学风格、互动偏好和附加要求则记录为 Course 事实，并为每个字段保存 `explicit_setting`、`prompt` 或 `default` 来源。首页保持 topic 必填，其余设置折叠且可选。
 
-创建草稿时不增加模型调用。服务端先用显式设置覆盖确定性默认值，保存 `provisional` Brief。原有 `outline.v2` 调用同时输出原文检测字段、解析警告、模型采用的 resolved Brief 和大纲；服务端再按 `explicit_setting > prompt > default` 复算。模型结果与复算结果不一致时按结构化大纲错误处理，不能让模型自行改变高级设置或字段来源。最终 Brief、Resolution 和 Outline 在同一 expectedRevision 短事务中提交，之后场景生成和再生成只读取这份 `resolved` CourseBrief。
+创建草稿时不增加模型调用。服务端先用显式设置覆盖确定性默认值，保存 `provisional` Brief。`outline.v2.1` 调用同时输出原文检测字段、解析警告和大纲，但不重复回传 resolved Brief；服务端按 `explicit_setting > prompt > default` 独占计算最终值，模型不能改变高级设置或字段来源。最终 Brief、Resolution 和 Outline 在同一 expectedRevision 短事务中提交，之后场景生成和再生成只读取这份 `resolved` CourseBrief。
 
 该设计让“用户在 Prompt 中已经说明要求”和“用户只写主题”共用一条链：前者只为未说明字段补默认值，后者全部使用可解释默认值；正常路径不会增加独立的 Prompt 解析调用。描述与高级设置冲突时设置优先并保存警告。用户在确认大纲前修改 Brief 会使旧大纲失效并要求重新生成；场景生成后直接修改整课 Brief 不属于 M7.1。
 
@@ -256,7 +256,7 @@ flowchart LR
     Repo --> DB[(MySQL)]
 
     DB --> Generation["GenerationService"]
-    Generation --> OutlineV2["outline.v2<br/>检测字段 + resolvedBrief + outlines"]
+    Generation --> OutlineV2["outline.v2.1<br/>检测字段 + outlines"]
     OutlineV2 --> Resolve["BriefResolver<br/>设置 > Prompt > 默认值"]
     Resolve --> OutlineGate["Brief/Outline Schema + 一致性门"]
     OutlineGate --> AtomicSave["同 revision 保存 Brief + Resolution + Outline"]
@@ -350,8 +350,8 @@ sequenceDiagram
     G->>C: POST /api/courses/{id}/outline/generate
     C->>A: generateOutline(id)
     A->>R: load + mark outlining
-    A->>M: outline.v2(topic, settings, defaults)
-    M-->>A: detectedBrief + warnings + resolvedBrief + outlines
+    A->>M: outline.v2.1(topic, settings, defaults)
+    M-->>A: detectedBrief + warnings + outlines
     A->>A: parse + Zod + 服务端复算 + 一致性门
     A->>R: transaction save resolved Brief + Resolution + outline_ready
     A-->>G: updated CourseDTO

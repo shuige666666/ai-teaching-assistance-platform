@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { POST as createCourse } from "@/app/api/courses/route";
 import { POST as generateOutline } from "@/app/api/courses/[courseId]/outline/generate/route";
 import { POST as submitQuiz } from "@/app/api/courses/[courseId]/quiz-attempts/route";
+import { mapOutlineError } from "@/lib/application/outline-api";
+import { OutlineGenerationError } from "@/lib/generation/outline-pipeline";
 
 async function expectStandardError(response: Response, code: string) {
   const payload = await response.json();
@@ -41,5 +43,28 @@ describe("API error contract", () => {
     }), { params: Promise.resolve({ courseId: "course-1" }) });
     expect(response.status).toBe(400);
     await expectStandardError(response, "INVALID_QUIZ_ATTEMPT");
+  });
+
+  it("大纲失败响应保留调用次数、校验阶段和脱敏问题", () => {
+    const mapped = mapOutlineError(new OutlineGenerationError(
+      "INVALID_MODEL_OUTPUT",
+      "模型输出修复后仍不符合课程大纲契约",
+      true,
+      2,
+      [{ path: "outlines.1.role", message: "无效枚举值" }],
+      { validationKind: "schema" },
+    ), "outline-error-request");
+
+    expect(mapped).toMatchObject({
+      status: 502,
+      body: {
+        error: {
+          requestId: "outline-error-request",
+          upstreamCalls: 2,
+          validationKind: "schema",
+          issues: [{ path: "outlines.1.role", message: "无效枚举值" }],
+        },
+      },
+    });
   });
 });

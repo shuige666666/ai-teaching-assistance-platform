@@ -780,10 +780,9 @@ export interface CourseV2 extends Omit<CourseV1, 'schemaVersion' | 'outlines' | 
 CreateCourseRequest(topic, briefOverrides?)
   → applyDefaults(briefOverrides)                       // provisional
   → INSERT Course(topic 原文, brief_json)
-  → outline.v2(topic, explicit settings, defaults)
-  → detectedPromptFields + warnings + resolvedBrief + outlines
+  → outline.v2.1(topic, explicit settings, defaults)
+  → detectedPromptFields + warnings + outlines
   → resolveBrief(explicit settings, detected fields, defaults)
-  → 校验模型 resolvedBrief 与服务端复算结果一致
   → 同事务保存 brief + resolution + outlines          // resolved
 ```
 

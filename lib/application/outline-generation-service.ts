@@ -12,11 +12,22 @@ export class OutlineApplicationError extends Error {
   }
 }
 
-function asDomainError(error: unknown): DomainError {
+function asDomainError(error: unknown, requestId: string): DomainError {
   if (error instanceof OutlineGenerationError) {
-    return { code: error.code, message: error.message, retryable: error.retryable, stage: "outline", details: error.issues ? { issues: error.issues } : undefined };
+    return {
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+      stage: "outline",
+      details: {
+        requestId,
+        upstreamCalls: error.upstreamCalls,
+        ...(error.validationKind ? { validationKind: error.validationKind } : {}),
+        ...(error.issues ? { issues: error.issues } : {}),
+      },
+    };
   }
-  return { code: "INTERNAL_ERROR", message: "大纲生成过程中发生内部错误", retryable: true, stage: "outline" };
+  return { code: "INTERNAL_ERROR", message: "大纲生成过程中发生内部错误", retryable: true, stage: "outline", details: { requestId } };
 }
 
 export class OutlineGenerationService {
@@ -90,7 +101,7 @@ export class OutlineGenerationService {
           ...latest,
           status: "failed",
           activeOperation: undefined,
-          lastError: asDomainError(error),
+          lastError: asDomainError(error, requestId),
           updatedAt: this.now(),
         }), latest.revision);
       }
@@ -114,7 +125,7 @@ export class OutlineGenerationService {
       throw new OutlineApplicationError("INVALID_COURSE_STATE", "不能通过编辑接口修改大纲 ID、类型、角色或顺序");
     }
     // 3. 校验用户修改后的标题、目标和关键点。
-    const validated = validateEditedOutline(courseTitle, outlines, current.requestedSceneCount, current.brief);
+    const validated = validateEditedOutline(courseTitle, outlines, current.requestedSceneCount);
     // 4. 保存修改后的大纲，并把课程版本号加一。
     return this.repository.save(CourseSchema.parse({ ...current, title: validated.courseTitle, outlines: validated.outlines, updatedAt: this.now() }), expectedRevision);
   }

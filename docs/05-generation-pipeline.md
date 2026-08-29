@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-29）：`outline.v2`、CourseBrief 服务端复算、同 revision 提交与有限 repair 已进入正式调用路径；逐场景仍使用 v1 slide/quiz DTO，并保留短事务、失败隔离与单场重试。M7.0 的 6 主题 DeepSeek Prompt v1 基线保持冻结。OpenMAIC 式 Slide/PPTElement、interactive 与 regenerate 仍分别属于 M8～M10 计划。
+> 实现状态（2026-08-30）：`outline.v2.1`、CourseBrief 服务端合并、同 revision 提交与有限 repair 已进入正式调用路径；逐场景仍使用 v1 slide/quiz DTO，并保留短事务、失败隔离与单场重试。M7.0 的 6 主题 DeepSeek Prompt v1 基线保持冻结。OpenMAIC 式 Slide/PPTElement、interactive 与 regenerate 仍分别属于 M8～M10 计划。
 
 ## 1. 设计结论
 
@@ -15,7 +15,7 @@ v0.3 使用两层结构化生成：
 第二层：一个 SceneOutline + 紧凑课程上下文 → GeneratedSceneDTO
 ```
 
-第二层按场景串行执行。模型生成可见内容和 narration，程序负责生成所有 id、引用、状态、时间戳和 Action。v0.4 保留两层与串行恢复边界：M7 把第一层扩展为 `原始 topic + provisional Brief → detectedBrief + resolvedBrief + CourseOutlineDTO`；M8 裁剪 OpenMAIC 的 slide Prompt，让模型直接返回带坐标的有限 PPTElement，再轻量规范化并组装 Slide；M9 增加 interactive 类型；M10 复用同一管线生成单场景候选。不改成 Agent 图或无限评审循环。
+第二层按场景串行执行。模型生成可见内容和 narration，程序负责生成所有 id、引用、状态、时间戳和 Action。v0.4 保留两层与串行恢复边界：M7 把第一层扩展为 `原始 topic + provisional Brief → detectedBrief + CourseOutlineDTO`，resolved Brief 由服务端确定计算；M8 裁剪 OpenMAIC 的 slide Prompt，让模型直接返回带坐标的有限 PPTElement，再轻量规范化并组装 Slide；M9 增加 interactive 类型；M10 复用同一管线生成单场景候选。不改成 Agent 图或无限评审循环。
 
 ## 2. 与 OpenMAIC 的对应关系
 
@@ -86,7 +86,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Draft["MySQL: 原始 topic + provisional Brief"] --> OutlineV2["outline.v2<br/>一次返回解析结果与大纲"]
+    Draft["MySQL: 原始 topic + provisional Brief"] --> OutlineV2["outline.v2.1<br/>一次返回解析结果与大纲"]
     OutlineV2 --> BriefResolver["服务端复算<br/>设置 > Prompt > 默认值"]
     BriefResolver --> OutlineGate["Brief/Outline Schema + 一致性门"]
     OutlineGate --> PersistOutline["同事务保存 resolved Brief + Resolution + Outline"]
@@ -413,20 +413,21 @@ prompts/
 - 有上限的 `coveredKeyPoints`、`remainingObjectives` 和前文摘要；
 - 当前场景的可见内容密度、允许类型和禁止字段。
 
-`outline.v2` 的输出契约增加以下包裹层：
+`outline.v2.1` 的输出契约使用以下包裹层：
 
 ```ts
 export interface OutlineGenerationV2DTO {
   detectedBrief: Partial<CourseBrief>;
   warnings: BriefResolutionWarning[];
-  resolvedBrief: CourseBrief;
   outlines: SceneOutlineV2[];
 }
 ```
 
-模型只能把原始描述中明确出现的内容放入 `detectedBrief`，不能按主题难度猜测受众或偏好；缺失字段必须从 Prompt 中给定的默认值补齐。Prompt 同时要求模型按 `explicit_setting > prompt > default` 得到 `resolvedBrief`，并完全依据该结果设计 outlines。服务端不信任这个合并结果，会用显式设置、detectedBrief 和默认值重新计算；两者不相等、检测字段越界或大纲数量/角色非法时，统一进入大纲失败/受限 repair，不能分别保存。
+模型只能把原始描述中明确出现的内容放入 `detectedBrief`，不能按主题难度猜测受众或偏好；Prompt 要求模型在内部按 `explicit_setting > prompt > default` 理解最终要求并据此设计 outlines，但不再回传一份冗余 resolved Brief。服务端使用显式设置、detectedBrief 和默认值独占计算最终 Brief；检测字段越界或大纲数量/角色非法时进入大纲失败/受限 repair。
 
-正常路径仍只有一次 `outline.v2` 上游调用，不先调用一个“Prompt 解析模型”再调用一个“大纲模型”。若结构或一致性失败，repair 与传输重试继续共享单请求最多四次上游调用预算。校验通过后，resolved Brief、字段来源、合并后的警告和 outlines 使用一个 expectedRevision 短事务落库；后续 `scene-*.v2` 只读取这个已保存版本。
+正常路径仍只有一次 `outline.v2.1` 上游调用，不先调用一个“Prompt 解析模型”再调用一个“大纲模型”。若结构或语义失败，repair 与传输重试继续共享单请求最多四次上游调用预算，但主要目标是通过完整 JSON 骨架、枚举说明和确定性归一实现首次成功。校验通过后，resolved Brief、字段来源、合并后的警告和 outlines 使用一个 expectedRevision 短事务落库；后续 `scene-*.v2` 只读取这个已保存版本。
+
+`outline.v2.1` 单次上游调用的 `maxOutputTokens` 为 8,000，大纲业务超时默认 120 秒。旧版 2,000 和过渡期 6,000 都曾在 DeepSeek 推理阶段耗尽并返回 `empty_content + finish_reason=length`；8,000 + 120 秒的 6 主题真实测试全部以一次上游调用完成。逐场景 v1 管线仍保持 3,500，不随本次大纲修正改变。
 
 原始 topic 在 User Prompt 中使用清晰的数据边界和 JSON 转义传入。描述中即使包含“忽略此前规则”等文本，也只是课程需求数据，不能改变 System Prompt、字段优先级、输出 Schema、安全门或调用预算。Prompt 边界降低误遵循风险，严格解析、服务端复算和领域校验才是最终约束。
 
@@ -495,6 +496,8 @@ MVP 不进行大量正则替换和猜测性字段补全。过度“修好”JSON
 每个 Route Handler 独立限制本请求，数据库中的 Course 状态、activeOperation 和 revision 保证同一个 pending outline 在一次自动运行中只提交一次。手动重试是用户明确触发的新请求，仍受单请求上限控制；Course.sceneProgress.attempts 持续累计。响应和持久化 GenerationMetadata 都记录 upstreamCalls，不能只用 HTTP 请求数估算模型成本。
 
 M6.5 日志事件 `ai.upstream.retrying` / `ai.upstream.rejected` 记录 `requestId`、stage、upstreamAttempt、willRetry、retryDelayMs、providerStatus、responseKind、contentType、responseBytes 和 finishReason。日志不记录 Prompt、主题、API Key、数据库 URL 或原始模型响应。
+
+`outline.v2.1` 进一步补充 `ai.upstream.succeeded`、`outline.validation.failed` 和 `outline.repair.failed`。成功调用记录 attempt、finishReason 与 token usage；校验日志用 `json/schema/semantic` 区分失败阶段，并只保留问题路径、固定校验消息和总数。最终 `outline.generate.failed` 同步输出 code、retryable、upstreamCalls、validationKind 与最多 5 条 issues。失败 API、MySQL `lastError.details` 和生成页使用同一组脱敏字段，因此刷新后仍可按 requestId 追溯；任何路径都不保存 Prompt、模型原文、cause、Key 或连接信息。
 
 建议超时：
 
