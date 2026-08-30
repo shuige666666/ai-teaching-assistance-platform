@@ -42,11 +42,11 @@ describe("MySQLCourseRepository integration", () => {
     expect(recovered?.outlines).toHaveLength(4);
   });
 
-  it("列表隐藏 v1 行，按 ID 访问时明确报告旧课程不支持", async () => {
+  it.each([1, 2])("列表隐藏 v%s 行，按 ID 访问时明确报告旧课程不支持", async (legacyVersion) => {
     const repository = new MySQLCourseRepository(pool);
     const created = await repository.create(createCourseDraft(`旧版课程 ${crypto.randomUUID()}`, 3));
     cleanupIds.push(created.id);
-    await pool.execute("UPDATE courses SET schema_version = 1, brief_json = NULL WHERE id = ?", [created.id]);
+    await pool.execute("UPDATE courses SET schema_version = ? WHERE id = ?", [legacyVersion, created.id]);
     await expect(repository.get(created.id)).rejects.toBeInstanceOf(LegacyCourseUnsupportedError);
     expect((await repository.list()).some((course) => course.id === created.id)).toBe(false);
   });
@@ -61,7 +61,7 @@ describe("MySQLCourseRepository integration", () => {
     const recovered = await new MySQLCourseRepository(pool).get(draft.id);
     expect(course).toMatchObject({ status: "ready", revision: 8 });
     expect(recovered?.scenes.map((scene) => scene.type)).toEqual(["slide", "slide", "quiz"]);
-    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v1", "scene-slide.v1", "scene-quiz.v1"]);
+    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2", "scene-slide.v2", "scene-quiz.v1"]);
   });
 
   it("删除课程会级联删除 quiz_attempts", async () => {

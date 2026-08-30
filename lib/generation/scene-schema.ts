@@ -1,30 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { SceneSchema, type GenerationMetadata, type Scene, type SceneOutline } from "@/lib/domain/schemas";
-
-const ParagraphModelSchema = z.object({ type: z.literal("paragraph"), text: z.string().trim().min(1).max(500) }).strict();
-const BulletListModelSchema = z.object({ type: z.literal("bullet_list"), items: z.array(z.string().trim().min(1).max(180)).min(2).max(6) }).strict();
-const CalloutModelSchema = z.object({
-  type: z.literal("callout"),
-  tone: z.enum(["info", "example", "warning"]),
-  title: z.string().trim().min(1).max(80).optional(),
-  text: z.string().trim().min(1).max(400),
-}).strict();
-const CodeModelSchema = z.object({
-  type: z.literal("code"),
-  language: z.string().regex(/^[a-zA-Z0-9_+#.-]{1,32}$/),
-  code: z.string().min(1).max(6_000),
-  caption: z.string().trim().min(1).max(120).optional(),
-}).strict();
-const SlideBlockModelSchema = z.discriminatedUnion("type", [ParagraphModelSchema, BulletListModelSchema, CalloutModelSchema, CodeModelSchema]);
-
-const SlideSceneModelSchema = z.object({
-  type: z.literal("slide"),
-  title: z.string().trim().min(1).max(80),
-  content: z.object({ subtitle: z.string().trim().min(1).max(120).optional(), blocks: z.array(SlideBlockModelSchema).min(1).max(5) }).strict(),
-  narration: z.string().trim().min(1).max(1_500),
-  summary: z.string().trim().min(1).max(300),
-}).strict();
+import {
+  assembleSlide,
+  InvalidGeneratedSlideError,
+  normalizeGeneratedSlideScene,
+  type NormalizedSlideSceneOutput,
+} from "@/lib/slides/normalize-slide";
 
 const QuizQuestionModelSchema = z.object({
   type: z.literal("single_choice"),
@@ -41,8 +23,7 @@ const QuizSceneModelSchema = z.object({
   summary: z.string().trim().min(1).max(300),
 }).strict();
 
-export const SceneModelOutputSchema = z.discriminatedUnion("type", [SlideSceneModelSchema, QuizSceneModelSchema]);
-export type SceneModelOutput = z.infer<typeof SceneModelOutputSchema>;
+export type SceneModelOutput = NormalizedSlideSceneOutput | z.infer<typeof QuizSceneModelSchema>;
 export type SceneIssue = { path: string; message: string };
 
 export class InvalidSceneError extends Error {
@@ -55,14 +36,14 @@ export class InvalidSceneError extends Error {
 function normalizedText(value: string): string { return value.trim().toLocaleLowerCase("zh-CN").replace(/\s+/g, " "); }
 function containsForbiddenMarkup(value: string): boolean { return /<\/?[a-z][^>]*>|https?:\/\/|www\./i.test(value); }
 
-/** 收集会直接显示为普通文本的字段；代码块源码由 React 转义展示，不按可执行 HTML 处理。 */
+/** 收集会直接显示为普通文本的字段；slide 富文本已在独立白名单边界中完成净化。 */
 function collectVisibleText(output: SceneModelOutput): Array<{ path: string; value: string }> {
   const fields = [
-    { path: "title", value: output.title },
     { path: "narration", value: output.narration },
     { path: "summary", value: output.summary },
   ];
   if (output.type === "quiz") {
+    fields.push({ path: "title", value: output.title });
     output.content.questions.forEach((question, questionIndex) => {
       fields.push({ path: `content.questions.${questionIndex}.prompt`, value: question.prompt });
       question.options.forEach((option, optionIndex) => fields.push({ path: `content.questions.${questionIndex}.options.${optionIndex}.label`, value: option.label }));
@@ -70,42 +51,37 @@ function collectVisibleText(output: SceneModelOutput): Array<{ path: string; val
     });
     return fields;
   }
-  if (output.content.subtitle) fields.push({ path: "content.subtitle", value: output.content.subtitle });
-  output.content.blocks.forEach((block, blockIndex) => {
-    if (block.type === "paragraph") fields.push({ path: `content.blocks.${blockIndex}.text`, value: block.text });
-    if (block.type === "bullet_list") block.items.forEach((item, itemIndex) => fields.push({ path: `content.blocks.${blockIndex}.items.${itemIndex}`, value: item }));
-    if (block.type === "callout") {
-      if (block.title) fields.push({ path: `content.blocks.${blockIndex}.title`, value: block.title });
-      fields.push({ path: `content.blocks.${blockIndex}.text`, value: block.text });
-    }
-    if (block.type === "code" && block.caption) fields.push({ path: `content.blocks.${blockIndex}.caption`, value: block.caption });
-  });
   return fields;
 }
 
-/** 校验场景 DTO 的类型一致性、可见内容、安全文本和测验索引等课程语义。 */
+/** 校验场景 DTO；slide 先走元素规范化，quiz 继续执行严格题目契约。 */
 export function validateSceneOutput(value: unknown, outline: SceneOutline): SceneModelOutput {
-  const parsed = SceneModelOutputSchema.safeParse(value);
+  if (outline.type === "slide") {
+    let output: NormalizedSlideSceneOutput;
+    try {
+      output = normalizeGeneratedSlideScene(value);
+    } catch (error) {
+      if (error instanceof InvalidGeneratedSlideError) throw new InvalidSceneError(error.issues, { cause: error });
+      throw error;
+    }
+    const unsafeField = collectVisibleText(output).find((field) => containsForbiddenMarkup(field.value));
+    if (unsafeField) throw new InvalidSceneError([{ path: unsafeField.path, message: "讲稿和摘要不能包含 HTML 标签或外部 URL" }]);
+    return output;
+  }
+
+  const parsed = QuizSceneModelSchema.safeParse(value);
   if (!parsed.success) {
     throw new InvalidSceneError(parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })));
   }
   const output = parsed.data;
   const issues: SceneIssue[] = [];
-  if (output.type !== outline.type) issues.push({ path: "type", message: `场景类型必须与大纲的 ${outline.type} 一致` });
   const unsafeField = collectVisibleText(output).find((field) => containsForbiddenMarkup(field.value));
   if (unsafeField) issues.push({ path: unsafeField.path, message: "非代码内容不能包含 HTML 标签或外部 URL" });
-
-  if (output.type === "slide") {
-    if (JSON.stringify(output.content).length > 8_000) issues.push({ path: "content", message: "幻灯片可见内容超过页面上限" });
-    const blockKeys = output.content.blocks.map((block) => normalizedText(JSON.stringify(block)));
-    if (new Set(blockKeys).size !== blockKeys.length) issues.push({ path: "content.blocks", message: "幻灯片不能包含完全重复的内容块" });
-  } else {
-    output.content.questions.forEach((question, questionIndex) => {
-      const optionKeys = question.options.map((option) => normalizedText(option.label));
-      if (new Set(optionKeys).size !== optionKeys.length) issues.push({ path: `content.questions.${questionIndex}.options`, message: "同一道题的选项不能重复" });
-      if (question.correctOptionIndex >= question.options.length) issues.push({ path: `content.questions.${questionIndex}.correctOptionIndex`, message: "正确答案索引超出选项范围" });
-    });
-  }
+  output.content.questions.forEach((question, questionIndex) => {
+    const optionKeys = question.options.map((option) => normalizedText(option.label));
+    if (new Set(optionKeys).size !== optionKeys.length) issues.push({ path: `content.questions.${questionIndex}.options`, message: "同一道题的选项不能重复" });
+    if (question.correctOptionIndex >= question.options.length) issues.push({ path: `content.questions.${questionIndex}.correctOptionIndex`, message: "正确答案索引超出选项范围" });
+  });
   if (issues.length > 0) throw new InvalidSceneError(issues);
   return output;
 }
@@ -124,10 +100,10 @@ export function assembleScene(input: {
     ? [{ id: randomUUID(), type: "speech" as const, text: output.narration }, { id: randomUUID(), type: "pause" as const, reason: "learner" as const }]
     : [{ id: randomUUID(), type: "speech" as const, text: output.narration }];
   if (output.type === "slide") {
-    // 2. 给 slide 的每个内容块生成 ID。
+    // 2. 元素已经过净化并获得服务端 ID，这里只装配固定逻辑画布。
     return SceneSchema.parse({
-      id: randomUUID(), courseId, outlineId: outline.id, type: "slide", title: output.title, summary: output.summary, order: outline.order,
-      content: { type: "slide", subtitle: output.content.subtitle, blocks: output.content.blocks.map((block) => ({ ...block, id: randomUUID() })) },
+      id: randomUUID(), courseId, outlineId: outline.id, type: "slide", title: outline.title, summary: output.summary, order: outline.order,
+      content: { type: "slide", canvas: assembleSlide(output) },
       actions, generation: metadata, createdAt: now, updatedAt: now,
     });
   }

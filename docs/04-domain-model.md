@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 目标：为页面、API、生成管线、播放器和 MySQL Repository 提供唯一数据语言。  
-> 状态说明：Course schemaVersion 2、CourseBrief 与 SceneOutlineV2 已在 M7.1 实现；第 1～15 节保留 v0.3 基础契约说明，第 16 节同时记录当前 v2 增量与 M8～M10 后续契约。冲突时以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
+> 状态说明：Course schemaVersion 3、CourseBrief、SceneOutlineV2 与只读 Slide/PPTElement 已进入正式调用链；第 1～15 节保留 v0.3 基础契约说明，第 16 节记录 v0.4 增量。冲突时以 `lib/domain` 中的 TypeScript + Zod 为可执行来源。
 
 ## 1. 建模原则
 
@@ -63,7 +63,7 @@ Course 是聚合根。外部代码不能单独持久化 Scene 或 SceneOutline�
 ## 3. 基础类型
 
 ```ts
-export const CURRENT_SCHEMA_VERSION = 2 as const;
+export const CURRENT_SCHEMA_VERSION = 3 as const;
 
 export type CourseStatus =
   | 'draft'
@@ -151,7 +151,7 @@ export interface SceneProgress {
 
 ### Course 不变量
 
-- `schemaVersion === 2`；
+- `schemaVersion === 3`；
 - 新课程必须包含非空 CourseBrief；M7.1 中 `interactionMode === 'off'`；
 - `id` 非空且创建后不可修改；
 - `topic.trim().length` 为 2～500；
@@ -238,9 +238,9 @@ interface BadScene {
 }
 ```
 
-## 7. Slide 内容
+## 7. v0.3 Slide 内容（历史契约）
 
-MVP 幻灯片不是自由坐标画布，而是固定布局的内容块。这样更容易校验、保持桌面端渲染稳定并提高生成成功率；移动端重排不属于当前领域契约。M8 计划新增 `content.canvas: Slide` 判别分支，不能把下面已经持久化的 v1 Block 结构原地改义。
+v0.3/v2 幻灯片曾采用以下固定内容块；当前 v3 已改为第 16.4 节的 `content.canvas: Slide`，不再读取该联合。这里保留旧定义只用于解释历史基线和版本拒绝原因，不能用于新代码。
 
 ```ts
 export interface SlideContent {
@@ -694,26 +694,26 @@ create/save 在写入前调用 CourseSchema.parse；get 在读取并组装后再
 
 - 增加可选字段且旧读者允许时，可保持 schemaVersion；
 - 删除字段、改变 Course 顶层语义或存储布局时必须升级 Course schemaVersion；新增 slide/interactive 判别分支仍必须保持旧分支可读，互动消息协议可独立使用 `runtimeContractVersion`；
-- 每次版本升级提供 `migrateVnToVnPlus1` 纯函数和 fixture 测试；
+- 每次版本升级必须明确选择“迁移”或“保留旧行并拒绝读取”；当前 v1/v2 采用后者，不伪造新内容；
 - 新 Scene 类型只有在 Schema、Renderer、生成器和测试同时存在时才能加入；
 - 新 Action 类型只有在 Schema、Executor、取消语义和测试同时存在时才能加入；
 - 不允许用 `any` 绕开外部输入校验，也不允许用类型断言代替运行时验证。
 
-## 16. v0.4/M7～M10 计划契约：Course schemaVersion 2 + 内容子版本
+## 16. v0.4/M7～M10 契约：Course schemaVersion 3
 
 ### 16.1 版本兼容策略
 
-M7 增加持久化 CourseBrief 和 SceneOutlineV2，因此 Course 聚合升级到 `schemaVersion: 2`。M8 的新 slide 通过 `content.canvas` 与 M7.1 v2 的 `content.blocks` 区分，M9 的互动消息使用 `runtimeContractVersion: 1`；这些内容分支不能替代 Course schemaVersion。Repository 不能把旧行直接交给 v2 Schema，也不自动删除或改写旧行；读取顺序为：
+M7.1 曾以 `schemaVersion: 2` 引入 CourseBrief 和 SceneOutlineV2；M8 删除 block slide 并把唯一 slide 表达改为 `content.canvas`，因此当前 Course 聚合升级到 `schemaVersion: 3`。本阶段明确不兼容旧课程：Repository 不自动删除或改写旧行，也不把 v1/v2 内容交给当前 Schema。读取顺序为：
 
 ```text
 MySQL row
-  → schema_version = 2：CurrentCourseSchema(v2)
-  → schema_version = 1：LEGACY_COURSE_UNSUPPORTED
-  → schema_version > 2：FUTURE_COURSE_SCHEMA_VERSION
+  → schema_version = 3：CurrentCourseSchema(v3)
+  → schema_version = 1/2：LEGACY_COURSE_UNSUPPORTED
+  → schema_version > 3：FUTURE_COURSE_SCHEMA_VERSION
   → 应用服务
 ```
 
-MySQL 增加可空的 `brief_json` 列，让既有 v1 行可以原样留在表中；该列存储 `{ brief, resolution }`，而不是只存表单值。新建 v2 Course 必须写入非空 provisional brief；`outline.v2` 成功后在保存大纲的同一事务中写入 resolved brief 和来源信息。M7.1 不提供 v1 → v2 内容迁移：`list()` 只查询 v2，按旧 ID 读取明确拒绝；旧行既不会丢失，也不会被伪装成符合新教学要求的课程。
+`brief_json` 继续存储 `{ brief, resolution }`。新建 v3 Course 必须写入非空 provisional brief；`outline.v2.1` 成功后在保存大纲的同一事务中写入 resolved brief 和来源信息。`list()` 只查询 v3，按旧 ID 读取明确拒绝；旧行既不会丢失，也不会被伪装成符合当前画布契约的课程。
 
 ### 16.2 CourseBrief
 
@@ -756,7 +756,13 @@ export interface CourseV2 extends Omit<CourseV1, 'schemaVersion' | 'outlines' | 
   brief: CourseBrief;
   briefResolution: CourseBriefResolution;
   outlines: SceneOutlineV2[];
-  scenes: SceneV2[];
+  scenes: Scene[]; // M7.1 的历史 block slide 联合
+}
+
+// M8 当前聚合只改变版本截止线和 slide 内容分支；Brief/Outline 字段沿用 v2。
+export interface CourseV3 extends Omit<CourseV2, 'schemaVersion' | 'scenes'> {
+  schemaVersion: 3;
+  scenes: SceneV3[];
 }
 ```
 
@@ -834,10 +840,14 @@ export interface SceneOutlineV2 {
 M8 采用 OpenMAIC 的直接元素生成方式。模型 DTO 与持久化实体仍然分开，但二者之间不增加另一份语义页面计划：模型直接给出背景和带坐标的元素，服务端做轻量规范化并装配 Slide。
 
 ```ts
-export interface GeneratedSlideData {
-  elements: GeneratedPPTElement[];
-  background?: SlideBackground;
-  remark?: string;
+export interface GeneratedSlideSceneDTO {
+  type: 'slide';
+  content: {
+    elements: GeneratedPPTElement[];
+    background?: SlideBackground;
+  };
+  narration: string;
+  summary: string;
 }
 
 export type GeneratedPPTElement =
@@ -915,16 +925,14 @@ export interface Slide {
   background?: SlideBackground;
 }
 
-export interface OpenMaicSlideContent {
+export interface CanvasSlideContent {
   type: 'slide';
   canvas: Slide;
 }
 
-export type SlideContentV2 = SlideContent | OpenMaicSlideContent;
-
-export interface SlideSceneV2 extends SceneBase {
+export interface SlideSceneV3 extends SceneBase {
   type: 'slide';
-  content: SlideContentV2;
+  content: CanvasSlideContent;
 }
 ```
 
@@ -932,9 +940,9 @@ export interface SlideSceneV2 extends SceneBase {
 
 模型可以提交坐标、尺寸和允许的样式，这是复用 OpenMAIC Prompt 版式能力的关键；模型不能提交或控制元素/代码行 id、Course/Scene id、outlineId、order、status、revision 和 Action。规范化步骤忽略模型 id，补齐有限默认值，过滤未支持元素，拒绝非有限坐标、非正尺寸和关键字段缺失，并在服务端为元素与代码行生成 id。个别坏元素可以丢弃；全部元素无效时整个场景生成失败。
 
-`PPTTextElement.content` 在 OpenMAIC 中是富文本 HTML。本项目只允许 `p/span/strong/em/br` 和实际需要的有限内联样式，装配前统一净化，不能把上游 Renderer 的信任边界原样复制。code 始终作为源码数据转义渲染，不进入富文本路径。
+`PPTTextElement.content` 在 OpenMAIC 中是富文本 HTML。本项目只允许 `p/span/strong/b/em/i/u/br` 和 `font-size/color/text-align/line-height/font-weight/text-decoration` 六类受限样式，装配前统一净化，不能把上游 Renderer 的信任边界原样复制。code 始终作为源码数据转义渲染，不进入富文本路径。
 
-`content.canvas` 是新生成 slide 的唯一新产品表达，表示一张固定 16:9 的 PPT 式页面；它不是 HTML `<canvas>` 标签，也不是无限白板。旧 `SlideContent.blocks` 继续由原 Renderer 读取，不在迁移时编造坐标。M10 明确再生成旧场景时，才用同一 M8 生成链替换该页。
+`content.canvas` 是当前 slide 的唯一产品表达，表示一张固定 16:9 的 PPT 式页面；它不是 HTML `<canvas>` 标签，也不是无限白板。旧 `SlideContent.blocks` 不再进入当前联合或 Renderer，v1/v2 课程由版本门整体拒绝。
 
 OpenMAIC 固定提交的 [`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts) 是模型响应参考，[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts) 是默认值与单元素规范化参考，[`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts) 是 `1000/0.5625` 和 `content.canvas` 装配参考。直接移植时必须保留 MIT 许可和来源记录。
 
@@ -960,8 +968,9 @@ export interface InteractiveScene extends SceneBase {
   content: InteractiveContent;
 }
 
-export type QuizSceneV2 = QuizScene;
-export type SceneV2 = SlideSceneV2 | QuizSceneV2 | InteractiveScene;
+export type QuizSceneV3 = QuizScene;
+export type SceneV3 = SlideSceneV3 | QuizSceneV3;
+export type FutureSceneWithInteractive = SceneV3 | InteractiveScene;
 ```
 
 约束：
@@ -1001,6 +1010,4 @@ OpenMAIC 固定提交的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC
 
 ### 16.8 分阶段启用门
 
-Course `schemaVersion: 2` 已在 M7.1 随 MySQL `brief_json`、CourseBrief 归一/API/来源展示、SceneOutlineV2、fixture 和仓储契约测试进入正式调用链。v1 只保留明确拒绝分支，不参与运行时迁移。M7 不等待画布或互动代码，也不能提前产生对应内容。
-
-M8 的 `content.canvas` 分支只有在 GeneratedSlideData/Slide/PPTElement Schema、轻量规范化、文本净化、只读 Renderer、旧 block 恢复、MySQL 恢复、真实模型 smoke 和 production E2E 同时可用后才能进入生产 Scene 联合。M9 的 InteractiveScene 也只有在生成器、必要安全边界、iframe Renderer、消息协议、fallback、fixture 和 E2E 同时完成后才能产生。只提前修改联合类型或让模型输出下游尚不能处理的分支，都会破坏阶段可运行性，因此禁止分离发布。
+Course `schemaVersion: 3` 已随 Slide/PPTElement Schema、轻量规范化、文本净化、只读 Renderer、MySQL 恢复、真实模型 smoke 和 production E2E 同时进入正式调用链。v1/v2 只保留明确拒绝分支，不参与运行时迁移。M9 的 InteractiveScene 也只有在生成器、必要安全边界、iframe Renderer、消息协议、fallback、fixture 和 E2E 同时完成后才能产生；只提前修改联合类型或让模型输出下游尚不能处理的分支，都会破坏阶段可运行性，因此禁止分离发布。

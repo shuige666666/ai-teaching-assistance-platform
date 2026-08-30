@@ -7,13 +7,29 @@ import { createFixtureCourse, materializeFixtureCourse } from "@/lib/domain/fixt
 import { CourseSchema } from "@/lib/domain/schemas";
 
 describe("SlideRenderer", () => {
-  it("把脚本样式内容转义成纯文本", () => {
-    const html = renderToStaticMarkup(<SlideRenderer content={{
-      type: "slide",
-      blocks: [{ id: "code-1", type: "code", language: "html", code: "<script>alert('xss')</script>" }],
-    }} />);
+  it("把代码元素中的脚本源码转义成纯文本", () => {
+    const course = materializeFixtureCourse(createFixtureCourse("代码安全", 4));
+    const slide = course.scenes.find((scene) => scene.type === "slide" && scene.content.canvas.elements.some((element) => element.type === "code"));
+    if (!slide || slide.type !== "slide") throw new Error("code slide expected");
+    const code = slide.content.canvas.elements.find((element) => element.type === "code");
+    if (!code || code.type !== "code") throw new Error("code element expected");
+    code.lines[0].content = "<script>alert('xss')</script>";
+    const html = renderToStaticMarkup(<SlideRenderer content={slide.content} />);
     expect(html).toContain("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;");
     expect(html).not.toContain("<script>");
+  });
+
+  it("只读画布渲染 text、shape、line、code 并把标题保留在 PPT 内", () => {
+    const course = materializeFixtureCourse(createFixtureCourse("PPT 画布", 4));
+    const slide = course.scenes.find((scene) => scene.type === "slide" && scene.content.canvas.elements.some((element) => element.type === "code"));
+    if (!slide || slide.type !== "slide") throw new Error("slide expected");
+    const html = renderToStaticMarkup(<SlideRenderer content={slide.content} />);
+    expect(html).toContain("data-testid=\"slide-canvas\"");
+    expect(html).toContain("data-text-type=\"title\"");
+    expect(html).toContain("data-element-type=\"text\"");
+    expect(html).toContain("data-element-type=\"shape\"");
+    expect(html).toContain("data-element-type=\"line\"");
+    expect(html).toContain("data-element-type=\"code\"");
   });
 
   it("根据 Scene 判别字段选择 slide 和 quiz 渲染器", () => {

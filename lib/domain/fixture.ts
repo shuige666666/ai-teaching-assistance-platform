@@ -83,16 +83,41 @@ function createSlideScene(course: Course, outline: SceneOutline, now: number): S
     id: randomUUID(), courseId: course.id, outlineId: outline.id, type: "slide", title: outline.title,
     summary: `本场景围绕${outline.title}组织“${course.topic}”的固定教学内容。`, order: outline.order,
     content: {
-      type: "slide", subtitle: `第 ${String(outline.order).padStart(2, "0")} 场 · ${course.topic}`,
-      blocks: isCodeScene ? [
-        { id: randomUUID(), type: "paragraph", text: "固定渲染器只消费通过 Schema 的结构化内容，因此课程展示不会依赖模型生成的 React 或 HTML。" },
-        { id: randomUUID(), type: "code", language: "typescript", caption: "模型数据经过契约校验后再进入渲染层", code: `const result = CourseSchema.safeParse(modelOutput);\n\nif (!result.success) {\n  return { code: "MODEL_OUTPUT_INVALID" };\n}` },
-        { id: randomUUID(), type: "callout", tone: "warning", title: "安全边界", text: "代码块只作为文本显示，即使内容含有 <script>alert('xss')</script> 也不会执行。" },
-      ] : [
-        { id: randomUUID(), type: "paragraph", text: `学习“${course.topic}”时，先建立问题、机制与应用之间的结构，比孤立记忆术语更可靠。` },
-        { id: randomUUID(), type: "bullet_list", items: outline.keyPoints },
-        { id: randomUUID(), type: "callout", tone: outline.order === 1 ? "info" : "example", title: outline.order === 1 ? "学习提示" : "实践连接", text: outline.order === 1 ? "先回答它解决什么问题，再追踪它如何工作。" : "尝试用自己的项目或日常系统举出一个对应案例。" },
-      ],
+      type: "slide",
+      canvas: {
+        id: randomUUID(),
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        theme: {
+          backgroundColor: "#ffffff",
+          themeColors: ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"],
+          fontColor: "#333333",
+          fontName: "Microsoft YaHei",
+          outline: { color: "#d14424", width: 2, style: "solid" },
+        },
+        background: { type: "solid", color: "#f7f3ea" },
+        elements: [
+          { id: randomUUID(), type: "shape", left: 56, top: 48, width: 10, height: 72, rotate: 0, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1], fill: "#d14424", fixedRatio: false },
+          { id: randomUUID(), type: "text", left: 82, top: 48, width: 850, height: 72, rotate: 0, content: `<p style="font-size:34px;font-weight:bold;color:#252722">${outline.title}</p>`, defaultFontName: "Microsoft YaHei", defaultColor: "#333333", textType: "title", vAlign: "middle" },
+          { id: randomUUID(), type: "text", left: 82, top: 122, width: 820, height: 48, rotate: 0, content: `<p style="font-size:17px;color:#68716b">第 ${String(outline.order).padStart(2, "0")} 场 · ${course.topic}</p>`, defaultFontName: "Microsoft YaHei", defaultColor: "#68716b", textType: "subtitle" },
+          { id: randomUUID(), type: "shape", left: 64, top: 192, width: 388, height: 222, rotate: 0, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1], fill: "#ffffff", fixedRatio: false, outline: { color: "#d6d2c8", width: 1, style: "solid" } },
+          { id: randomUUID(), type: "text", left: 88, top: 214, width: 340, height: 170, rotate: 0, content: `<p style="font-size:18px;font-weight:bold;color:#d14424">核心关系</p><p style="font-size:20px;color:#333333">${outline.keyPoints.slice(0, 2).join(" · ")}</p>`, defaultFontName: "Microsoft YaHei", defaultColor: "#333333", textType: "content", lineHeight: 1.5 },
+          { id: randomUUID(), type: "line", left: 452, top: 304, width: 3, start: [0, 0], end: [64, 0], style: "solid", color: "#4472c4", points: ["", "arrow"] },
+          ...(isCodeScene ? [{
+            id: randomUUID(), type: "code" as const, left: 516, top: 192, width: 420, height: 222, rotate: 0,
+            language: "typescript", fileName: "schema-boundary.ts", showLineNumbers: true, fontSize: 14,
+            lines: [
+              { id: randomUUID(), content: "const result = CourseSchema.safeParse(modelOutput);" },
+              { id: randomUUID(), content: "if (!result.success) return { code: \"INVALID\" };" },
+              { id: randomUUID(), content: "return render(result.data);" },
+            ],
+          }] : [
+            { id: randomUUID(), type: "shape" as const, left: 516, top: 192, width: 420, height: 222, rotate: 0, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1] as [number, number], fill: "#e9efe7", fixedRatio: false, outline: { color: "#ccd8c8", width: 1, style: "solid" as const } },
+            { id: randomUUID(), type: "text" as const, left: 540, top: 214, width: 372, height: 170, rotate: 0, content: `<p style="font-size:18px;font-weight:bold;color:#4472c4">实践边界</p><p style="font-size:20px;color:#333333">${outline.keyPoints.at(-1)}</p>`, defaultFontName: "Microsoft YaHei", defaultColor: "#333333", textType: "content" as const, lineHeight: 1.5 },
+          ]),
+          { id: randomUUID(), type: "text", left: 82, top: 452, width: 850, height: 54, rotate: 0, content: "<p style=\"font-size:18px;color:#333333\"><strong>学习提示：</strong>先解释问题，再追踪机制，最后确认使用边界。</p>", defaultFontName: "Microsoft YaHei", defaultColor: "#333333", textType: "notes", vAlign: "middle" },
+        ],
+      },
     },
     actions: [
       { id: randomUUID(), type: "speech", text: `现在进入${outline.title}。这一场将帮助你理解：${outline.teachingObjective}` },

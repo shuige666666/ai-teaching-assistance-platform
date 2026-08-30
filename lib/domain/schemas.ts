@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { CanvasSlideContentSchema } from "./slide-schemas";
 
-export const CURRENT_SCHEMA_VERSION = 2 as const;
+export const CURRENT_SCHEMA_VERSION = 3 as const;
 
 export const CourseBriefSchema = z.object({
   audience: z.string().trim().min(1).max(120),
@@ -84,42 +85,7 @@ export const SceneOutlineSchema = z.object({
   estimatedMinutes: z.number().int().min(1).max(20).optional(),
 }).strict();
 
-const ParagraphBlockSchema = z.object({
-  id: z.string().min(1),
-  type: z.literal("paragraph"),
-  text: z.string().trim().min(1).max(500),
-});
-const BulletListBlockSchema = z.object({
-  id: z.string().min(1),
-  type: z.literal("bullet_list"),
-  items: z.array(z.string().trim().min(1).max(180)).min(2).max(6),
-});
-const CalloutBlockSchema = z.object({
-  id: z.string().min(1),
-  type: z.literal("callout"),
-  tone: z.enum(["info", "example", "warning"]),
-  title: z.string().trim().min(1).max(80).optional(),
-  text: z.string().trim().min(1).max(400),
-});
-const CodeBlockSchema = z.object({
-  id: z.string().min(1),
-  type: z.literal("code"),
-  language: z.string().regex(/^[a-zA-Z0-9_+#.-]{1,32}$/),
-  code: z.string().min(1).max(6000),
-  caption: z.string().trim().min(1).max(120).optional(),
-});
-
-export const SlideBlockSchema = z.discriminatedUnion("type", [
-  ParagraphBlockSchema,
-  BulletListBlockSchema,
-  CalloutBlockSchema,
-  CodeBlockSchema,
-]);
-export const SlideContentSchema = z.object({
-  type: z.literal("slide"),
-  subtitle: z.string().trim().min(1).max(120).optional(),
-  blocks: z.array(SlideBlockSchema).min(1).max(5),
-});
+export const SlideContentSchema = CanvasSlideContentSchema;
 
 const QuizOptionSchema = z.object({ id: z.string().min(1), label: z.string().trim().min(1).max(180) });
 const SingleChoiceQuestionSchema = z
@@ -296,9 +262,15 @@ export const CourseSchema = z
         context.addIssue({ code: "custom", message: "slide 不允许包含 learner pause" });
       }
       if (scene.type === "slide") {
-        const blockIds = scene.content.blocks.map((block) => block.id);
-        if (new Set(blockIds).size !== blockIds.length)
-          context.addIssue({ code: "custom", message: "幻灯片 Block ID 必须唯一" });
+        const elementIds = scene.content.canvas.elements.map((element) => element.id);
+        if (new Set(elementIds).size !== elementIds.length)
+          context.addIssue({ code: "custom", message: "幻灯片元素 ID 必须唯一" });
+        for (const element of scene.content.canvas.elements) {
+          if (element.type !== "code") continue;
+          const lineIds = element.lines.map((line) => line.id);
+          if (new Set(lineIds).size !== lineIds.length)
+            context.addIssue({ code: "custom", message: "代码元素内的行 ID 必须唯一" });
+        }
       } else {
         const questionIds = scene.content.questions.map((question) => question.id);
         if (new Set(questionIds).size !== questionIds.length)
@@ -331,7 +303,6 @@ export type BriefValueSource = z.infer<typeof BriefValueSourceSchema>;
 export type BriefResolutionWarning = z.infer<typeof BriefResolutionWarningSchema>;
 export type CourseBriefResolution = z.infer<typeof CourseBriefResolutionSchema>;
 export type SceneOutline = z.infer<typeof SceneOutlineSchema>;
-export type SlideBlock = z.infer<typeof SlideBlockSchema>;
 export type SlideContent = z.infer<typeof SlideContentSchema>;
 export type QuizContent = z.infer<typeof QuizContentSchema>;
 export type Action = z.infer<typeof ActionSchema>;

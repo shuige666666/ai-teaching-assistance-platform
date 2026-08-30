@@ -1,7 +1,7 @@
 # 01. 项目范围与版本边界
 
 > 文档版本：0.4
-> 状态：v0.3/M1～M6.5、v0.4/M7.0 与 M7.1 已完成；人工评分延后到 M10 配对验收；M8、M9、M10 尚未实现，M11 编辑器和 M12 导出可选
+> 状态：v0.3/M1～M6.5、v0.4/M7.0、M7.1 与 M8 已完成；人工评分延后到 M10 配对验收；M9、M10 尚未实现，M11 编辑器和 M12 导出可选
 > 适用阶段：毕业设计复刻项目的工程质量增强阶段
 
 ## 1. 核心结论
@@ -143,7 +143,7 @@ M8～M10 只承诺最新版 Chrome/Edge 下 `1280×720` 及更大桌面视口。
 - 原样保存用户的主题/自然语言课程描述，并将其中明确写出的要求与可选高级设置、服务端默认值归一为 CourseBrief；在 MySQL 持久化受众、学习者水平、学习目标、先修知识、时长、教学风格、互动偏好、附加要求、每字段来源和解析警告；只有主题仍为必填项；
 - 升级大纲和场景 Prompt，使目标、场景角色、案例/练习、常见误区和测验之间具有可追踪关系；
 - 在 M8 裁剪 OpenMAIC 的 `slide-content Prompt → GeneratedSlideData/PPTElement → normalize → Slide → SlideCanvas` 纵向链：模型直接返回 `text/shape/line/code` 的坐标和样式，服务端只做过滤、默认值、文本净化、id 分配和装配；
-- 明确区分可见短内容与 narration，以 OpenMAIC 的画布、对齐、留白、字号和输出前自检规则约束页面，并用 2～3 个真实主题的 `1280×720` 截图人工调整 Prompt；
+- 明确区分可见短内容与 narration，以 OpenMAIC 的画布、对齐、留白、字号和输出前自检规则约束页面，并用 3 个真实主题的 `1280×720` MHTML 人工调整 Prompt；
 - 增加一种 `interactive/diagram` 场景，生成自包含 HTML/CSS/JavaScript，并在无同源权限、无外部网络的 sandbox iframe 中运行；
 - 支持 ready 场景按用户简短意见单独再生成，失败时保留原场景；
 - 建立固定质量集、人工量表、成本/延迟记录和 v0.3/v0.4 成对比较。
@@ -198,7 +198,7 @@ v0.4 的“完成”以 M10 退出为准，同时要求产品链路、画布质�
 | AC-Q01 | CourseBrief 按“显式设置 > Prompt > 默认值”解析，字段来源、警告和大纲可从 MySQL 同 revision 恢复 | Schema + API + MySQL 集成 |
 | AC-Q02 | v1 课程无需清库即可读取并迁移到 v2 | 迁移 fixture + MySQL 集成 |
 | AC-Q03 | outline.v2 在同一次正常调用中解析描述并生成大纲；场景 Prompt 实际使用已保存的受众、目标、时长、风格和课程记忆 | Prompt golden + 调用计数 + 生成测试 |
-| AC-Q04 | 新 `content.canvas` 只包含允许的 `text/shape/line/code`，经轻量规范化和 text 净化后可从 MySQL 恢复，并在 `1280×720` 及更大桌面视口由只读 SlideCanvas 渲染；未知类型不会白屏 | Schema + normalize + 组件测试 + 2～3 个真实主题截图 + 桌面 E2E |
+| AC-Q04 | 新 `content.canvas` 只包含允许的 `text/shape/line/code`，经轻量规范化和 text 净化后可从 MySQL 恢复，并在 `1280×720` 及更大桌面视口由只读 SlideCanvas 渲染；坏元素不会造成白屏 | Schema + normalize + 组件测试 + 3 个真实主题 MHTML + 桌面 E2E |
 | AC-Q05 | `interactionMode=required` 生成且只生成一个 diagram 场景 | Schema + API 集成 |
 | AC-Q06 | 互动 HTML 经过大小、自包含、外部依赖和最小协议检查后才能持久化 | validator 测试 |
 | AC-Q07 | iframe 无 `allow-same-origin`、无外部网络，并正确处理 ready/reset/completed/error | 安全测试 + Playwright |

@@ -45,7 +45,7 @@ pnpm verify                            # lint + unit/API contract + build
 pnpm verify:full                       # 再加 MySQL integration + production E2E
 ```
 
-`verify:full` 要求 MySQL 已启动且 `.env.local` 有效。E2E 使用唯一主题创建测试课程，覆盖创建、大纲、三个场景、播放/暂停/继续、quiz、刷新恢复和配置健康检查，并在 `finally` 中删除课程。Playwright 启动的 production server 显式覆盖为 `AI_MODE=mock` 且不复用既有端口服务，因此即使 `.env.local` 当前配置为 remote，也不会由自动验收触发付费模型调用。失败 trace 和截图位于 `output/playwright/`，该目录不会进入 Git，也不会参与 ESLint。
+`verify:full` 要求 MySQL 已启动且 `.env.local` 有效。E2E 使用唯一主题创建测试课程，覆盖创建、大纲、三个场景、PPT 画布四类元素与 16:9、播放/暂停/继续、quiz、刷新恢复和配置健康检查，并在 `finally` 中删除课程。Playwright 启动的 production server 显式覆盖为 `AI_MODE=mock` 且不复用既有端口服务，因此即使 `.env.local` 当前配置为 remote，也不会由自动验收触发付费模型调用。`output/playwright/` 的失败 trace/截图只用于临时排障，不是视觉验收档案；正式视觉证据统一使用 `eval/runs/` 下的 MHTML。
 
 GitHub Actions 使用临时 MySQL 和 `AI_MODE=mock` 执行相同质量门，不保存真实 Key，也不调用付费 Provider。
 
@@ -139,15 +139,21 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 
 截至 2026-08-28，M7.0 六题输入已冻结，mock smoke 和 6 主题 DeepSeek Prompt v1 自动基线均已完成并保留失败样本。28 个已保存场景已经从既有 MySQL 课程归档为 `1280×720` MHTML，没有重新调用模型。M8～M10 只承诺桌面视口；人工评分延后到 M10，在同题 v0.4 课程生成后进行配对验收。
 
-### 8.1 自动化质量门增量
+### 8.1 M8 DeepSeek 与 MHTML 验收记录
+
+2026-08-30 使用 `deepseek-v4-flash` 对 HTTP 缓存、TCP 拥塞控制和二分查找三个主题生成 v3 课程。三个首场 slide 均 `upstreamCalls=1`、`repaired=false`，分别保存 9、12、15 个元素，场景耗时 8,001～10,822ms；额外生成的二分查找第二场也一次通过。校准确认 DeepSeek V4 默认 high thinking 会消耗结构化输出预算，因此仅首轮 `stage=scene` 请求关闭 thinking，outline/repair 不变。
+
+视觉事实位于 `eval/runs/m8-slide-v0.4/2026-08-30T09-23-19-191Z/`。`report.json` 保存课程 ID、schemaVersion、场景标题、元素数量/类型、生成元数据和 MHTML 哈希；`scenes/` 保存 4 份 `1280×720` MHTML。运行目录按评测约定被 Git 忽略，验收者应直接用 Chromium/Edge 打开 MHTML，重点检查画布内标题、主次、关系、文字裁切和代码转义，不以外部网页标题代替 PPT 标题。
+
+### 8.2 自动化质量门增量
 
 计划在原有 `verify:full` 之上加入但不混淆以下测试：
 
 | 测试层 | M7～M10 必须覆盖 |
 | --- | --- |
-| Domain | Course v1/v2 判别与旧行隔离、CourseBrief 默认值/字段来源/合并优先级/冲突警告、GeneratedSlideData、Slide/M7.1 block 联合读取、四类 PPTElement 和互动数量规则 |
+| Domain | Course v1/v2/v3 判别与旧行隔离、CourseBrief 默认值/字段来源/合并优先级/冲突警告、GeneratedSlideSceneDTO、唯一 canvas Slide、四类 PPTElement 和互动数量规则 |
 | Slide/Renderer | 未支持元素过滤、必要默认值、非有限坐标/非正尺寸、text 白名单净化、code 文本转义、`text/shape/line/code` 渲染、16:9 缩放和未知元素 fallback |
-| Slide visual | 2～3 个 DeepSeek 代表主题在 `1280×720` 的截图与人工检查，确认主次、可读性、关系表达和主要内容未被裁掉；不建立自动美学评分 |
+| Slide visual | 3 个 DeepSeek 代表主题在 `1280×720` 的逐场景 MHTML 与人工检查，确认主次、可读性、关系表达和主要内容未被裁掉；不建立 PNG 档案或自动美学评分 |
 | Interactive boundary | 完整自包含 HTML、外部依赖拒绝、CSP、`sandbox="allow-scripts"`、消息来源/Schema 和 fallback |
 | MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、v1 隐藏与明确拒绝、互动内容恢复、再生成原位替换和 conflict |
 | API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2.1 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 解析/规范化失败、interactive 失败分类、ready 场景再生成 |
@@ -156,7 +162,7 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 
 mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。另保留一个尝试外部 fetch/访问父页面和一个伪造消息来源的失败 fixture，证明隔离与 fallback 即可；首版不穷举浏览器全部 API。
 
-### 8.2 M9 DeepSeek 互动 smoke test
+### 8.3 M9 DeepSeek 互动 smoke test
 
 M9 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `interactionMode=required` 的 5 场景课程。验收必须核对：
 
@@ -166,7 +172,7 @@ M9 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `i
 - 控制台没有未处理错误，iframe 没有成功发起外部网络请求；
 - 若首次 HTML 不合法，记录修复或失败，不手工改数据库伪造成功。
 
-### 8.3 课程质量验收
+### 8.4 课程质量验收
 
 M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变，MHTML 作为 v0.3 静态场景证据。M10 使用同一 DeepSeek 模型、温度、场景数量和主题生成 v0.4，隐藏版本后成对评分。报告至少包含：
 
@@ -177,14 +183,14 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 
 建议初始退出阈值为目标匹配、教学组织、案例/练习价值、可见内容可读性、视觉层级与版式适配五项平均提升至少 0.5/5，事实正确性不下降，`1280×720` 桌面视口的主要内容没有被裁掉，至少 70% 的课程对更偏好 v0.4。桌面端 v2 阈值必须在看到 v0.4 结果前冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
 
-### 8.4 M7～M10 证据矩阵模板
+### 8.5 M7～M10 证据矩阵模板
 
 | 条件 | 里程碑 | 预期证据 | 当前状态 |
 | --- | --- | --- | --- |
 | AC-Q01 CourseBrief 解析、来源、警告与同 revision 保存恢复 | M7 | Schema + API + MySQL integration | 已通过 |
 | AC-Q02 v1 隔离与明确错误 | M7 | repository integration + 旧行读取 | 已通过 |
 | AC-Q03 outline.v2.1 同调用解析与大纲生成；后续场景 Prompt 使用完整上下文 | M7/M8 | golden + 调用计数 + 生成元数据 | outline.v2.1 已通过；scene v2 随 M8 接入 |
-| AC-Q04 OpenMAIC 式 Slide/PPTElement 生成、规范化、保存恢复与桌面只读渲染 | M8 | Schema + normalize + component + 真实模型截图 + 桌面 E2E | 未实现 |
+| AC-Q04 OpenMAIC 式 Slide/PPTElement 生成、规范化、保存恢复与桌面只读渲染 | M8 | Schema + normalize + component + 真实模型 MHTML + 桌面 E2E | 已实现 |
 | AC-Q05 required diagram 数量 | M9 | domain + API | 未实现 |
 | AC-Q06 HTML 安全门 | M9 | validator 恶意 fixture | 未实现 |
 | AC-Q07 iframe 协议 | M9 | Playwright + network/console 记录 | 未实现 |

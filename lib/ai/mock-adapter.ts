@@ -9,7 +9,7 @@ type MockOutline = {
 };
 type MockScene = {
   type: "slide" | "quiz";
-  title: string;
+  title?: string;
   content: unknown;
   narration: string;
   summary: string;
@@ -26,10 +26,11 @@ function readPromptJson<T>(prompt: string, label: string): T | undefined {
 }
 
 function createMockScene(prompt: string): MockScene {
-  const topic = readPromptValue(prompt, "教学主题") ?? "示例主题";
-  const title = readPromptValue(prompt, "场景标题") ?? "示例场景";
-  const type = readPromptValue(prompt, "场景类型") === "quiz" ? "quiz" : "slide";
-  const keyPoints = (readPromptValue(prompt, "关键点") ?? "核心概念；实际应用").split("；").filter(Boolean);
+  const topic = readPromptJson<string>(prompt, "课程描述 JSON") ?? readPromptValue(prompt, "教学主题") ?? "示例主题";
+  const slideOutline = readPromptJson<Pick<SceneOutline, "title" | "keyPoints">>(prompt, "当前 SceneOutline JSON");
+  const title = slideOutline?.title ?? readPromptValue(prompt, "场景标题") ?? "示例场景";
+  const type = slideOutline ? "slide" : readPromptValue(prompt, "场景类型") === "quiz" ? "quiz" : "slide";
+  const keyPoints = slideOutline?.keyPoints ?? (readPromptValue(prompt, "关键点") ?? "核心概念；实际应用").split("；").filter(Boolean);
   if (type === "quiz") {
     return {
       type,
@@ -47,13 +48,19 @@ function createMockScene(prompt: string): MockScene {
   }
   return {
     type,
-    title,
     content: {
-      subtitle: `${topic} · 结构化讲解`,
-      blocks: [
-        { type: "paragraph", text: `本场从问题、机制和应用三个层次解释${topic}。` },
-        { type: "bullet_list", items: keyPoints.length >= 2 ? keyPoints.slice(0, 6) : [keyPoints[0] ?? "核心概念", "实际应用"] },
-        { type: "callout", tone: "example", title: "学习提示", text: "先说明它解决什么问题，再追踪关键机制和使用边界。" },
+      background: { type: "gradient", gradient: { type: "linear", rotate: 135, colors: [{ pos: 0, color: "#f6f1e7" }, { pos: 100, color: "#e8eef2" }] } },
+      elements: [
+        { type: "shape", left: 56, top: 46, width: 10, height: 70, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1], fill: "#d14424" },
+        { type: "text", left: 82, top: 48, width: 850, height: 70, content: `<p style="font-size:34px;font-weight:bold;color:#242621">${title}</p>`, textType: "title", vAlign: "middle" },
+        { type: "text", left: 82, top: 118, width: 790, height: 48, content: `<p style="font-size:17px;color:#68716b">${topic} · 从问题到可执行理解</p>`, textType: "subtitle" },
+        { type: "shape", left: 64, top: 188, width: 274, height: 230, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1], fill: "#ffffff", outline: { style: "solid", width: 1, color: "#d6d2c8" } },
+        { type: "shape", left: 363, top: 188, width: 274, height: 230, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1], fill: "#edf2eb", outline: { style: "solid", width: 1, color: "#ccd8c8" } },
+        { type: "text", left: 84, top: 210, width: 230, height: 170, content: `<p style="font-size:18px;font-weight:bold;color:#d14424">01 · 问题</p><p style="font-size:18px;color:#333333">${keyPoints[0] ?? "核心概念"}</p>`, textType: "content", lineHeight: 1.5 },
+        { type: "text", left: 383, top: 210, width: 230, height: 170, content: `<p style="font-size:18px;font-weight:bold;color:#4472c4">02 · 机制</p><p style="font-size:18px;color:#333333">${keyPoints[1] ?? "关键机制"}</p>`, textType: "content", lineHeight: 1.5 },
+        { type: "line", left: 330, top: 300, width: 3, start: [0, 0], end: [42, 0], style: "solid", color: "#4472c4", points: ["", "arrow"] },
+        { type: "code", left: 662, top: 188, width: 278, height: 230, language: "typescript", fileName: "lesson.ts", showLineNumbers: true, fontSize: 14, lines: ["const input = modelOutput;", "const slide = schema.parse(input);", "return render(slide);"] },
+        { type: "text", left: 82, top: 456, width: 850, height: 50, content: `<p style="font-size:18px;color:#333333"><strong>结论：</strong>${keyPoints[2] ?? "把概念、机制与实践边界连接起来"}</p>`, textType: "notes", vAlign: "middle" },
       ],
     },
     narration: `现在进入${title}。请先建立问题背景，再理解关键机制，最后联系实际应用。`,
@@ -69,8 +76,8 @@ export class MockAIAdapter implements AIAdapter {
     const injected = this.responses.shift();
     if (injected !== undefined) return { text: injected, provider: "mock", model: `mock-${input.stage}-v1` };
 
-    if (input.stage === "scene" || input.userPrompt.includes("场景类型：")) {
-      return { text: JSON.stringify(createMockScene(input.userPrompt)), provider: "mock", model: "mock-scene-v1", usage: { inputTokens: 0, outputTokens: 0 } };
+    if (input.stage === "scene" || input.userPrompt.includes("场景类型：") || input.userPrompt.includes("修复对象：scene")) {
+      return { text: JSON.stringify(createMockScene(input.userPrompt)), provider: "mock", model: "mock-scene-v2", usage: { inputTokens: 0, outputTokens: 0 } };
     }
 
     const topic = readPromptJson<string>(input.userPrompt, "课程描述 JSON") ?? readPromptValue(input.userPrompt, "教学主题") ?? "示例主题";

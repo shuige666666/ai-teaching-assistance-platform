@@ -28,7 +28,11 @@ export async function captureCourseSceneArchives(browser, baseUrl, course, topic
       if (!navigation?.ok()) throw new Error(`课堂页面返回 ${navigation?.status() ?? "unknown"}`);
       await page.locator("nav.scene-rail").waitFor({ state: "attached" });
       await page.getByRole("button", { name: new RegExp(`打开场景 ${scene.order}：`) }).click();
-      await page.locator(".scene-heading .eyebrow").filter({ hasText: `SCENE ${String(scene.order).padStart(2, "0")}` }).waitFor();
+      const sceneNumber = `SCENE ${String(scene.order).padStart(2, "0")}`;
+      const activeSceneLabel = scene.type === "slide"
+        ? page.locator(".scene-slide-meta").filter({ hasText: sceneNumber })
+        : page.locator(".scene-heading .eyebrow").filter({ hasText: sceneNumber });
+      await activeSceneLabel.waitFor();
       await page.getByTestId(scene.type === "quiz" ? "quiz-renderer" : "slide-renderer").waitFor();
       await page.evaluate(() => window.scrollTo(0, 0));
       const filename = `${String(scene.order).padStart(2, "0")}-${scene.type}.mhtml`;

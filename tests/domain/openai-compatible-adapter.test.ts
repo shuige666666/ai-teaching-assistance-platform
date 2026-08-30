@@ -32,7 +32,28 @@ describe("OpenAICompatibleAdapter", () => {
     const result = await adapter.generateText(input());
     expect(capturedUrl).toBe("https://api.example.com/v1/chat/completions");
     expect(JSON.parse(String(capturedOptions?.body))).toMatchObject({ model: "configured-model", response_format: { type: "json_object" }, stream: false });
+    expect(JSON.parse(String(capturedOptions?.body))).not.toHaveProperty("thinking");
     expect(result).toMatchObject({ provider: "deepseek", model: "remote-model-version", usage: { inputTokens: 12, outputTokens: 5 } });
+  });
+
+  it("仅 DeepSeek 首轮场景生成关闭思考模式", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const adapter = new OpenAICompatibleAdapter(config, async (_input, options) => {
+      requestBody = JSON.parse(String(options?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "{\"ok\":true}" } }] }), { status: 200 });
+    });
+    await adapter.generateText({ ...input(), stage: "scene" });
+    expect(requestBody).toMatchObject({ thinking: { type: "disabled" } });
+  });
+
+  it("不向非 DeepSeek Provider 发送专有 thinking 参数", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const adapter = new OpenAICompatibleAdapter({ ...config, provider: "bailian" }, async (_input, options) => {
+      requestBody = JSON.parse(String(options?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "{\"ok\":true}" } }] }), { status: 200 });
+    });
+    await adapter.generateText(input());
+    expect(requestBody).not.toHaveProperty("thinking");
   });
 
   it.each([

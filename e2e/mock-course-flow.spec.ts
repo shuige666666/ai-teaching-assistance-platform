@@ -60,7 +60,16 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     await expect(page.getByText("03 / 03")).toBeVisible();
     await enterClassroom.click();
 
-    await expect(page.getByRole("heading", { name: new RegExp(topic) })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/classroom/${courseId}$`));
+    const slideCanvas = page.getByTestId("slide-canvas");
+    await expect(slideCanvas).toBeVisible();
+    await expect(slideCanvas.locator('[data-text-type="title"]')).toContainText(topic);
+    for (const elementType of ["text", "shape", "line", "code"]) {
+      await expect(slideCanvas.locator(`[data-element-type="${elementType}"]`).first()).toBeVisible();
+    }
+    const slideBox = await slideCanvas.boundingBox();
+    expect(slideBox).not.toBeNull();
+    expect(slideBox!.width / slideBox!.height).toBeCloseTo(16 / 9, 1);
     await page.getByRole("button", { name: /开始课堂/ }).click();
     const pause = page.getByRole("button", { name: /暂停讲解/ });
     await expect(pause).toBeVisible();
@@ -80,7 +89,8 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
 
     await page.reload();
     await expect(page.getByText(/REV\.8 · MOCK/)).toBeVisible();
-    await expect(page.getByRole("heading", { name: new RegExp(topic) })).toBeVisible();
+    await expect(page.getByTestId("slide-canvas")).toBeVisible();
+    await expect(page.getByTestId("slide-canvas").locator('[data-text-type="title"]')).toContainText(topic);
     await page.goto("/");
     await expect(page.getByText(topic, { exact: true }).first()).toBeVisible();
 

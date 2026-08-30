@@ -1,0 +1,154 @@
+.shell {
+  position: relative;
+  width: min(100%, 1000px);
+  aspect-ratio: 16 / 9;
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid rgba(39, 41, 37, 0.18);
+  border-radius: 3px;
+  background: #fff;
+  box-shadow:
+    0 24px 60px rgba(39, 41, 37, 0.14),
+    0 4px 14px rgba(39, 41, 37, 0.08);
+}
+
+.viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1000px;
+  height: 562.5px;
+  overflow: hidden;
+  transform-origin: top left;
+  isolation: isolate;
+}
+
+.elementLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.box {
+  position: absolute;
+  box-sizing: border-box;
+  transform-origin: center;
+}
+
+.text {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 10px;
+  overflow-wrap: anywhere;
+}
+
+.textTop { align-items: flex-start; }
+.textMiddle { align-items: center; }
+.textBottom { align-items: flex-end; }
+
+.richText {
+  width: 100%;
+}
+
+.richText :global(p) {
+  margin: 0 0 7px;
+}
+
+.richText :global(p:last-child) {
+  margin-bottom: 0;
+}
+
+.shape {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.line {
+  position: absolute;
+  inset: 0;
+  width: 1000px;
+  height: 562.5px;
+  overflow: visible;
+}
+
+.code {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #c9cec9;
+  border-radius: 8px;
+  background: #f9faf8;
+  color: #20231f;
+  box-shadow: 0 10px 28px rgba(30, 34, 29, 0.08);
+}
+
+.codeHeader {
+  display: flex;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid #dfe3de;
+  background: #eef0ed;
+  color: #4d554d;
+  font: 600 12px/1 ui-monospace, "Cascadia Code", monospace;
+  letter-spacing: 0.04em;
+}
+
+.codeLanguage {
+  color: #9b432f;
+  text-transform: uppercase;
+}
+
+.codeBody {
+  flex: 1;
+  overflow: hidden;
+  margin: 0;
+  padding: 12px 0;
+  font-family: "Cascadia Code", "Microsoft YaHei", monospace;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.codeLine {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  min-height: 1.55em;
+  padding: 0 13px 0 0;
+}
+
+.codeLineNumber {
+  padding-right: 10px;
+  color: #9ca39b;
+  text-align: right;
+  user-select: none;
+}
+
+.codeLineContent {
+  overflow: hidden;
+  white-space: pre;
+}
+
+.fallback {
+  position: absolute;
+  left: 50px;
+  right: 50px;
+  bottom: 24px;
+  padding: 10px 14px;
+  border-left: 4px solid #d14424;
+  background: #f9e5de;
+  color: #67291d;
+  font: 14px/1.4 "Microsoft YaHei", sans-serif;
+}
+
+@media (max-width: 1279px) {
+  .shell {
+    border-radius: 0;
+    box-shadow: 0 14px 32px rgba(39, 41, 37, 0.12);
+  }
+}

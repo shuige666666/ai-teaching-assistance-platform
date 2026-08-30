@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-30）：`outline.v2.1`、CourseBrief 服务端合并、同 revision 提交与有限 repair 已进入正式调用路径；逐场景仍使用 v1 slide/quiz DTO，并保留短事务、失败隔离与单场重试。M7.0 的 6 主题 DeepSeek Prompt v1 基线保持冻结。OpenMAIC 式 Slide/PPTElement、interactive 与 regenerate 仍分别属于 M8～M10 计划。
+> 实现状态（2026-08-30）：`outline.v2.1`、CourseBrief、`scene-slide.v2`、Slide/PPTElement 规范化与只读画布已进入正式调用路径；quiz 仍使用稳定的 `scene-quiz.v1`。短事务、失败隔离、单场重试和 M7.0 六题基线保持不变；interactive 与 regenerate 分别属于 M9/M10。
 
 ## 1. 设计结论
 
@@ -82,7 +82,7 @@ flowchart TD
     Repair --> Adapter
 ```
 
-### 3.1 v0.4 增量管线（计划）
+### 3.1 v0.4 增量管线（M8 已实现，M9 分支待实现）
 
 ```mermaid
 flowchart TD
@@ -94,18 +94,18 @@ flowchart TD
     Review --> Route{"Scene type"}
 
     Route -->|slide| SlideV2["scene-slide.v2<br/>adapted OpenMAIC prompt"]
-    Route -->|quiz| QuizV2["scene-quiz.v2"]
+    Route -->|quiz| QuizV1["scene-quiz.v1"]
     Route -->|interactive| DiagramV1["scene-interactive-diagram.v1"]
 
     Memory["covered / remaining / bounded summaries"] --> SlideV2
-    Memory --> QuizV2
+    Memory --> QuizV1
     Memory --> DiagramV1
 
     SlideV2 --> SlideSchema["GeneratedSlideData Schema"]
     SlideSchema --> Normalize["filter + defaults + sanitize + ids"]
     Normalize --> BuildSlide["assemble Slide / content.canvas"]
     BuildSlide --> SceneGate["assemble Scene"]
-    QuizV2 --> SceneGate
+    QuizV1 --> SceneGate
     DiagramV1 --> HtmlGate["HTML parse + safety + runtime contract"]
     HtmlGate --> SceneGate
     SceneGate --> Persist["assemble + expectedRevision transaction"]
@@ -390,7 +390,7 @@ Prompt 要求：
 - 不把 Zod Schema 原样无限展开到 Prompt，可维护一份紧凑格式说明；
 - 不能依赖“模型应该懂”来代替运行时校验。
 
-### 7.1 Prompt v2 设计（M7～M9 计划）
+### 7.1 Prompt v2 设计（M8 当前实现与 M9 计划）
 
 v2 不覆盖 v1 文件，而是新增并保留版本元数据：
 
@@ -398,7 +398,7 @@ v2 不覆盖 v1 文件，而是新增并保留版本元数据：
 prompts/
 ├─ outline.v2.ts
 ├─ scene-slide.v2.ts
-├─ scene-quiz.v2.ts
+├─ scene-quiz.v1.ts
 ├─ scene-interactive-diagram.v1.ts
 ├─ scene-regenerate.v1.ts
 └─ repair-interactive.v1.ts
@@ -427,11 +427,13 @@ export interface OutlineGenerationV2DTO {
 
 正常路径仍只有一次 `outline.v2.1` 上游调用，不先调用一个“Prompt 解析模型”再调用一个“大纲模型”。若结构或语义失败，repair 与传输重试继续共享单请求最多四次上游调用预算，但主要目标是通过完整 JSON 骨架、枚举说明和确定性归一实现首次成功。校验通过后，resolved Brief、字段来源、合并后的警告和 outlines 使用一个 expectedRevision 短事务落库；后续 `scene-*.v2` 只读取这个已保存版本。
 
-`outline.v2.1` 单次上游调用的 `maxOutputTokens` 为 8,000，大纲业务超时默认 120 秒。旧版 2,000 和过渡期 6,000 都曾在 DeepSeek 推理阶段耗尽并返回 `empty_content + finish_reason=length`；8,000 + 120 秒的 6 主题真实测试全部以一次上游调用完成。逐场景 v1 管线仍保持 3,500，不随本次大纲修正改变。
+`outline.v2.1` 单次上游调用的 `maxOutputTokens` 为 8,000，大纲业务超时默认 120 秒。旧版 2,000 和过渡期 6,000 都曾在 DeepSeek 推理阶段耗尽并返回 `empty_content + finish_reason=length`；8,000 + 120 秒的 6 主题真实测试全部以一次上游调用完成。M8 slide 同样使用 8,000，quiz 保持 3,500。
+
+`deepseek-v4-flash` 当前默认启用 high thinking，而 `max_tokens` 同时约束隐藏推理和最终 JSON。M8 首轮实测在 8,000/12,000 下都曾把预算耗尽并返回空或截断 content，因此适配器只对 `stage=scene` 的 DeepSeek 请求显式发送 `thinking.disabled`；outline 与 repair 保持默认推理。分阶段策略使三个代表主题的首个 slide 均一次调用成功、0 repair、约 8.0～10.8 秒完成，而不会回退 M7.1 的大纲规划能力。
 
 原始 topic 在 User Prompt 中使用清晰的数据边界和 JSON 转义传入。描述中即使包含“忽略此前规则”等文本，也只是课程需求数据，不能改变 System Prompt、字段优先级、输出 Schema、安全门或调用预算。Prompt 边界降低误遵循风险，严格解析、服务端复算和领域校验才是最终约束。
 
-大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定版式强加给所有主题。`scene-slide.v2` 由 OpenMAIC `slide-content` Prompt 裁剪而来，明确“页面是视觉提示，不是讲稿”，细节进入 narration；模型直接返回背景和带坐标的 `text/shape/line/code`。服务端只过滤、补默认值、净化文本、分配 id 并装配 Slide。quiz.v2 必须说明每题对应哪个 objective，并生成可机械验证的答案与解析。
+大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定版式强加给所有主题。`scene-slide.v2` 由 OpenMAIC `slide-content` Prompt 裁剪而来，明确“页面是视觉提示，不是讲稿”，细节进入 narration；模型返回完整 `{type, content, narration, summary}` 外壳，其中 content 只有背景和带坐标的 `text/shape/line/code`。服务端过滤、补默认值、净化文本、分配 id 并装配 Slide；quiz.v1 继续生成可机械验证的答案与解析。
 
 diagram Prompt 只生成一个完整 HTML 文档和 fallback DTO，不使用 Markdown。它必须遵守宿主提供的元素 ID、reset、ready/completed/error 协议和无网络限制；生成器不得要求 CDN、外部字体或第三方库。完整脚本仍须经过服务端安全门，Prompt 约束不能替代运行时隔离。
 
@@ -654,13 +656,13 @@ M7 必须建立小型固定人工评价集，M8/M10 使用同一冻结协议判�
 
 ### 14.4 M8 视觉检查（计划）
 
-在线链路只拒绝确定的结构问题：JSON/Schema 失败、未支持元素、非有限坐标、非正尺寸、危险富文本和规范化后空页。标题长短、页面留白、卡片关系、视觉层级和轻微重叠不建立独立在线报告；这些问题先通过 OpenMAIC Prompt 的输出前自检和 2～3 个 DeepSeek 真实主题的 `1280×720` 截图人工检查发现。
+在线链路只拒绝确定的结构问题：JSON/Schema 失败、未支持元素、非有限坐标、非正尺寸、危险富文本和规范化后空页。标题长短、页面留白、卡片关系、视觉层级和轻微重叠不建立独立在线报告；这些问题先通过 OpenMAIC Prompt 的输出前自检和 3 个 DeepSeek 真实主题的 `1280×720` MHTML 人工检查发现。
 
 如果某类问题在真实样例中反复出现，再补一条小型、可解释的校验或 Prompt 规则，并为该具体回归增加测试。M8 不预先实现通用碰撞算法、自动美学评分或第二次模型评审。
 
 ### 14.5 人工成对评价（M10 退出门）
 
-使用同一主题集、Provider、模型、温度和场景数量分别生成 v0.3 与 v0.4 课程，隐藏版本后评价事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配和测验对齐。截图使用相同视口；互动页另评教学必要性、控件可理解性、重置和完成反馈。报告同时给出生成完成率、修复率、耗时、token、人工发现的主要版式问题和关键事实错误，禁止只展示改善的维度。
+使用同一主题集、Provider、模型、温度和场景数量分别生成 v0.3 与 v0.4 课程，隐藏版本后评价事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配和测验对齐。MHTML 使用相同视口；互动页另评教学必要性、控件可理解性、重置和完成反馈。报告同时给出生成完成率、修复率、耗时、token、人工发现的主要版式问题和关键事实错误，禁止只展示改善的维度。
 
 ## 15. 再生成管线（M10 计划）
 

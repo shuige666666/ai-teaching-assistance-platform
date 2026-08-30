@@ -299,13 +299,13 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 ## 12. M8：PPT 式只读幻灯片画布
 
-M8 取代原 M7.2 的固定 React 模板方案。新生成的 slide 只有一种产品形态：固定 16:9、一次展示一个场景的 PPT 式页面，不再建设类 Markdown、纵向讲义或同课双视图。新内容在 `content.canvas` 中保存 `Slide`：固定 `viewportSize: 1000`、`viewportRatio: 0.5625`，页面由带稳定 id、绝对坐标、尺寸和样式的有限 PPTElement 组成。第一版只支持 `text/shape/line/code`，不加入图片检索、图表、音视频、复杂公式、动画或可执行 slide HTML。旧 `content.blocks` 继续由当前 Renderer 读取，但仅用于历史兼容。
+M8 取代原 M7.2 的固定 React 模板方案。slide 只有一种产品形态：固定 16:9、一次展示一个场景的 PPT 式页面，不再建设类 Markdown、纵向讲义或同课双视图。内容在 `content.canvas` 中保存 `Slide`：固定 `viewportSize: 1000`、`viewportRatio: 0.5625`，页面由带稳定 id、绝对坐标、尺寸和样式的有限 PPTElement 组成。第一版只支持 `text/shape/line/code`，不加入图片检索、图表、音视频、复杂公式、动画或可执行 slide HTML。Course 因删除旧 `content.blocks` 升级到 v3；v1/v2 行保留但不兼容。
 
 生成仍只调用一次现有 scene 模型。与 OpenMAIC 一样，裁剪后的 `slide-content` Prompt 直接要求 LLM 返回背景和元素坐标；服务端执行 JSON/Schema、未支持元素过滤、默认值补齐、text 富文本净化、损坏元素丢弃和 id 分配，然后组装 `Slide`。不增加独立的语义计划、自动排版器或复杂坐标质量系统。Renderer 只负责等比缩放、四类元素分发和 fallback。
 
 OpenMAIC 固定提交 `59adbef` 提供整条实现参照：[`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md) 和 [`user.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/user.md) 定义画布与视觉规则，[`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts)、[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts)、[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts) 和 [`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts) 串起响应、规范化和装配，[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 与 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx) 负责渲染。本项目保留 AIAdapter、Zod、MySQL 和调用预算，裁掉上游媒体/编辑能力，并保留 MIT 许可和来源记录。
 
-**M8 退出门**：mock fixture 覆盖四类元素并能保存、重启恢复和播放；2～3 个代表主题完成 DeepSeek 真实生成和 `1280×720` 人工视觉检查；新页面主次清楚、主要内容没有被裁掉，坏元素不会造成白屏；v1 课程仍能打开，M6 全量回归通过。移动端、平板和窄屏不阻塞退出。完成后才开始 M9。
+**M8 退出门（已完成）**：mock fixture 覆盖四类元素并能保存、重启恢复和播放；3 个代表主题的真实 DeepSeek 首场均一次生成成功，4 个场景归档为 `1280×720` MHTML；坏元素局部丢弃，画布内标题和 16:9 由 E2E 覆盖；v1/v2 课程明确隐藏并拒绝。移动端、平板和窄屏不阻塞退出。完成后才开始 M9。
 
 ## 13. M9：interactive/diagram 纵向闭环
 
@@ -353,7 +353,7 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、code/si
 | 演示依赖网络 | 无 Key 就无法进入课堂 | mock 走同一数据库和生成链路 |
 | 语音拖慢主线 | 调试集中在音色或兼容性 | TextOnly 为默认，BrowserSpeech 可关闭 |
 | 生成脚本越权 | iframe 可访问网络、主页面或存储 | 关闭 interactive 入口，先修复 sandbox/CSP/消息边界 |
-| 用户误以为旧课程仍兼容 | v1 行留在数据库但不再进入 v2 运行链 | 列表过滤 v1，按 ID 返回明确错误，并要求新建课程 |
+| 用户误以为旧课程仍兼容 | v1/v2 行留在数据库但不再进入 v3 运行链 | 列表过滤旧版本，按 ID 返回明确错误，并要求新建课程 |
 | 裁剪上游时牵入过多依赖 | 为一个 slide 同时引入媒体、编辑器、动效和存储包 | 只移植四类元素需要的类型、纯函数和 Renderer，记录来源 |
 | 模型坐标不稳定 | 多个真实主题反复出现相同重叠、越界或超长正文 | 先缩小 Prompt/元素字段并调整示例；稳定复现后只补针对性规则 |
 | 用视觉手段掩盖超载 | 依赖小字体、隐藏或画布内滚动才不溢出 | 回退 Prompt 中的可见内容预算，细节移入 narration |
@@ -364,4 +364,4 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、code/si
 
 ## 20. 推荐的下一次开发迭代
 
-当前 M7.0 已保留冻结的六题输入、6 门 MySQL 课程、生成元数据、失败样本和 28 份逐场景 MHTML；M7.1 已引入 CourseBrief、Course v2 和 outline.v2，但不修改这些基线产物。下一次开发迭代进入 M8；人工评分等 M8/M9/M10 形成同题 v0.4 课程后再做。不得提前开始 M9 互动或把移动端适配重新加入当前硬门。
+当前 M7.0 基线保持冻结，M7.1 的 CourseBrief/outline.v2.1 与 M8 的 Course v3/PPTElement 画布均已完成。下一次开发迭代进入 M9 的唯一 `interactive/diagram` 纵向闭环；人工评分等 M9/M10 形成同题 v0.4 课程后再做。不得提前并入编辑器、导出或移动端适配。

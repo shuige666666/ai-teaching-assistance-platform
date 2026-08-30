@@ -2,16 +2,20 @@ import { describe, expect, it } from "vitest";
 import { MockAIAdapter } from "@/lib/ai/mock-adapter";
 import { AIAdapterError, type AIAdapter } from "@/lib/ai/contracts";
 import { createFixtureCourse } from "@/lib/domain/fixture";
-import { generateScene } from "@/lib/generation/scene-pipeline";
+import { generateScene, SLIDE_MAX_OUTPUT_TOKENS } from "@/lib/generation/scene-pipeline";
 import { assembleScene, InvalidSceneError, validateSceneOutput } from "@/lib/generation/scene-schema";
 
 const validSlide = {
   type: "slide" as const,
-  title: "可靠的场景边界",
-  content: { blocks: [
-    { type: "paragraph" as const, text: "模型只负责可见教学内容，程序负责实体标识与状态。" },
-    { type: "code" as const, language: "typescript", code: "const safe = schema.parse(output);", caption: "结构化边界" },
-  ] },
+  content: {
+    background: { type: "solid" as const, color: "#ffffff" },
+    elements: [
+      { type: "text" as const, left: 60, top: 50, width: 880, height: 76, content: "<p style=\"font-size:32px;font-weight:bold\">可靠的场景边界</p>", textType: "title" as const },
+      { type: "shape" as const, left: 60, top: 160, width: 360, height: 180, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1] as [number, number], fill: "#eaf1f8" },
+      { type: "line" as const, left: 420, top: 250, width: 3, start: [0, 0] as [number, number], end: [100, 0] as [number, number], points: ["", "arrow"] as ["", "arrow"] },
+      { type: "code" as const, left: 540, top: 160, width: 400, height: 250, language: "typescript", lines: ["const safe = schema.parse(output);"], fileName: "boundary.ts" },
+    ],
+  },
   narration: "这一场解释模型输出如何经过契约后进入固定渲染器。",
   summary: "场景内容通过契约后再由程序装配领域实体。",
 };
@@ -31,7 +35,7 @@ const validQuiz = {
 };
 
 describe("scene generation boundary", () => {
-  it("slide DTO 不含 ID，装配器补齐 Scene、Block 和 Action ID", () => {
+  it("slide DTO 不含 ID，规范化和装配器补齐 Slide、元素、代码行与 Action ID", () => {
     const course = createFixtureCourse("场景契约测试", 3);
     const outline = course.outlines[0];
     const output = validateSceneOutput(validSlide, outline);
@@ -44,7 +48,9 @@ describe("scene generation boundary", () => {
     });
     expect(scene).toMatchObject({ type: "slide", courseId: course.id, outlineId: outline.id, order: 1 });
     if (scene.type !== "slide") throw new Error("slide expected");
-    expect(scene.content.blocks.every((block) => Boolean(block.id))).toBe(true);
+    expect(scene.content.canvas.elements.every((element) => Boolean(element.id))).toBe(true);
+    const code = scene.content.canvas.elements.find((element) => element.type === "code");
+    expect(code?.type === "code" && code.lines.every((line) => Boolean(line.id))).toBe(true);
     expect(scene.actions).toHaveLength(1);
   });
 
@@ -64,28 +70,67 @@ describe("scene generation boundary", () => {
     expect(scene.actions.at(-1)).toMatchObject({ type: "pause", reason: "learner" });
   });
 
-  it("拒绝模型注入 ID、越界答案、重复选项和 HTML", () => {
+  it("忽略模型元素 ID，并继续拒绝越界答案、重复选项和讲稿 HTML", () => {
     const course = createFixtureCourse("非法场景测试", 3);
-    expect(() => validateSceneOutput({ ...validSlide, id: "model-id" }, course.outlines[0])).toThrowError(InvalidSceneError);
+    const output = validateSceneOutput({
+      ...validSlide,
+      content: { ...validSlide.content, elements: validSlide.content.elements.map((element) => ({ ...element, id: "model-id" })) },
+    }, course.outlines[0]);
+    expect(output.type === "slide" && output.content.elements.every((element) => element.id !== "model-id")).toBe(true);
     expect(() => validateSceneOutput({ ...validQuiz, content: { questions: [{ ...validQuiz.content.questions[0], options: [{ label: "重复" }, { label: "重复" }], correctOptionIndex: 3 }] } }, course.outlines[2])).toThrowError(InvalidSceneError);
     expect(() => validateSceneOutput({ ...validSlide, narration: "请执行 <script>bad()</script>" }, course.outlines[0])).toThrowError(InvalidSceneError);
   });
 
-  it("允许 code 字段包含只读 JSX，同时继续拒绝普通文本中的标签和链接", () => {
+  it("净化 text 富文本并允许 code lines 保存只读 JSX", () => {
     const course = createFixtureCourse("React 场景契约测试", 3);
     const output = validateSceneOutput({
       ...validSlide,
-      content: { blocks: [{
-        type: "code",
-        language: "tsx",
-        code: "export function App() { return <main><h1>Hello</h1></main>; }",
-        caption: "只读 JSX 示例",
-      }] },
+      content: { ...validSlide.content, elements: [
+        { ...validSlide.content.elements[0], content: "<p onclick=\"bad()\" style=\"font-size:32px;position:fixed\"><strong>安全标题</strong><script>bad()</script></p>" },
+        { type: "code", left: 80, top: 170, width: 840, height: 260, language: "tsx", lines: ["export function App() { return <main><h1>Hello</h1></main>; }"] },
+      ] },
     }, course.outlines[0]);
 
     if (output.type !== "slide") throw new Error("slide expected");
-    expect(output.content.blocks[0]).toMatchObject({ type: "code", language: "tsx" });
-    expect(() => validateSceneOutput({ ...validSlide, summary: "访问 https://example.com" }, course.outlines[0])).toThrowError(InvalidSceneError);
+    const text = output.content.elements.find((element) => element.type === "text");
+    const code = output.content.elements.find((element) => element.type === "code");
+    expect(text?.type === "text" && text.content).toContain("<strong>安全标题</strong>");
+    expect(text?.type === "text" && text.content).not.toContain("onclick");
+    expect(text?.type === "text" && text.content).not.toContain("position");
+    expect(code).toMatchObject({ type: "code", language: "tsx" });
+    expect(code?.type === "code" && code.lines[0].content).toContain("<main>");
+  });
+
+  it("只丢弃损坏或未支持元素，全部无效时才让场景失败", () => {
+    const course = createFixtureCourse("元素降级测试", 3);
+    const output = validateSceneOutput({
+      ...validSlide,
+      content: { ...validSlide.content, elements: [
+        validSlide.content.elements[0],
+        { type: "image", left: 0, top: 0, width: 100, height: 100, src: "bad" },
+        { type: "shape", left: 2_000, top: 0, width: 100, height: 100, path: "M 0 0", viewBox: [1, 1] },
+      ] },
+    }, course.outlines[0]);
+    expect(output.type === "slide" && output.content.elements).toHaveLength(1);
+    expect(() => validateSceneOutput({
+      ...validSlide,
+      content: { elements: [{ type: "image", left: 0, top: 0, width: 100, height: 100 }] },
+    }, course.outlines[0])).toThrowError(InvalidSceneError);
+  });
+
+  it("slide 使用独立的较大输出预算", async () => {
+    const course = createFixtureCourse("场景预算测试", 3);
+    let capturedBudget = 0;
+    const adapter: AIAdapter = {
+      async generateText(input) {
+        capturedBudget = input.maxOutputTokens;
+        return { text: JSON.stringify(validSlide), provider: "mock", model: "budget-test" };
+      },
+    };
+    await generateScene(adapter, {
+      course, outline: course.outlines[0], requestId: "slide-budget", signal: new AbortController().signal,
+    });
+    expect(capturedBudget).toBe(SLIDE_MAX_OUTPUT_TOKENS);
   });
 
   it("mock 场景也经过解析、校验、装配和一次修复", async () => {

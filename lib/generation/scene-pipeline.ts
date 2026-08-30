@@ -5,8 +5,11 @@ import { parseModelJson } from "./parse-json";
 import { assembleScene, InvalidSceneError, validateSceneOutput } from "./scene-schema";
 import { buildQuizUserPrompt, QUIZ_PROMPT_VERSION, QUIZ_SYSTEM_PROMPT } from "./prompts/scene-quiz.v1";
 import { buildSceneRepairPrompt, SCENE_REPAIR_SYSTEM_PROMPT } from "./prompts/scene-repair.v1";
-import { buildSlideUserPrompt, SLIDE_PROMPT_VERSION, SLIDE_SYSTEM_PROMPT } from "./prompts/scene-slide.v1";
+import { buildSlideUserPrompt, SLIDE_PROMPT_VERSION, SLIDE_SYSTEM_PROMPT } from "./prompts/scene-slide.v2";
 import { logUpstreamFailure, logUpstreamSuccess, retryDelayMs, waitForRetry } from "./retry-policy";
+
+export const SLIDE_MAX_OUTPUT_TOKENS = 8_000;
+export const QUIZ_MAX_OUTPUT_TOKENS = 3_500;
 
 export class SceneGenerationError extends Error {
   constructor(
@@ -57,7 +60,12 @@ export async function generateScene(
       upstreamCalls += 1;
       try {
         // 3. 调用当前配置的模型，并拿到它返回的文本。
-        const result = await adapter.generateText({ ...call, requestId: input.requestId, signal: input.signal, maxOutputTokens: 3_500 });
+        const result = await adapter.generateText({
+          ...call,
+          requestId: input.requestId,
+          signal: input.signal,
+          maxOutputTokens: isSlide ? SLIDE_MAX_OUTPUT_TOKENS : QUIZ_MAX_OUTPUT_TOKENS,
+        });
         successfulResults.push(result);
         logUpstreamSuccess(result, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls });
         return result;
@@ -104,6 +112,14 @@ export async function generateScene(
       // 本次修复预算已经耗尽，但下一次请求会重新采样，仍允许用户显式重试。
       throw new SceneGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合场景契约", true, upstreamCalls, finalError.issues, { cause: repairError });
     }
+  }
+
+  if (output.type === "slide" && output.normalizationIssues.length > 0) {
+    console.info(JSON.stringify({
+      time: new Date().toISOString(), level: "info", event: "slide.normalized",
+      requestId: input.requestId, stage: "scene", droppedOrAdjusted: output.normalizationIssues.length,
+      issues: output.normalizationIssues.slice(0, 8),
+    }));
   }
 
   // 8. 记录本次生成使用的模型、耗时和调用次数。

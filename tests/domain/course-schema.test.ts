@@ -11,21 +11,22 @@ describe("CourseSchema", () => {
     expect(topic.startsWith(course.title)).toBe(true);
   });
 
-  it("接受包含 slide、quiz 和代码块的完整 fixture", () => {
+  it("接受包含 Course v3 slide、quiz 和代码元素的完整 fixture", () => {
     const course = materializeFixtureCourse(createFixtureCourse("TCP 拥塞控制", 4));
+    expect(course.schemaVersion).toBe(3);
     expect(CourseSchema.parse(course).status).toBe("ready");
     expect(course.scenes.some((scene) => scene.type === "quiz")).toBe(true);
-    expect(course.scenes.some((scene) => scene.type === "slide" && scene.content.blocks.some((block) => block.type === "code"))).toBe(true);
+    expect(course.scenes.some((scene) => scene.type === "slide" && scene.content.canvas.elements.some((element) => element.type === "code"))).toBe(true);
   });
 
-  it("拒绝未知内容块类型", () => {
+  it("拒绝未知 PPTElement 类型", () => {
     const course = materializeFixtureCourse(createFixtureCourse("操作系统调度", 3));
     const slide = course.scenes.find((scene) => scene.type === "slide");
     expect(slide).toBeDefined();
     if (slide?.type === "slide") {
-      const invalid = structuredClone(course) as unknown as { scenes: Array<{ content: { blocks?: unknown[] } }> };
-      const invalidSlide = invalid.scenes.find((scene) => Array.isArray(scene.content.blocks));
-      invalidSlide?.content.blocks?.push({ id: "bad", type: "html", html: "<script>alert(1)</script>" });
+      const invalid = structuredClone(course) as unknown as { scenes: Array<{ type: string; content: { canvas?: { elements: unknown[] } } }> };
+      const invalidSlide = invalid.scenes.find((scene) => scene.type === "slide");
+      invalidSlide?.content.canvas?.elements.push({ id: "bad", type: "html", html: "<script>alert(1)</script>" });
       expect(() => CourseSchema.parse(invalid)).toThrow();
     }
   });

@@ -106,7 +106,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
           ))}
         </nav>
 
-        <section className="classroom-stage">
+        <section className={`classroom-stage${scene.type === "slide" ? " classroom-stage--slide" : ""}`}>
           {isPartialPreview ? (
             <div className="partial-course-notice" role="status">
               <div><span>PARTIAL COURSE PREVIEW</span><strong>已生成 {course.scenes.length} / {course.requestedSceneCount} 个场景</strong></div>
@@ -114,7 +114,14 @@ export function ClassroomRuntime({ course }: { course: Course }) {
               <Link href={`/generation/${course.id}`}>返回生成页 →</Link>
             </div>
           ) : null}
-          <div className="scene-heading"><div><p className="eyebrow">{scene.type.toUpperCase()} · SCENE {String(scene.order).padStart(2, "0")}</p><h1>{scene.title}</h1></div><span>{String(scene.order).padStart(2, "0")} / {String(course.requestedSceneCount).padStart(2, "0")}</span></div>
+          {scene.type === "slide" ? (
+            <div className="scene-slide-meta" aria-label={`当前场景：${scene.title}`}>
+              <span>SLIDE · SCENE {String(scene.order).padStart(2, "0")}</span>
+              <span>{String(scene.order).padStart(2, "0")} / {String(course.requestedSceneCount).padStart(2, "0")}</span>
+            </div>
+          ) : (
+            <div className="scene-heading"><div><p className="eyebrow">{scene.type.toUpperCase()} · SCENE {String(scene.order).padStart(2, "0")}</p><h1>{scene.title}</h1></div><span>{String(scene.order).padStart(2, "0")} / {String(course.requestedSceneCount).padStart(2, "0")}</span></div>
+          )}
           <SceneRenderer
             scene={scene}
             quizSessionId={playback.state.runId}

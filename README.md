@@ -13,13 +13,13 @@
 
 ## 当前状态
 
-项目的 **M1～M7.1 功能代码已进入正式调用链**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建带可追溯 CourseBrief 的 v2 草稿，经 `outline.v2.1` 在同一次调用中解析明确要求并生成 3～5 项大纲，再按 outline 顺序逐项生成 slide/quiz 场景、进入课堂自动播放并从 MySQL 恢复课程。
+项目的 **M1～M8 功能代码已进入正式调用链**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建带可追溯 CourseBrief 的 v3 草稿，经 `outline.v2.1` 在同一次调用中解析明确要求并生成 3～5 项大纲，再按 outline 顺序逐项生成 PPT 式 slide/quiz 场景、进入课堂自动播放并从 MySQL 恢复课程。
 
 大纲和场景阶段共用 `MockAIAdapter` 与 OpenAI-compatible 远端适配器，均执行 JSON 提取、严格 Zod、语义门、一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 可在讲解前直接作答；自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。DeepSeek 已完成一门 5 场景真实课程的大纲、场景、修复与失败后重试验证。代码中保留百炼兼容配置，但百炼联调和异机部署均属于后续可选扩展，不再作为第一阶段完成条件。
 
 M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部完成。
 
-**M7.0 课程质量基线现已完成，M7.1 功能实现已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v2；首页高级设置可选，Brief 字段记录 `explicit_setting / prompt / default` 来源，`outline.v2.1` 返回检测字段和大纲，resolved Brief 由服务端独占计算，Brief 修改会使旧大纲失效。M7.1 不迁移旧 v1 课程：数据库行原样保留但不出现在列表，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。互动模式暂时固定为 `off`，到 M9 才开放。下一步是 M8；M8～M10 只承诺桌面端，M11 编辑器和 M12 导出均为可选扩展。
+**M7.0、M7.1 与 M8 已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v3；CourseBrief 与 `outline.v2.1` 保持 M7.1 语义，slide 只允许 `content.canvas` 下的 `text/shape/line/code`，不再保留旧 block Renderer。v1/v2 数据行原样留在 MySQL，但不出现在列表，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。互动模式暂时固定为 `off`，下一步 M9 才开放；M8～M10 只承诺桌面端，M11 编辑器和 M12 导出均为可选扩展。
 
 ## v0.3 MVP 已实现什么
 
@@ -35,7 +35,7 @@ v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码�
 
 OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 `@openmaic` 包和多条生成入口的平台型项目。它同时处理文档导入、模型路由、媒体、白板、交互应用、多智能体、存储迁移和大量兼容逻辑，整体规模不适合作为毕业设计第一阶段的直接复刻目标。
 
-本项目不复制完整平台，但对已经进入本项目范围的能力应优先裁剪其成熟纵向实现，而不是重新设计一套更重的架构。当前已经证明“主题 → 结构化课程 → 课堂运行时”这一最小闭环；M8 将成套参考 OpenMAIC 的 slide Prompt、直接坐标元素、normalize、Slide 装配和只读 Renderer，M9 同样参考 diagram Prompt、HTML 后处理与 iframe 宿主，再适配本项目的 AIAdapter、MySQL 和有限类型。
+本项目不复制完整平台，但对已经进入本项目范围的能力应优先裁剪其成熟纵向实现，而不是重新设计一套更重的架构。当前已经证明“主题 → 结构化课程 → PPTElement 幻灯片 → 课堂运行时”这一闭环；M8 已成套裁剪 OpenMAIC 的 slide Prompt、直接坐标元素、normalize、Slide 装配和只读 Renderer，M9 将按同样方式参考 diagram Prompt、HTML 后处理与 iframe 宿主，再适配本项目的 AIAdapter、MySQL 和有限类型。
 
 ## 设计文档
 
@@ -69,11 +69,11 @@ app/
   api/health/config/             # [M6 已实现] 当前 AI 档位的无密钥配置检查
 components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
-  slides/                        # [M8 计划] 只读 SlideCanvas 与 text/shape/line/code Renderer
+  slides/                        # [M8 已实现] 只读 SlideCanvas 与 text/shape/line/code Renderer
   interactive/                   # [M9 计划] sandbox iframe 宿主与消息桥
   editor/                        # [M11 可选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
-  domain/                        # [M7.1 已实现] Course v2、CourseBrief、状态转换与 fixture
+  domain/                        # [M8 已实现] Course v3、CourseBrief、Slide/PPTElement 与 fixture
   repository/                    # [M7.1 已实现] v2 InMemory / MySQL 仓储、旧行隔离与错误映射
   db/                            # [M2 已实现] MySQL 配置、连接池和健康检查
   application/                   # [M7.1 已实现] Brief、大纲/场景生成用例与服务端测验判分
@@ -81,7 +81,7 @@ lib/
   generation/                    # [M7.1 已实现] outline.v2、解析、服务端复算、修复、预算与受限重试
   playback/                      # [M5 已实现] 播放 reducer、Action executor 与语音适配器
   quality/                       # [M7/M10 计划] 固定主题、人工量表与离线汇总
-  slides/                        # [M8 计划] Slide/PPTElement、规范化与富文本净化
+  slides/                        # [M8 已实现] Slide/PPTElement、规范化与富文本净化
   interactive/                   # [M9 计划] HTML 校验、CSP patch 与运行协议
   export/                        # [M12 可选] Slide/PPTElement → PPTX 与简单 ZIP 打包
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
@@ -91,7 +91,7 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
-标记为 M1～M7.1 的能力已经进入正式调用链；M8/M9 仍是计划结构，M11/M12 只有在再次确认可选范围后才创建。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M8 的能力已经进入正式调用链；M9/M10 仍是计划结构，M11/M12 只有在再次确认可选范围后才创建。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 ## 技术栈
 
@@ -170,8 +170,8 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 5. **M5（已完成）**：Action 播放、quiz 持久化、TextOnly 与可选 BrowserSpeech；
 6. **M6（已完成）**：本机自动化测试、故障注入、生产构建、恢复和 DeepSeek 真实生成证据均已通过。
 7. **M6.5（已完成）**：DeepSeek 远端响应分类 → 受限自动重试 → 安全日志与前端恢复反馈 → 故障注入和真实 smoke 验收；
-8. **M7（进行中）**：M7.0 已保留六题基线、生成事实和逐场景 MHTML；继续完成 CourseBrief、Course v2 和 outline v2；
-9. **M8（计划）**：裁剪 OpenMAIC 的 `slide-content Prompt → 带坐标 PPTElement → normalize → Slide → SlideCanvas` 纵向链，接入 MySQL，并用 2～3 个真实主题做桌面视觉检查；
+8. **M7（已完成）**：M7.0 已保留六题基线、生成事实和逐场景 MHTML；M7.1 已完成 CourseBrief、Course v2 和 outline v2.1；
+9. **M8（已完成）**：裁剪 OpenMAIC 的 `slide-content Prompt → 带坐标 PPTElement → normalize → Slide → SlideCanvas` 纵向链，升级 Course v3，并用 3 个真实主题和 4 份 MHTML 完成桌面校准；
 10. **M9（计划）**：裁剪 OpenMAIC 的 diagram Prompt、HTML 后处理和 iframe Renderer，实现唯一一种 `interactive/diagram` 的生成、保存、隔离运行和 fallback；
 11. **M10（计划）**：实现 ready 场景按指令再生成、事务替换和 v0.3/v0.4 成对质量验收；
 12. **M11（可选）**：在 M8 的同一 `Slide/PPTElement` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不建立第二套页面格式，也不阻塞 v0.4；
@@ -182,6 +182,6 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 
 ## 与 OpenMAIC 的关系
 
-OpenMAIC 是本项目的参考系统，其源码采用 MIT License。本仓库当前只依据公开源码分析并重新设计毕业设计规模的实现，尚未复制 OpenMAIC 源文件。若后续直接复用任何实现或资源，应保留原项目的版权和许可声明，并在本项目中明确标注来源。
+OpenMAIC 是本项目的参考系统，其源码采用 MIT License。M8 已裁剪固定提交中的 slide-content Prompt，并按本项目范围重新实现有限 DSL、规范化和 Renderer；来源、改动与完整许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 本项目文档中的“复刻”指在毕业设计范围内重建核心工作流，并允许在遵守 MIT License、保留版权和明确标注来源的前提下裁剪复用上游成熟链路。本项目需要明确区分上游原有实现与自己的范围裁剪、AIAdapter/MySQL 适配、代码元素扩展和后续研究工作；它不表示与 OpenMAIC 官方项目兼容，也不代表 OpenMAIC 官方对本项目的认可。
