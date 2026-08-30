@@ -32,6 +32,18 @@ describe("SlideRenderer", () => {
     expect(html).toContain("data-element-type=\"code\"");
   });
 
+  it("使用稳定尺寸的箭头标记并把可选控制点渲染为曲线", () => {
+    const course = materializeFixtureCourse(createFixtureCourse("反馈回路", 4));
+    const slide = course.scenes.find((scene) => scene.type === "slide" && scene.content.canvas.elements.some((element) => element.type === "line"));
+    if (!slide || slide.type !== "slide") throw new Error("line slide expected");
+    const line = slide.content.canvas.elements.find((element) => element.type === "line");
+    if (!line || line.type !== "line") throw new Error("line expected");
+    line.curve = [32, 36];
+    const html = renderToStaticMarkup(<SlideRenderer content={slide.content} />);
+    expect(html).toContain("markerUnits=\"userSpaceOnUse\"");
+    expect(html).toContain(" Q ");
+  });
+
   it("根据 Scene 判别字段选择 slide 和 quiz 渲染器", () => {
     const course = materializeFixtureCourse(createFixtureCourse("软件测试", 3));
     const slide = course.scenes.find((scene) => scene.type === "slide");

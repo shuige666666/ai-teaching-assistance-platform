@@ -12,7 +12,7 @@ const validSlide = {
     elements: [
       { type: "text" as const, left: 60, top: 50, width: 880, height: 76, content: "<p style=\"font-size:32px;font-weight:bold\">可靠的场景边界</p>", textType: "title" as const },
       { type: "shape" as const, left: 60, top: 160, width: 360, height: 180, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1] as [number, number], fill: "#eaf1f8" },
-      { type: "line" as const, left: 420, top: 250, width: 3, start: [0, 0] as [number, number], end: [100, 0] as [number, number], points: ["", "arrow"] as ["", "arrow"] },
+      { type: "line" as const, left: 420, top: 250, width: 3, start: [0, 0] as [number, number], end: [100, 0] as [number, number], curve: [50, 40] as [number, number], points: ["", "arrow"] as ["", "arrow"] },
       { type: "code" as const, left: 540, top: 160, width: 400, height: 250, language: "typescript", lines: ["const safe = schema.parse(output);"], fileName: "boundary.ts" },
     ],
   },
@@ -49,6 +49,7 @@ describe("scene generation boundary", () => {
     expect(scene).toMatchObject({ type: "slide", courseId: course.id, outlineId: outline.id, order: 1 });
     if (scene.type !== "slide") throw new Error("slide expected");
     expect(scene.content.canvas.elements.every((element) => Boolean(element.id))).toBe(true);
+    expect(scene.content.canvas.elements.find((element) => element.type === "line")).toMatchObject({ curve: [50, 40] });
     const code = scene.content.canvas.elements.find((element) => element.type === "code");
     expect(code?.type === "code" && code.lines.every((line) => Boolean(line.id))).toBe(true);
     expect(scene.actions).toHaveLength(1);

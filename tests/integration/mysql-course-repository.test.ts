@@ -61,7 +61,7 @@ describe("MySQLCourseRepository integration", () => {
     const recovered = await new MySQLCourseRepository(pool).get(draft.id);
     expect(course).toMatchObject({ status: "ready", revision: 8 });
     expect(recovered?.scenes.map((scene) => scene.type)).toEqual(["slide", "slide", "quiz"]);
-    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2", "scene-slide.v2", "scene-quiz.v1"]);
+    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2.1", "scene-slide.v2.1", "scene-quiz.v1"]);
   });
 
   it("删除课程会级联删除 quiz_attempts", async () => {

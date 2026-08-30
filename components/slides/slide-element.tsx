@@ -55,36 +55,44 @@ function ShapeElement({ element }: { element: PPTShapeElement }) {
   );
 }
 
-function LineMarker({ id, kind, color, atStart }: { id: string; kind: "" | "arrow" | "dot"; color: string; atStart: boolean }) {
+function LineMarker({ id, kind, color, atStart, width }: { id: string; kind: "" | "arrow" | "dot"; color: string; atStart: boolean; width: number }) {
   if (kind === "") return null;
+  const size = Math.max(2, width);
   return (
-    <marker id={id} markerWidth="10" markerHeight="10" refX={atStart ? 2 : 8} refY="5" orient="auto-start-reverse" markerUnits="strokeWidth">
+    <marker id={id} markerWidth={size * 3} markerHeight={size * 3} refX={size * 1.5} refY={size * 1.5} orient="auto" markerUnits="userSpaceOnUse">
       {kind === "arrow"
-        ? <path d={atStart ? "M 10 0 L 0 5 L 10 10 Z" : "M 0 0 L 10 5 L 0 10 Z"} fill={color} />
-        : <circle cx="5" cy="5" r="3.2" fill={color} />}
+        ? <path d="M 0 0 L 10 5 L 0 10 Z" fill={color} transform={`scale(${size * 0.3}) rotate(${atStart ? 180 : 0}, 5, 5)`} />
+        : <circle cx="5" cy="5" r="5" fill={color} transform={`scale(${size * 0.3})`} />}
     </marker>
   );
+}
+
+/** 按模型给出的控制点生成直线或二次曲线路径，循环关系无需再拼接多根直线。 */
+function getLinePath(element: PPTLineElement): string {
+  const startX = element.left + element.start[0];
+  const startY = element.top + element.start[1];
+  const endX = element.left + element.end[0];
+  const endY = element.top + element.end[1];
+  if (!element.curve) return `M ${startX} ${startY} L ${endX} ${endY}`;
+  return `M ${startX} ${startY} Q ${element.left + element.curve[0]} ${element.top + element.curve[1]} ${endX} ${endY}`;
 }
 
 function LineElement({ element }: { element: PPTLineElement }) {
   const startMarkerId = `line-start-${element.id}`;
   const endMarkerId = `line-end-${element.id}`;
-  const x1 = element.left + element.start[0];
-  const y1 = element.top + element.start[1];
-  const x2 = element.left + element.end[0];
-  const y2 = element.top + element.end[1];
   return (
     <svg className={styles.line} data-element-type="line" aria-hidden="true">
       <defs>
-        <LineMarker id={startMarkerId} kind={element.points[0]} color={element.color} atStart />
-        <LineMarker id={endMarkerId} kind={element.points[1]} color={element.color} atStart={false} />
+        <LineMarker id={startMarkerId} kind={element.points[0]} color={element.color} atStart width={element.width} />
+        <LineMarker id={endMarkerId} kind={element.points[1]} color={element.color} atStart={false} width={element.width} />
       </defs>
-      <line
-        x1={x1} y1={y1} x2={x2} y2={y2}
+      <path
+        d={getLinePath(element)}
         stroke={element.color}
         strokeWidth={element.width}
         strokeLinecap="round"
         strokeDasharray={element.style === "dashed" ? "12 8" : element.style === "dotted" ? "2 8" : undefined}
+        fill="none"
         markerStart={element.points[0] ? `url(#${startMarkerId})` : undefined}
         markerEnd={element.points[1] ? `url(#${endMarkerId})` : undefined}
       />

@@ -68,6 +68,7 @@ const GeneratedLineElementSchema = z.object({
   width: z.number().finite().positive().max(12),
   start: z.tuple([z.number().finite(), z.number().finite()]),
   end: z.tuple([z.number().finite(), z.number().finite()]),
+  curve: z.tuple([z.number().finite(), z.number().finite()]).optional(),
   style: SlideLineStyleSchema.optional(),
   color: SlideColorSchema.optional(),
   points: z.tuple([SlideLinePointSchema, SlideLinePointSchema]).optional(),
@@ -179,13 +180,14 @@ function normalizeElement(value: unknown, index: number, issues: SlideNormalizat
     ];
     const start = clampPoint(element.start);
     const end = clampPoint(element.end);
+    const curve = element.curve ? clampPoint(element.curve) : undefined;
     if (start[0] === end[0] && start[1] === end[1]) {
       issues.push({ path: `content.elements.${index}`, message: "起点与终点重合的线条已丢弃" });
       return null;
     }
     return PPTElementSchema.parse({
       id: randomUUID(), type: "line", left, top, width: element.width,
-      start, end, style: element.style ?? "solid", color: element.color ?? DEFAULT_SLIDE_THEME.fontColor,
+      start, end, curve, style: element.style ?? "solid", color: element.color ?? DEFAULT_SLIDE_THEME.fontColor,
       points: element.points ?? ["", ""],
     });
   }

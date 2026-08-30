@@ -887,6 +887,7 @@ export interface PPTLineElement extends Omit<PPTBaseElement, 'height' | 'rotate'
   type: 'line';
   start: [number, number];
   end: [number, number];
+  curve?: [number, number]; // 可选二次曲线控制点，相对 left/top
   style: 'solid' | 'dashed' | 'dotted';
   color: string;
   points: [LinePoint, LinePoint];

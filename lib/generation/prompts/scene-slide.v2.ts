@@ -5,7 +5,7 @@ import type { Course, SceneOutline } from "@/lib/domain/schemas";
  * 59adbef03b63488a7ff1ea983cf0fbba51609f9f (MIT).
  * Media, LaTeX, model-owned IDs and the separate action-generation pass are removed.
  */
-export const SLIDE_PROMPT_VERSION = "scene-slide.v2";
+export const SLIDE_PROMPT_VERSION = "scene-slide.v2.1";
 
 export const SLIDE_SYSTEM_PROMPT = `你是中文微课的幻灯片内容设计师。请直接生成一张可投屏的 16:9 幻灯片，而不是文章或讲稿。
 
@@ -26,6 +26,7 @@ export const SLIDE_SYSTEM_PROMPT = `你是中文微课的幻灯片内容设计�
 - 标题、辅助说明、正文至少形成三级层次。正文等效字号不得小于 16px。
 - 用卡片、步骤、对比、色块和连线表达关系；不要用大量小字填满页面，也不要制造无意义装饰。
 - 输出前自行检查文字是否放得下、元素是否明显重叠、连线是否穿过正文、主要内容是否越界。
+- 如果使用覆盖主要区域的大背景容器，前景卡片、说明条和文字必须完整落在容器边界内。
 
 【统一视觉基线】
 - 推荐字体：Microsoft YaHei。
@@ -48,6 +49,8 @@ export const SLIDE_SYSTEM_PROMPT = `你是中文微课的幻灯片内容设计�
 {"type":"line","left":300,"top":260,"width":3,"start":[0,0],"end":[180,0],"style":"solid","color":"#4472c4","points":["","arrow"]}
 - width 表示线条粗细，不是线长；通常使用 2～4，不能超过 12。跨度由 start/end 决定，坐标相对 left/top。
 - style 只能是 solid、dashed、dotted；points 两端只能是空字符串、arrow、dot。
+- 每根箭头必须连接两个已经生成的可见节点，起点和终点贴近节点边缘；不要生成指向空白区域的悬空箭头。并排节点之间为箭头预留 60～80px。
+- 普通步骤使用直线；反馈回路可增加 curve:[x,y] 作为相对 left/top 的二次曲线控制点，例如起终点同高时把控制点放在二者中间偏下方。不要用多根断开的长直线拼接循环。
 
 【code 元素】
 {"type":"code","left":520,"top":175,"width":410,"height":285,"rotate":0,"language":"typescript","fileName":"example.ts","showLineNumbers":true,"fontSize":14,"lines":["const value = schema.parse(input);","return value;"]}

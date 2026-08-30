@@ -76,6 +76,7 @@ export const PPTLineElementSchema = z.object({
   width: z.number().finite().positive().max(12),
   start: z.tuple([z.number().finite(), z.number().finite()]),
   end: z.tuple([z.number().finite(), z.number().finite()]),
+  curve: z.tuple([z.number().finite(), z.number().finite()]).optional(),
   style: SlideLineStyleSchema,
   color: SlideColorSchema,
   points: z.tuple([SlideLinePointSchema, SlideLinePointSchema]),
