@@ -76,7 +76,14 @@ describe("MySQLCourseRepository integration", () => {
     if (!interactive || interactive.type !== "interactive") throw new Error("interactive scene missing");
     expect(interactive.content.html).toContain("Content-Security-Policy");
     expect(interactive.content.fallback.steps.length).toBeGreaterThanOrEqual(2);
-    expect(interactive.generation).toMatchObject({ promptVersion: "scene-diagram.v2.1", provider: "mock" });
+    expect(interactive.generation).toMatchObject({ promptVersion: "scene-diagram.v2.3", provider: "mock" });
+    // 再生成仅替换目标 JSON，其他场景与大纲由同一短事务完整保留。
+    const regenerated = await service.regenerateInteractive(course.id, interactive.outlineId, course.revision, "mysql-interactive-regenerate", "layout loop");
+    const refreshed = (await new MySQLCourseRepository(pool).get(course.id))!;
+    expect(refreshed).toEqual(regenerated);
+    expect(refreshed.scenes.find(s => s.outlineId === interactive.outlineId)?.id).not.toBe(interactive.id);
+    expect(refreshed.scenes.filter(s => s.outlineId !== interactive.outlineId)).toEqual(course.scenes.filter(s => s.outlineId !== interactive.outlineId));
+    expect(refreshed.outlines).toEqual(course.outlines);
   });
 
   it.each([6, 8])("%s 场景课程可实际落库并恢复不同类型的互动", async (count) => {

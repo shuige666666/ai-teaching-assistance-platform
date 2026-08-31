@@ -13,7 +13,9 @@
 
 ## 当前状态
 
-2026-08-31 互动扩展：支持关系探索、过程模拟、互动挑战和 Python/JavaScript 编程实验；分类不锁死玩法。大纲页可改互动类型与设计意图。资源策略改为允许 CDN/联网、保留无同源权限 iframe；不要在互动页输入敏感数据。请运行 `pnpm db:migrate` 应用 003，修正此前 MySQL 仍限制 3～5 场景的问题。详见 09 第 6 节。
+2026-08-31 互动扩展：支持关系探索、过程模拟、互动挑战和 Python/JavaScript 编程实验；分类不锁死玩法。大纲页可改互动类型与设计意图。资源策略改为允许 CDN/联网、保留无同源权限 iframe；不要在互动页输入敏感数据。课堂展示使用最大可用 16:9 视口，Prompt 提供三种可改写布局骨架以及 SVG/Canvas/reset 示例；独立 HTML 下载仍保持自身自适应。请运行 `pnpm db:migrate` 应用 003，修正此前 MySQL 仍限制 3～5 场景的问题。详见 09 第 6 节。
+
+互动稳定性补充：新生成使用 `scene-<type>.v2.3`，Canvas 尺寸与绘制分离，补齐数值输入、游戏失败与重置示例。ResizeObserver 循环与未处理异常都会停止 iframe 并降级，新桥接保留行列和初始化错误重放。降级区可由用户点击“重新生成本场互动”，成功才替换这一场，失败保留原内容；“重新加载原脚本”不调用模型。课程 `ready` 只代表生成保存完成，不代表全部玩法已验收。
 
 项目的 **M1～M9 功能代码已进入正式调用链**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建带可追溯 CourseBrief 的 v4 草稿，经 `outline.v2.3` 在同一次调用中解析明确要求并生成 4～8 项大纲，再按 outline 顺序逐项生成 PPT 式 slide/quiz/interactive 场景、进入课堂自动播放并从 MySQL 恢复课程。
 
@@ -84,7 +86,7 @@ lib/
   playback/                      # [M5 已实现] 播放 reducer、Action executor 与语音适配器
   quality/                       # [M7/M10 计划] 固定主题、人工量表与离线汇总
   slides/                        # [M8 已实现] Slide/PPTElement、规范化与富文本净化
-  interactive/                   # [M9 已实现] HTML 校验、CSP patch 与运行协议
+  interactive/                   # [M9 已实现] HTML 校验、CSP patch、运行协议与布局 Prompt 骨架
   export/                        # [M12 可选] Slide/PPTElement → PPTX 与简单 ZIP 打包
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
 scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
@@ -93,7 +95,7 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
-标记为 M1～M9 的能力已经进入正式调用链；M10 仍是计划结构，M11/M12 只有在再次确认可选范围后才创建。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M9 的能力已经进入正式调用链；M10 已提前接入互动降级后的单场景再生成，slide/quiz 再生成和配对验收仍在计划中。M11/M12 只有在再次确认可选范围后才创建。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 ## 技术栈
 
@@ -175,7 +177,7 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 8. **M7（已完成）**：M7.0 已保留六题基线、生成事实和逐场景 MHTML；M7.1 已完成 CourseBrief、Course v2 和 outline v2.1；
 9. **M8（已完成）**：裁剪 OpenMAIC 的 `slide-content Prompt → 带坐标 PPTElement → normalize → Slide → SlideCanvas` 纵向链，升级 Course v3，并用 3 个真实主题和 4 份 MHTML 完成桌面校准；
 10. **M9（已完成）**：裁剪 OpenMAIC 四类互动 Prompt，实现多样化生成、外部依赖加载、隔离运行和 fallback；
-11. **M10（计划）**：实现 ready 场景按指令再生成、事务替换和 v0.3/v0.4 成对质量验收；
+11. **M10（部分实现）**：已接入互动降级后的用户主动再生成与事务替换；其余类型按指令再生成和 v0.3/v0.4 成对质量验收仍待实施；
 12. **M11（可选）**：在 M8 的同一 `Slide/PPTElement` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不建立第二套页面格式，也不阻塞 v0.4；
 13. **M12（可选）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；
 14. **MX（暂时搁置）（未选题）**：待 M10 产品质量闭环完成后选择一个可度量的毕业论文研究问题。

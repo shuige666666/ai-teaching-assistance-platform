@@ -9,6 +9,7 @@ import { createCourseDraft } from "@/lib/domain/fixture";
 import { buildInteractivePrompt } from "@/lib/generation/prompts/scene-interactive.v2";
 import { WidgetTypeSchema } from "@/lib/interactive/widget-types";
 import { createMockWidget } from "@/lib/interactive/mock-widgets";
+import { getInteractiveImplementationExamples, getInteractiveLayoutTemplate } from "@/lib/interactive/layout-templates";
 
 const rawHtml = `<!doctype html><html><head><meta charset="utf-8"><style>button{color:#222}</style></head><body><button id="done">完成</button><script>addEventListener('DOMContentLoaded',()=>parent.postMessage({type:'INTERACTIVE_READY',version:1},'*'));document.getElementById('done').addEventListener('click',()=>parent.postMessage({type:'INTERACTIVE_COMPLETED',version:1},'*'));addEventListener('message',event=>{if(event.source===parent&&event.data?.type==='INTERACTIVE_RESET')document.body.dataset.reset='yes'})</script></body></html>`;
 
@@ -29,7 +30,7 @@ describe("M9 interactive boundary", () => {
     expect(html).toContain("Content-Security-Policy");
     expect(html).toContain("connect-src https: http:");
     expect(html).toContain("frame-src 'none'");
-    expect(html).toContain("data-interactive-runtime=\"2\"");
+    expect(html).toContain("data-interactive-runtime=\"4\"");
     expect(html).toContain("INTERACTIVE_COMPLETED");
   });
 
@@ -52,15 +53,17 @@ describe("M9 interactive boundary", () => {
     const course = createCourseDraft("Agent 开发", 4, { interactionMode: "required" });
     const outline: SceneOutline = { id: "interactive-1", type: "interactive", widgetType, widgetOutline: { designIdea: "选择工具改变结果并获得反馈", language: "python" }, role: "practice", title: "操作实验", teachingObjective: "理解运行过程", keyPoints: ["观察", "验证"], order: 3 };
     const prompt = buildInteractivePrompt(course, outline);
-    expect(prompt.version).toBe(`scene-${widgetType}.v2.1`);
+    expect(prompt.version).toBe(`scene-${widgetType}.v2.3`);
     expect(prompt.user).toContain(outline.widgetOutline!.designIdea);
     expect(prompt.system).toContain(`本次 widgetType 必须为 ${widgetType}`);
+    expect(prompt.system).toContain("min-height:0");
+    expect(prompt.system).toContain("InteractiveRuntime.onReset");
     const dto = { type: "interactive", content: { type: "interactive", widgetType, runtimeContractVersion: 1, html: widgetType === "diagram" ? rawHtml : createMockWidget(widgetType, "操作实验"), fallback }, narration: "观察操作反馈", summary: "理解运行过程" };
     expect(validateSceneOutput(dto, outline).type).toBe("interactive");
     expect(() => validateSceneOutput({ ...dto, content: { ...dto.content, widgetType: widgetType === "game" ? "code" : "game" } }, outline)).toThrow();
   });
 
-  it("只接受四种最小消息，额外字段也会被拒绝", () => {
+  it("只接受声明过的消息和诊断字段，额外字段仍被拒绝", () => {
     expect(WidgetToHostMessageSchema.parse({ type: "INTERACTIVE_READY", version: 1 })).toEqual({ type: "INTERACTIVE_READY", version: 1 });
     expect(HostToWidgetMessageSchema.safeParse({ type: "INTERACTIVE_RESET", version: 1, target: "parent" }).success).toBe(false);
     expect(WidgetToHostMessageSchema.safeParse({ type: "INTERACTIVE_COMPLETED", version: 2 }).success).toBe(false);
@@ -80,7 +83,18 @@ describe("M9 interactive boundary", () => {
     const content: InteractiveContent = { type: "interactive", widgetType: "diagram", runtimeContractVersion: 1, html: postProcessInteractiveHtml(rawHtml), fallback };
     const html = renderToStaticMarkup(<InteractiveRenderer content={content} />);
     expect(html).toContain("LOADING INTERACTIVE");
+    expect(html).toContain("data-testid=\"interactive-viewport\"");
     expect(html).toContain("sandbox=\"allow-scripts\"");
     expect(html).not.toContain("allow-same-origin");
+  });
+
+  it("为四类互动提供可改写的布局骨架和对应实现示例", () => {
+    expect(getInteractiveLayoutTemplate("diagram")).toContain("widget-main--split");
+    expect(getInteractiveLayoutTemplate("simulation")).toContain("widget-main--bottom");
+    expect(getInteractiveLayoutTemplate("game")).toContain("widget-main--bottom");
+    expect(getInteractiveLayoutTemplate("code")).toContain("widget-main--editor");
+    expect(getInteractiveImplementationExamples("diagram")).toContain("fitSvgToContent");
+    expect(getInteractiveImplementationExamples("simulation")).toContain("ResizeObserver");
+    expect(getInteractiveImplementationExamples("code")).toContain("InteractiveRuntime.onReset");
   });
 });

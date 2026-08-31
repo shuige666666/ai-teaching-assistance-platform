@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-31）：outline.v2.3、scene-slide.v2.1、scene-quiz.v1 与 scene-diagram/simulation/game/code.v2.1 已接入正式路径。大纲默认不生成互动；开启后按 4/5～6/7～8 场景分别安排 1/1～2/1～3 个互动，且至少 2 个 slide、1 个 quiz，首场 slide、互动不相邻。diagram/simulation 输出预算 16,000，game/code 为 20,000，HTML 注入 CSP/桥接后不超过 256 KiB；每个请求仍最多 4 次上游调用、至多一次 repair。
+> 实现状态（2026-08-31）：outline.v2.3、scene-slide.v2.1、scene-quiz.v1 与 scene-diagram/simulation/game/code.v2.3 已接入正式路径。大纲默认不生成互动；开启后按 4/5～6/7～8 场景分别安排 1/1～2/1～3 个互动，且至少 2 个 slide、1 个 quiz，首场 slide、互动不相邻。diagram/simulation 输出预算 16,000，game/code 为 20,000，HTML 注入 CSP/桥接后不超过 256 KiB；每个请求仍最多 4 次上游调用、至多一次 repair。
 
 ## 1. 设计结论
 
@@ -117,7 +117,11 @@ flowchart TD
     RepairOnce --> Route
 ```
 
-diagram 的运行错误不会触发浏览器内自动模型循环。用户看到 fallback 后可以重载同一份已保存 HTML 或跳过，不调用模型；生成失败仍在大纲页显式重试；这样费用、revision 和恢复证据仍可追踪。
+互动运行错误不会触发浏览器内自动模型循环。用户看到 fallback 后可以重载同一份已保存 HTML 或跳过，不调用模型；生成失败仍在大纲页显式重试；这样费用、revision 和恢复证据仍可追踪。
+
+生成校验不执行浏览器 JavaScript，`ready` 不等于玩法已验证。ResizeObserver 通知已在真实课程复现持续撑高，因此与未处理异常一样降级并卸载 iframe。ERROR 可带 filename/line/column；桥接缓存首个错误，在宿主 PING 时重放，避免漏掉初始化异常。历史桥接发来的 WARNING 仍可解析，但同样降级；新桥接不再发 WARNING，不改课程 Schema。仅更新宿主不会修补已保存 HTML；替换必须由用户显式点击再生成。
+
+`layout-templates.ts` 仅提供生成参考，不在服务器强制套版：Canvas 由独立定位容器确定尺寸，只在 contentRect/像素比变化时更新缓冲区；render 不写尺寸。模拟/游戏示例明确数值转换、开始去重、正常失败留在页内、重置恢复默认参数，不额外增加模型调用或运行时自动修复。
 
 ## 4. AI Adapter
 
@@ -435,7 +439,7 @@ export interface OutlineGenerationV2DTO {
 
 大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定版式强加给所有主题。`scene-slide.v2` 由 OpenMAIC `slide-content` Prompt 裁剪而来，明确“页面是视觉提示，不是讲稿”，细节进入 narration；模型返回完整 `{type, content, narration, summary}` 外壳，其中 content 只有背景和带坐标的 `text/shape/line/code`。服务端过滤、补默认值、净化文本、分配 id 并装配 Slide；quiz.v1 继续生成可机械验证的答案与解析。
 
-互动按 widgetType 分流 Prompt，直接输出 HTML 而不是转义到 JSON 字符串；适配器不发送 JSON response_format。head 中 scene-meta 保存 narration/summary/fallback，缺省时从大纲取得纯文本替代内容。服务端提取元数据、检查完整文档与 256 KiB 大小、注入 CSP/InteractiveRuntime，再装配 Scene。允许 CDN，保留无同源 iframe 隔离；Prompt 不是安全证明。code 使用可终止 Worker 执行 Python/JavaScript。详细边界以 docs/09 第6节为准。
+互动按 widgetType 分流 Prompt，直接输出 HTML 而不是转义到 JSON 字符串；适配器不发送 JSON response_format。head 中 scene-meta 保存 narration/summary/fallback，缺省时从大纲取得纯文本替代内容。服务端提取元数据、检查完整文档与 256 KiB 大小、注入 CSP/InteractiveRuntime，再装配 Scene。允许 CDN，保留无同源 iframe 隔离；Prompt 不是安全证明。code 使用可终止 Worker 执行 Python/JavaScript。`scene-interactive.v2` 还会从 `lib/interactive/layout-templates.ts` 注入三种可改写布局骨架及 SVG/Canvas/reset 示例；课堂展示层固定最大 16:9 视口，独立 HTML 仍按自身 CSS 自适应。详细边界以 docs/09 第6节为准。
 
 ## 8. 解析与修复
 
@@ -664,19 +668,24 @@ M7 必须建立小型固定人工评价集，M8/M10 使用同一冻结协议判�
 
 使用同一主题集、Provider、模型、温度和场景数量分别生成 v0.3 与 v0.4 课程，隐藏版本后评价事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配和测验对齐。MHTML 使用相同视口；互动页另评教学必要性、控件可理解性、重置和完成反馈。报告同时给出生成完成率、修复率、耗时、token、人工发现的主要版式问题和关键事实错误，禁止只展示改善的维度。
 
-## 15. 再生成管线（M10 计划）
+## 15. 再生成管线（M10 互动分支已接入）
 
-`POST /api/courses/{courseId}/scenes/{outlineId}/regenerate` 接收 `expectedRevision` 与不超过 500 字的 instruction。服务端流程为：
+`POST /api/courses/{courseId}/scenes/{outlineId}/regenerate` 当前只接受已保存且进度 ready 的 interactive，接收 `expectedRevision` 与可选、不超过 500 字的 runtimeError。错误背景和旧摘要只作为不可信上下文，不改变大纲、类型和输出契约。服务端流程为：
 
 ```text
-读取 ready Course 与目标 Scene
-  → 构造 CourseBrief + Outline + bounded baseline + instruction
-  → 按 scene.type 调用对应 Prompt
-  → 完整解析、Schema 与类型专属边界；slide 执行同一规范化，互动执行同一隔离检查
-  → expectedRevision 短事务原位替换
+读取 ready / partial_failed Course 与 ready 互动
+  → expectedRevision 短事务登记既有 activeOperation 租约，保留旧 Scene
+  → CourseBrief + Outline + 旧摘要 + runtimeError 调用最新版分类 Prompt
+  → 同一解析、装配和最多4次调用/一次repair预算
+  → 再次核对 revision、operation id 和取消信号
+  → 短事务仅替换本场景，返回新 Course，课堂载入新 Scene id
 ```
 
-再生成调用期间不修改 Course.status、SceneProgress 或持久化 activeOperation，新候选提交前旧 Scene 始终保留。模型不能决定 courseId、outlineId、type、order、状态或 ID；失败、取消、HTML 安全错误和 revision conflict 都只结束本次操作，不把原场景改成 failed。quiz 再生成要求用户确认旧作答失效；最终事务同时替换 Scene 并删除旧 sceneId 的 QuizAttempt，任一步失败则回滚。
+本轮沿用既有租约而非新增候选状态表：请求中 Course.status 暂为 generating，目标进度仍 ready、attempts 加一，旧 Scene 始终保留。成功后只替换一个场景并清理租约；失败/取消在仍持有租约时恢复 ready/partial_failed，目标进度保留 ready 并记录 lastError。冲突不覆盖其他写入；进程中断后同场景过期租约可由用户显式重试接管。模型不决定 courseId、outlineId、type、order、状态或 ID。
+
+课堂降级区区分“重新生成本场互动”和“重新加载原脚本”，前者明确提示调用模型，禁用重复点击和场景导航，支持取消等待；失败后读取最新 revision 供再次显式重试，失败恢复读取若也失败则要求刷新核对。取消可能与提交并发，不声称客户端取消能撤销已经成功提交的事务。无浏览器自动重生成、自动运行验收或编辑代理。
+
+其余 M10 仍是计划：slide/quiz 按用户指令再生成、同题配对验收。quiz 将要求确认旧作答失效，最终事务同时替换 Scene 并删除旧 sceneId 的 QuizAttempt；本轮不开放该接口能力，也不动现有 quiz 数据。
 
 ## 16. MX 研究接口
 

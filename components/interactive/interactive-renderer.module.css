@@ -9,8 +9,29 @@
   background: #f5f1e8;
 }
 
+.viewportFrame {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 课堂内只把这块作为固定比例的阅读窗口；独立 HTML 仍由自身 CSS 决定高度。 */
+.viewport {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid #b7b0a3;
+  background: #fff;
+}
+
 .frame {
-  flex: 1;
   display: block;
   width: 100%;
   height: 100%;
@@ -22,6 +43,9 @@
 }
 
 .frameReady { opacity: 1; }
+
+.regenerationNote { display: block; margin-top: 12px; color: #625d53; line-height: 1.6; }
+.fallback button:disabled { opacity: .5; cursor: wait; }
 
 .toolbar {
   flex: 0 0 auto;
@@ -59,6 +83,7 @@
   position: absolute;
   inset: 0;
   z-index: 1;
+  overflow: auto;
   display: grid;
   grid-template-columns: minmax(220px, .7fr) minmax(360px, 1.3fr);
   gap: 42px;
@@ -107,7 +132,7 @@
 }
 
 .fallback li::before { content: "0" counter(steps); color: #a33b25; font: 13px/1.5 "SFMono-Regular", Consolas, monospace; }
-.fallbackActions { display: flex; gap: 10px; margin-top: 20px; }
+.fallbackActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 .fallbackActions button:last-child { background: transparent; color: #242621; }
 
 @media (max-width: 980px) {

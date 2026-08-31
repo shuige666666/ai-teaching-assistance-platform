@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SceneRenderer } from "@/components/renderers/scene-renderer";
 import type { Course } from "@/lib/domain/schemas";
 import { isBrowserSpeechAvailable } from "@/lib/playback/speech-adapters";
@@ -17,7 +17,10 @@ const statusLabels = {
   completed: "本场景完成",
 } as const;
 
-export function ClassroomRuntime({ course }: { course: Course }) {
+export function ClassroomRuntime({ course: initialCourse }: { course: Course }) {
+  const [course, setCourse] = useState(initialCourse);
+  const [regenerating, setRegenerating] = useState(false);
+  const regenerationRequest = useRef<AbortController | null>(null);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [continuousPlay, setContinuousPlay] = useState(false);
   const [browserSpeechEnabled, setBrowserSpeechEnabled] = useState(false);
@@ -29,6 +32,42 @@ export function ClassroomRuntime({ course }: { course: Course }) {
   const speech = scene.actions.find((action) => action.type === "speech");
   const courseProgress = ((sceneIndex + playback.progress / 100) / course.scenes.length) * 100;
   const isPartialPreview = course.status !== "ready" || course.scenes.length < course.requestedSceneCount;
+
+  // 离开课堂时取消请求，避免迟到响应写入已离开的页面。
+  useEffect(() => () => regenerationRequest.current?.abort(), []);
+
+  /** 以当前 revision 再生成本场互动，失败后同步租约释放后的版本以便显式重试。 */
+  async function regenerateInteractive(runtimeError: string) {
+    if (regenerationRequest.current || scene.type !== "interactive") return;
+    const controller = new AbortController();
+    regenerationRequest.current = controller;
+    setRegenerating(true);
+    setContinuousPlay(false);
+    playback.pause();
+    try {
+      const response = await fetch(`/api/courses/${course.id}/scenes/${scene.outlineId}/regenerate`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+        body: JSON.stringify({ expectedRevision: course.revision, runtimeError: runtimeError.slice(0, 500) }),
+      });
+      const payload = await response.json() as { data?: { course: Course }; error?: { code?: string; message?: string; requestId?: string } };
+      if (!response.ok || !payload.data?.course) {
+        throw new Error(`${payload.error?.code ?? "REGENERATION_FAILED"}：${payload.error?.message ?? "重新生成失败"}${payload.error?.requestId ? `（请求 ${payload.error.requestId}）` : ""}`);
+      }
+      controller.signal.throwIfAborted();
+      setCourse(payload.data.course);
+    } catch (error) {
+      // 读取失败不覆盖主错误；取消后服务端也可能仍在清理租约，下一次请求仍有版本保护。
+      try {
+        const refreshed = await fetch(`/api/courses/${course.id}`, { signal: AbortSignal.timeout(5000) });
+        const payload = await refreshed.json() as { course?: Course };
+        if (refreshed.ok && payload.course) setCourse(payload.course);
+      } catch { /* 保留本地旧课程，提示用户刷新核对。 */ }
+      throw new Error(controller.signal.aborted ? "已取消本次等待，请刷新核对状态后再试。原内容不会在新结果提交前被删除。" : `${error instanceof Error ? error.message : "重新生成失败"}。未成功提交的新结果不会替换原互动。`);
+    } finally {
+      regenerationRequest.current = null;
+      setRegenerating(false);
+    }
+  }
 
   useEffect(() => {
     // 3. 页面加载后再读取浏览器是否支持语音。
@@ -53,6 +92,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
 
   /** 手工切页会停止连续播放，旧 Action 由 controller 在 scene 变化时取消。 */
   function moveTo(index: number) {
+    if (regenerationRequest.current) return;
     // 5. 手动切页时，停止连续播放。
     setContinuousPlay(false);
     setSceneIndex(Math.max(0, Math.min(course.scenes.length - 1, index)));
@@ -79,6 +119,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
   }
 
   function primaryControl() {
+    if (regenerating) return <div className="runtime-wait" role="status">正在重新生成当前互动</div>;
     if (playback.state.status === "playing") return <button className="runtime-primary" type="button" onClick={playback.pause}><span>Ⅱ</span>暂停讲解</button>;
     if (playback.state.status === "paused") return <button className="runtime-primary" type="button" onClick={playback.resume}><span>▶</span>继续讲解</button>;
     if (playback.state.status === "completed") return <button className="runtime-primary" type="button" onClick={() => { setContinuousPlay(false); playback.replay(); }}><span>↻</span>重新播放</button>;
@@ -100,7 +141,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
         <nav className="scene-rail" aria-label="课程场景">
           <p>SCENES</p>
           {course.scenes.map((item, index) => (
-            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} onClick={() => moveTo(index)} aria-label={`打开场景 ${item.order}：${item.title}`}>
+            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" disabled={regenerating} key={item.id} onClick={() => moveTo(index)} aria-label={`打开场景 ${item.order}：${item.title}`}>
               <span>{String(item.order).padStart(2, "0")}</span><i /><small>{item.type === "quiz" ? "测验" : item.type === "interactive" ? "互动" : "讲解"}</small>
             </button>
           ))}
@@ -128,6 +169,8 @@ export function ClassroomRuntime({ course }: { course: Course }) {
             onQuizSubmit={submitQuiz}
             onQuizCompleted={playback.completeLearner}
             onInteractiveCompleted={playback.completeLearner}
+            onInteractiveRegenerate={regenerateInteractive}
+            onCancelRegeneration={() => regenerationRequest.current?.abort()}
           />
         </section>
 
@@ -146,9 +189,9 @@ export function ClassroomRuntime({ course }: { course: Course }) {
       </div>
 
       <footer className="classroom-controls">
-        <button className="control-button" type="button" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>
+        <button className="control-button" type="button" disabled={regenerating || sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>
         <div className="control-center"><span className="control-index">{String(scene.order).padStart(2, "0")}</span><span className="control-divider" /><span>{statusLabels[playback.state.status]}</span></div>
-        <button className="control-button" type="button" disabled={sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span> →</button>
+        <button className="control-button" type="button" disabled={regenerating || sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span> →</button>
       </footer>
     </main>
   );

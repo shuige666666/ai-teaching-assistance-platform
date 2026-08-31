@@ -32,6 +32,69 @@ export class SceneGenerationService {
     private readonly now: () => number = Date.now,
   ) {}
 
+  /** 只再生成已保存的互动；沿用短事务租约，候选失败时保留旧场景与其他课程内容。 */
+  async regenerateInteractive(courseId: string, outlineId: string, expectedRevision: number, requestId: string, runtimeError?: string, requestSignal?: AbortSignal): Promise<Course> {
+    const current = await this.repository.get(courseId);
+    if (!current) throw new SceneApplicationError("COURSE_NOT_FOUND", "课程不存在");
+    if (current.revision !== expectedRevision) throw new CourseConflictError();
+    const outline = current.outlines.find((item) => item.id === outlineId);
+    if (!outline) throw new SceneApplicationError("OUTLINE_NOT_FOUND", "场景大纲不存在");
+    const oldScene = current.scenes.find((item) => item.outlineId === outlineId);
+    const progress = current.sceneProgress.find((item) => item.outlineId === outlineId);
+    const expired = current.activeOperation?.stage === "scene" && current.activeOperation.outlineId === outlineId && current.activeOperation.expiresAt <= this.now();
+    if (outline.type !== "interactive" || oldScene?.type !== "interactive" || progress?.status !== "ready") {
+      throw new SceneApplicationError("INVALID_COURSE_STATE", "只能重新生成已经保存的互动场景");
+    }
+    if ((current.activeOperation && !expired) || (!["ready", "partial_failed"].includes(current.status) && !expired)) {
+      throw new SceneApplicationError("INVALID_COURSE_STATE", "课程已有生成操作，请稍后刷新重试");
+    }
+    requestSignal?.throwIfAborted();
+    const operationId = randomUUID(), startedAt = this.now();
+    // 1. 只登记租约和尝试次数；旧 HTML、ready 进度与其他场景全部保留。
+    const registered = await this.repository.save(CourseSchema.parse({
+      ...current, status: "generating",
+      sceneProgress: current.sceneProgress.map((item) => item.outlineId === outlineId ? { ...item, attempts: item.attempts + 1, lastError: undefined, updatedAt: startedAt } : item),
+      activeOperation: { id: operationId, stage: "scene", outlineId, startedAt, expiresAt: startedAt + this.timeoutMs + 30_000 },
+      updatedAt: startedAt,
+    }), expectedRevision);
+    const timeout = AbortSignal.timeout(this.timeoutMs);
+    const signal = requestSignal ? AbortSignal.any([requestSignal, timeout]) : timeout;
+    const settledStatus = current.sceneProgress.every((item) => item.status === "ready") ? "ready" : "partial_failed";
+    let upstreamCalls = 0;
+    try {
+      // 2. 复用首次生成的预算、Prompt、解析和装配，不将旧源码交给模型逐行修补。
+      signal.throwIfAborted();
+      const scene = await generateScene(this.adapter, { course: registered, outline, requestId, signal,
+        regeneration: { previousSummary: oldScene.summary, runtimeError: runtimeError?.slice(0, 500) } });
+      upstreamCalls = scene.generation.upstreamCalls;
+      signal.throwIfAborted();
+      const latest = await this.repository.get(courseId);
+      if (!latest || latest.revision !== registered.revision || latest.activeOperation?.id !== operationId) throw new CourseConflictError();
+      signal.throwIfAborted();
+      // 3. 候选完整通过后才原子替换目标场景；新 id 让课堂清空旧播放/完成状态。
+      return await this.repository.save(CourseSchema.parse({
+        ...latest, status: settledStatus, activeOperation: undefined,
+        scenes: latest.scenes.map((item) => item.outlineId === outlineId ? scene : item),
+        sceneProgress: latest.sceneProgress.map((item) => item.outlineId === outlineId ? { ...item, lastError: undefined, updatedAt: this.now() } : item),
+        lastError: settledStatus === "ready" ? undefined : current.lastError,
+        updatedAt: this.now(),
+      }), latest.revision);
+    } catch (error) {
+      const failure = signal.aborted && !(error instanceof SceneGenerationError)
+        ? new SceneGenerationError("AI_TIMEOUT", "再生成已取消或超时，原互动已保留", true, upstreamCalls, undefined, { cause: error }) : error;
+      const latest = await this.repository.get(courseId);
+      // 4. 仅清理本请求仍持有的租约，不用失败回滚覆盖其他请求的新结果。
+      if (latest?.revision === registered.revision && latest.activeOperation?.id === operationId) {
+        await this.repository.save(CourseSchema.parse({
+          ...latest, status: settledStatus, activeOperation: undefined,
+          sceneProgress: latest.sceneProgress.map((item) => item.outlineId === outlineId ? { ...item, lastError: asDomainError(failure), updatedAt: this.now() } : item),
+          updatedAt: this.now(),
+        }), latest.revision);
+      }
+      throw failure;
+    }
+  }
+
   /** 独立生成一个大纲场景；失败只更新对应进度，不删除其他已完成场景。 */
   async generate(courseId: string, outlineId: string, expectedRevision: number, requestId: string, requestSignal?: AbortSignal): Promise<Course> {
     // 1. 从数据库读取这门课程。

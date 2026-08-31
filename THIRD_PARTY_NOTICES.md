@@ -22,6 +22,10 @@ fallback 和 InteractiveRuntime 桥接；允许外部依赖，但 iframe 仅 `al
 `lib/interactive/runtime-bootstrap.ts` 的内存存储兼容与错误转发裁剪自上游
 `lib/utils/iframe.ts`；后处理与宿主职责参考 `interactive-post-processor.ts`、
 `InteractiveIframeHost.tsx`。可终止 Worker、超时/停止和播放器接入由本项目实现。
+`lib/interactive/layout-templates.ts` 的三种布局、Canvas 尺寸隔离与数值输入示例由本项目编写，
+状态切换/重置思路参考上述 simulation/game Prompt；不是上游完整模板的直接复制。
+错误缓存重放参考 `lib/utils/iframe.ts`，本项目仅缓存首个错误，不接入上游编辑 Agent。
+ResizeObserver 循环与其他未处理异常均降级；用户主动重新生成复用本项目 AIAdapter 和短事务保存。
 
 
 MIT License

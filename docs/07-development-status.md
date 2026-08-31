@@ -28,17 +28,35 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 ## 2. 已实现内容
 
+### M10 互动降级再生成（最小分支，2026-08-31）
+
+已接入降级页的“重新生成本场互动”。按原大纲、Brief 与当前互动 Prompt 生成新候选，成功提交才替换本场；失败保留旧场景及其他内容。不重做大纲、不重生成整课、不自动反复调用模型，也未实现 slide/quiz 再生成、编辑器或完整 M10 质量验收。
+
+ResizeObserver 循环重新作为运行错误降级，包括历史 HTML 桥接发送的 WARNING；宿主卸载 iframe，避免持续撑高页面。“重新加载原脚本”不调用模型，“重新生成本场互动”会调用模型。生成期间禁用重复提交和切场，可以取消等待；若取消时提交已经完成，刷新以数据库结果为准。
+
+服务端沿用 operation id、expectedRevision 和过期租约：生成时保留旧 ready 场景，提交前复查所有权；失败恢复状态，冲突不覆盖其他写入。新增单元测试覆盖目标替换、失败保留、取消、并发冲突及提交失败恢复；MySQL 测试核对重新读取后的持久化结果。浏览器验收使用独立 mock 临时课程，不改写用户原课程；生成保存成功仍不等于生成脚本没有运行或教学问题。
+
+本轮 `pnpm verify:full` 通过：122 项单元、15 项 MySQL、production build、Chromium E2E 1/1。Playwright CLI 验证原清洁机器人遇到布局循环后卸载 iframe；临时 mock 课程验证失败提示、重复点击禁用、单场替换、大纲/其他场景保持不变及刷新恢复 ready。临时课程已按 ID、主题、revision 与场景数量核对后删除（API 204，复查 404）；本轮没有调用真实 DeepSeek，也没有替换用户的原课程。
+
 ### M9 多样化增量（2026-08-31，已完成本轮验证）
 
-正式路径已扩展为 diagram/simulation/game/code。分类选择 Prompt，不限制具体玩法；大纲可以编辑 widgetType、设计意图与 code 语言（Python/JavaScript）。outline.v2.3，互动 Prompt 为 scene-<type>.v2.1。模型直接输出 HTML，服务端从 scene-meta 提取讲解/fallback 后装配；避免整页 JSON 转义失败。diagram/simulation 16,000 tokens，game/code 20,000，注入后 256 KiB；没有增加 repair 轮次、玩法门禁或自动视觉审核。
+正式路径已扩展为 diagram/simulation/game/code。分类选择 Prompt，不限制具体玩法；大纲可以编辑 widgetType、设计意图与 code 语言（Python/JavaScript）。outline.v2.3，互动 Prompt 为 scene-<type>.v2.3。模型直接输出 HTML，服务端从 scene-meta 提取讲解/fallback 后装配；避免整页 JSON 转义失败。diagram/simulation 16,000 tokens，game/code 20,000，注入后 256 KiB；没有增加 repair 轮次、玩法门禁或自动视觉审核。
 
-允许外部资源/连接，iframe 仍只有 allow-scripts，无 allow-same-origin。CSP 禁止对象/子 frame/表单等；网络开放意味着不能承诺防外传，页面显示敏感数据提醒。代码使用可终止 Worker，Python 加载固定 Pyodide，初始化60秒、默认执行5秒，错误答案与代码异常留在页内。平台30秒初始化超时或未处理错误时卸载 iframe 并显示 fallback，可重载同一HTML或跳过。无关库消息忽略，课堂协议仍检查来源/结构。
+本轮小范围布局优化增加 `lib/interactive/layout-templates.ts`：按类型提供主区+侧栏、主画布+底部控制条、编辑器+输出区三个可改写骨架，并在 Prompt 中附带 SVG viewBox、Canvas `ResizeObserver` 与集中式 reset 示例。课堂 `InteractiveRenderer` 只在展示层将 iframe 放进最大可用的 16:9 视口，工具栏不占用画布；独立 HTML 下载仍保持自身自适应和局部滚动，旧课程数据不改写。
+
+后续 v2.3 稳定性修正：纠正自编 Canvas 示例的父子尺寸反馈风险，改为独立定位容器、尺寸变化才更新缓冲区、render 只绘图；补充数值转换、开始去重、正常失败与默认参数重置示例。当时曾将 ResizeObserver 通知降为告警，后因旧课程持续撑高页面，现已恢复降级，见上方 M10 小节。桥接保留文档行列、首错缓存与 PING 重放。没有增加自动 repair 或浏览器质量门。旧课程 c6bb44bb… 的已有脚本不自动修正，`ready` 只说明生成保存成功。
+
+上轮 `pnpm verify:full` 通过：115 单元、15 MySQL、production build、Chromium E2E 1/1。直接执行桥接/示例的单元测试覆盖当时的告警分类、初始化错误重放、Canvas 尺寸更新、数值输入与重置；当时 Playwright CLI 验证三个窗口尺寸下模板稳定、布局告警保留 iframe、真实 TypeError 显示行列并降级。布局告警保留 iframe 是历史策略，已由本轮恢复降级取代。
+
+真实 DeepSeek 样本与操作记录统一在 `eval/runs/m9-runtime-v0.4/2026-08-31T07-55-39Z/`，只用既有大纲直接调用场景生成管线，未保存为新课程、未替换旧课。共 3 次调用、0 repair：初始模拟 32,602ms、游戏 29,757ms、补强重置提示后的模拟 30,718ms。初始模拟保留为 simulation-initial（源码发现重置仍保留参数）；最终 simulation 实测速度/阈值可调整，运行/暂停后计时能耗变化，重置恢复 1.2/0.45 与零计时，两个窗口下 Canvas 与容器边界一致、无布局告警。game 实测预算耗尽后宿主仍 ready，重置恢复100，三个任务可完成。游戏仍偏模块选择，模拟完整达标路线未穷尽；本次只证明这些运行分支，不宣称玩法质量或总体成功率达标。HTML 用于交互复现，本轮未额外做视觉评分或截图。
+
+允许外部资源/连接，iframe 仍只有 allow-scripts，无 allow-same-origin。CSP 禁止对象/子 frame/表单等；网络开放意味着不能承诺防外传，页面显示敏感数据提醒。代码使用可终止 Worker，Python 加载固定 Pyodide，初始化60秒、默认执行5秒，错误答案与代码异常留在页内。平台30秒初始化超时或未处理错误（含 ResizeObserver 循环）时卸载 iframe 并显示 fallback。可重新生成本场互动、重载同一 HTML 或跳过。无关库消息忽略，课堂协议仍检查来源/结构。
 
 新增迁移003修复数据库仍限制3～5场景的遗漏：存量约束扩为3～8以保留历史行，新课程领域约束4～8。迁移已应用，无数据删除。v4已保存HTML不回写，v1～v3仍不兼容。
 
 校准目录为 `eval/runs/m9-diversity-v0.4/2026-08-31T02-40-51.257Z/`。两门6场景课程覆盖四类型，已保存12/12；原JSON包装导致的模拟/游戏解析失败、一次description字段别名失败保留。改为原始HTML后模拟26,578ms、游戏37,977ms均一次调用0 repair。新Python clamp课程 `c61b1c84-370a-402f-8cce-552a12f87301` 四场景和大纲全部一次成功，code 约27秒。较早的工具路由code存在CDN编辑器高度覆盖按钮问题，未手工改写该页；新版Prompt补充编辑器尺寸与工具栏规则。
 
-最终 `pnpm verify:full` 全部通过：109单元、15 MySQL、production build、Chromium E2E 1/1。既有E2E增加JS死循环终止和终止后再次执行，不增加独立质量门。浏览器探针验证JS/Python真实输出、停止、父DOM读取SecurityError与内存存储兼容。
+上轮 `pnpm verify:full` 全部通过：110 单元、15 MySQL、production build、Chromium E2E 1/1。既有E2E增加JS死循环终止和终止后再次执行，不增加独立质量门。浏览器探针验证JS/Python真实输出、停止、父DOM读取SecurityError与内存存储兼容；当时的布局优化另在 1280×720 下核对课堂互动视口为 806×454（约 1.778），工具栏位于视口外。
 
 真实操作：simulation 在0%/100%失败率下分别20/20与0/20成功，完成/重置通过；game 正确顺序消耗预算10→3并完成，重置恢复；clamp code 的错误实现显示断言失败且宿主不降级，正确实现7/7测试通过并完成，重置恢复初始代码，1280×720下按钮无遮挡。最终diagram课程 `d67c6d7f-6dd5-4381-adbb-a4972f6b825a` 的第2场支持天气/数学两条路径，比较后完成，重置和刷新恢复通过；该课大纲与4场景也均一次调用、0 repair。
 

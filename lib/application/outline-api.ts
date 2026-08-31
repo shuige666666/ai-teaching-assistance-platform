@@ -11,6 +11,10 @@ import { SceneApplicationError } from "./scene-generation-service";
 
 export const GenerateOutlineInputSchema = z.object({ expectedRevision: z.number().int().nonnegative() }).strict();
 export const GenerateSceneInputSchema = z.object({ expectedRevision: z.number().int().nonnegative() }).strict();
+export const RegenerateInteractiveInputSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  runtimeError: z.string().trim().max(500).optional(),
+}).strict();
 export const EditOutlineInputSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
   courseTitle: z.string().trim().min(1).max(120),

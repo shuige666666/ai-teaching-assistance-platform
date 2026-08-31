@@ -25,12 +25,21 @@ self.onmessage = async ({data}) => {
 
 /** 注入页面独立运行的桥接和可终止代码执行入口，不读取宿主状态或服务端凭据。 */
 export function buildRuntimeBootstrap(): string {
-  return `<script data-interactive-runtime="2">
+  return `<script data-interactive-runtime="4">
 (() => {
   const workerSource = ${JSON.stringify(CODE_WORKER)};
   let completed = false, readySent = false, resetHandler = () => {}, active = null;
   const send = (type, extra = {}) => parent.postMessage({type,version:1,...extra}, '*');
-  const error = (value) => send('INTERACTIVE_ERROR',{message:String(value && value.message || value || '互动初始化失败').slice(0,300)});
+  let lastError = null;
+  // 缓存首个错误，防止初始脚本先于宿主订阅执行；布局循环同样停止运行。
+  function report(value, location = {}) {
+    const message = String(value && value.message || value || '互动初始化失败').trim().slice(0,300) || '互动初始化失败';
+    const diagnostic = {message,...location};
+    if(lastError)return;
+    lastError = diagnostic;
+    send('INTERACTIVE_ERROR',diagnostic);
+  }
+  const error = (value) => report(value);
   const ready = () => { if(!readySent){readySent=true;send('INTERACTIVE_READY');} };
   // 沙箱真实存储不可用时提供内存兼容，不持久化也不访问宿主存储。
   for (const name of ['localStorage','sessionStorage']) {
@@ -70,10 +79,16 @@ export function buildRuntimeBootstrap(): string {
   addEventListener('message',event=>{
     if(event.source!==parent || event.data?.version!==1)return;
     if(event.data.type==='INTERACTIVE_RESET')reset();
-    if(event.data.type==='INTERACTIVE_PING' && readySent)send('INTERACTIVE_READY');
+    if(event.data.type==='INTERACTIVE_PING'){
+      if(lastError)send('INTERACTIVE_ERROR',lastError);
+      else if(readySent)send('INTERACTIVE_READY');
+    }
   });
-  // 正常练习错误由页面 catch 展示，未处理错误才使整页降级。
-  addEventListener('error',event=>{if(event.message)error(event.message);});
+  // 未处理异常与布局循环都转发；保留文档行列号，URL 不携带查询参数。
+  addEventListener('error',event=>{if(event.message)report(event.message,{
+    filename:String(event.filename || '').split(/[?#]/)[0].slice(0,200),
+    line:event.lineno || 0,column:event.colno || 0
+  });});
   addEventListener('unhandledrejection',event=>error(event.reason));
   addEventListener('pagehide',stopCode);
 })();

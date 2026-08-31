@@ -22,7 +22,7 @@ describe("SceneGenerationService", () => {
     for (const outline of course.outlines) course = await service.generate(course.id, outline.id, course.revision, `interactive-${outline.order}`);
     const interactive = course.scenes.find((scene) => scene.type === "interactive");
     expect(course.status).toBe("ready");
-    expect(interactive?.generation.promptVersion).toBe("scene-diagram.v2.1");
+    expect(interactive?.generation.promptVersion).toBe("scene-diagram.v2.3");
     if (!interactive || interactive.type !== "interactive") throw new Error("interactive scene expected");
     expect(interactive.content.html).toContain("Content-Security-Policy");
   });
