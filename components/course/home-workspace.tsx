@@ -24,7 +24,7 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
   const router = useRouter();
   // 1. 状态
   const [topic, setTopic] = useState("TCP 拥塞控制");
-  const [sceneCount, setSceneCount] = useState(4);
+  const [sceneCount, setSceneCount] = useState(5);
   const [audience, setAudience] = useState("");
   const [learnerLevel, setLearnerLevel] = useState<CourseBriefOverrides["learnerLevel"]>();
   const [learningGoal, setLearningGoal] = useState("");
@@ -116,14 +116,14 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
     <main className="home-shell">
       <header className="site-header">
         <Link className="brand" href="/" aria-label="课序首页"><span className="brand-mark">课</span><span><strong>课序</strong><small>COURSE COMPOSER</small></span></Link>
-        <div className="header-status"><span className="status-dot" /> M7.1 · COURSE V2</div>
+        <div className="header-status"><span className="status-dot" /> M9 · INTERACTIVE COURSE</div>
       </header>
 
       <section className="hero-grid">
         <div className="hero-copy reveal reveal--one">
           <p className="eyebrow">AI TEACHING ASSISTANCE PLATFORM</p>
           <h1>把一个主题，<br />编排成一堂课。</h1>
-          <p className="hero-description">从主题到大纲，再逐项生成 slide 与 quiz；每个场景独立校验、提交和恢复，局部失败不会抹掉已经完成的教学内容。</p>
+          <p className="hero-description">从主题到大纲，再逐项生成 slide、quiz 和可选互动场景；每个场景独立校验、提交和恢复，局部失败不会抹掉已经完成的教学内容。</p>
           <div className="principle-row"><span>结构化契约</span><span>增量持久化</span><span>失败隔离</span></div>
         </div>
 
@@ -132,7 +132,7 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
           <label htmlFor="topic">这堂课要讲什么？</label>
           <textarea id="topic" name="topic" value={topic} minLength={2} maxLength={500} onChange={(event) => setTopic(event.target.value)} placeholder="例如：TCP 拥塞控制" required />
           <div className="field-row">
-            <div><span className="field-label">场景数量</span><div className="segment-control" aria-label="场景数量">{[3, 4, 5].map((count) => <button className={sceneCount === count ? "is-active" : ""} type="button" key={count} onClick={() => setSceneCount(count)}>{count}</button>)}</div></div>
+            <div><span className="field-label">场景数量</span><div className="segment-control" aria-label="场景数量">{[4, 5, 6, 7, 8].map((count) => <button className={sceneCount === count ? "is-active" : ""} type="button" key={count} onClick={() => setSceneCount(count)}>{count}</button>)}</div></div>
             <div className="mode-note"><span>运行模式</span><strong>AI PIPELINE + MYSQL</strong></div>
           </div>
           <details className="brief-settings">
@@ -146,7 +146,7 @@ export function HomeWorkspace({ initialCourses, initialError = null }: { initial
               <label><span>先修知识（每行一项）</span><textarea value={prerequisites} onChange={(event) => setPrerequisites(event.target.value)} placeholder="例如：计算机网络基础" /></label>
               <label><span>附加要求（每行一项）</span><textarea value={additionalRequirements} onChange={(event) => setAdditionalRequirements(event.target.value)} placeholder="例如：包含一次抓包案例" /></label>
             </div>
-            <p>互动模式在 M7.1 固定关闭；M9 才会开放 diagram 互动。</p>
+            <p>互动场景在下一步的大纲工作台选择；开启后 AI 会按课程长度安排 1～3 个 diagram。</p>
           </details>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
           {creationProgress ? (

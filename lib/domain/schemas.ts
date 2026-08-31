@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { CanvasSlideContentSchema } from "./slide-schemas";
+import { WidgetTypeSchema } from "@/lib/interactive/widget-types";
 
-export const CURRENT_SCHEMA_VERSION = 3 as const;
+export const CURRENT_SCHEMA_VERSION = 4 as const;
 
 export const CourseBriefSchema = z.object({
   audience: z.string().trim().min(1).max(120),
@@ -74,7 +75,12 @@ export const GenerationMetadataSchema = z.object({
 
 export const SceneOutlineSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["slide", "quiz"]),
+  type: z.enum(["slide", "quiz", "interactive"]),
+  widgetType: WidgetTypeSchema.optional(),
+  widgetOutline: z.object({
+    designIdea: z.string().trim().min(1).max(600),
+    language: z.enum(["python", "javascript"]).optional(),
+  }).strict().optional(),
   role: z.enum(["hook", "concept", "mechanism", "worked_example", "practice", "summary", "assessment"]),
   title: z.string().trim().min(1).max(80),
   teachingObjective: z.string().trim().min(1).max(300),
@@ -109,6 +115,20 @@ export const QuizContentSchema = z.object({
   questions: z.array(SingleChoiceQuestionSchema).min(1).max(3),
 });
 
+export const InteractiveFallbackSchema = z.object({
+  title: z.string().trim().min(1).max(100),
+  description: z.string().trim().min(1).max(500),
+  steps: z.array(z.string().trim().min(1).max(200)).min(2).max(8),
+}).strict();
+
+export const InteractiveContentSchema = z.object({
+  type: z.literal("interactive"),
+  widgetType: WidgetTypeSchema,
+  runtimeContractVersion: z.literal(1),
+  html: z.string().min(1),
+  fallback: InteractiveFallbackSchema,
+}).strict();
+
 export const ActionSchema = z.discriminatedUnion("type", [
   z.object({
     id: z.string().min(1),
@@ -139,6 +159,7 @@ const SceneBaseSchema = z.object({
 export const SceneSchema = z.discriminatedUnion("type", [
   SceneBaseSchema.extend({ type: z.literal("slide"), content: SlideContentSchema }),
   SceneBaseSchema.extend({ type: z.literal("quiz"), content: QuizContentSchema }),
+  SceneBaseSchema.extend({ type: z.literal("interactive"), content: InteractiveContentSchema }),
 ]);
 
 export const SceneProgressSchema = z.object({
@@ -155,7 +176,7 @@ export const CourseSchema = z
     id: z.string().min(1),
     topic: z.string().trim().min(2).max(500),
     title: z.string().trim().min(1).max(120),
-    requestedSceneCount: z.number().int().min(3).max(5),
+    requestedSceneCount: z.number().int().min(4).max(8),
     status: z.enum([
       "draft",
       "outlining",
@@ -168,9 +189,9 @@ export const CourseSchema = z
     revision: z.number().int().nonnegative(),
     brief: CourseBriefSchema,
     briefResolution: CourseBriefResolutionSchema,
-    outlines: z.array(SceneOutlineSchema).max(5),
-    scenes: z.array(SceneSchema).max(5),
-    sceneProgress: z.array(SceneProgressSchema).max(5),
+    outlines: z.array(SceneOutlineSchema).max(8),
+    scenes: z.array(SceneSchema).max(8),
+    sceneProgress: z.array(SceneProgressSchema).max(8),
     outlineGeneration: GenerationMetadataSchema.optional(),
     activeOperation: z
       .object({
@@ -186,9 +207,6 @@ export const CourseSchema = z
     updatedAt: z.number().int().nonnegative(),
   })
   .superRefine((course, context) => {
-    if (course.brief.interactionMode !== "off") {
-      context.addIssue({ code: "custom", path: ["brief", "interactionMode"], message: "M7.1 暂不开放互动课程，interactionMode 必须为 off" });
-    }
     if (course.briefResolution.status === "provisional" && course.briefResolution.resolvedAt !== undefined) {
       context.addIssue({ code: "custom", path: ["briefResolution", "resolvedAt"], message: "provisional Brief 不能记录 resolvedAt" });
     }
@@ -207,12 +225,33 @@ export const CourseSchema = z
       const quizCount = course.outlines.filter((outline) => outline.type === "quiz").length;
       if (quizCount < 1 || quizCount > 2 || course.outlines[0]?.type === "quiz")
         context.addIssue({ code: "custom", message: "课程必须包含 1～2 个且非首场景的测验" });
+      const interactiveCount = course.outlines.filter((outline) => outline.type === "interactive").length;
+      const maxInteractive = course.requestedSceneCount === 4 ? 1 : course.requestedSceneCount <= 6 ? 2 : 3;
+      if (course.brief.interactionMode === "off" && interactiveCount !== 0)
+        context.addIssue({ code: "custom", message: "不需要互动的课程不能包含 interactive 场景" });
+      if (course.brief.interactionMode === "required" && (interactiveCount < 1 || interactiveCount > maxInteractive))
+        context.addIssue({ code: "custom", message: `当前场景数必须包含 1～${maxInteractive} 个互动场景` });
+      if (course.brief.interactionMode === "auto" && interactiveCount > maxInteractive)
+        context.addIssue({ code: "custom", message: `当前场景数最多包含 ${maxInteractive} 个互动场景` });
+      if (course.outlines[0]?.type === "interactive")
+        context.addIssue({ code: "custom", message: "第一场景不能是互动场景" });
+      if (course.outlines.filter((outline) => outline.type === "slide").length < 2)
+        context.addIssue({ code: "custom", message: "课程至少需要 2 个讲解幻灯片" });
       for (const outline of course.outlines) {
         if (outline.type === "quiz" && !["assessment", "practice"].includes(outline.role)) {
           context.addIssue({ code: "custom", path: ["outlines"], message: "quiz 大纲必须使用 assessment 或 practice 角色" });
         }
         if (outline.type === "slide" && outline.role === "assessment") {
           context.addIssue({ code: "custom", path: ["outlines"], message: "slide 大纲不能使用 assessment 角色" });
+        }
+        if (outline.type === "interactive" && !outline.widgetType) {
+          context.addIssue({ code: "custom", path: ["outlines"], message: "interactive 大纲必须声明互动类型" });
+        }
+        if (outline.type !== "interactive" && (outline.widgetType !== undefined || outline.widgetOutline !== undefined)) {
+          context.addIssue({ code: "custom", path: ["outlines"], message: "非 interactive 大纲不能声明 widgetType" });
+        }
+        if (outline.type === "interactive" && course.outlines[outline.order - 2]?.type === "interactive") {
+          context.addIssue({ code: "custom", path: ["outlines"], message: "interactive 场景不能连续排列" });
         }
       }
     }
@@ -237,6 +276,8 @@ export const CourseSchema = z
       }
       if (scene.updatedAt < scene.createdAt)
         context.addIssue({ code: "custom", message: "场景更新时间不能早于创建时间" });
+      if (scene.type === "interactive" && scene.content.widgetType !== outline?.widgetType)
+        context.addIssue({ code: "custom", message: "互动内容必须与大纲互动类型一致" });
 
       const actionIds = scene.actions.map((action) => action.id);
       if (new Set(actionIds).size !== actionIds.length)
@@ -252,8 +293,8 @@ export const CourseSchema = z
         }
       }
       const lastAction = scene.actions.at(-1);
-      if (scene.type === "quiz" && !(lastAction?.type === "pause" && lastAction.reason === "learner")) {
-        context.addIssue({ code: "custom", message: "quiz 最后一个 Action 必须是 learner pause" });
+      if (["quiz", "interactive"].includes(scene.type) && !(lastAction?.type === "pause" && lastAction.reason === "learner")) {
+        context.addIssue({ code: "custom", message: "quiz 和 interactive 最后一个 Action 必须是 learner pause" });
       }
       if (
         scene.type === "slide" &&
@@ -271,7 +312,7 @@ export const CourseSchema = z
           if (new Set(lineIds).size !== lineIds.length)
             context.addIssue({ code: "custom", message: "代码元素内的行 ID 必须唯一" });
         }
-      } else {
+      } else if (scene.type === "quiz") {
         const questionIds = scene.content.questions.map((question) => question.id);
         if (new Set(questionIds).size !== questionIds.length)
           context.addIssue({ code: "custom", message: "测验 Question ID 必须唯一" });
@@ -305,6 +346,7 @@ export type CourseBriefResolution = z.infer<typeof CourseBriefResolutionSchema>;
 export type SceneOutline = z.infer<typeof SceneOutlineSchema>;
 export type SlideContent = z.infer<typeof SlideContentSchema>;
 export type QuizContent = z.infer<typeof QuizContentSchema>;
+export type InteractiveContent = z.infer<typeof InteractiveContentSchema>;
 export type Action = z.infer<typeof ActionSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type SceneProgress = z.infer<typeof SceneProgressSchema>;

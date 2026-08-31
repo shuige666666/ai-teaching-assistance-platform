@@ -48,7 +48,7 @@ export class OpenAICompatibleAdapter implements AIAdapter {
           max_tokens: input.maxOutputTokens,
           temperature: 0.2,
           stream: false,
-          response_format: { type: "json_object" },
+          ...(input.outputFormat === "text" ? {} : { response_format: { type: "json_object" } }),
           // 大纲仍需要规划推理；结构契约明确的首轮场景生成关闭思考，把预算留给最终 JSON。
           ...(this.config.provider === "deepseek" && input.stage === "scene" ? { thinking: { type: "disabled" } } : {}),
         }),

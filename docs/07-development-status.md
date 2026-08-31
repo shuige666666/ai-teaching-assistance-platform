@@ -4,16 +4,16 @@
 
 ## 1. 当前结论
 
-项目已完成 **M1～M7.1 的功能实现与 mock 全量验收**；M1～M6.5 已具备 DeepSeek 真实 smoke 证据，M7.1 已通过新增单元测试、MySQL 集成测试、production build 和 Chromium E2E。当前在无模型 Key、无模型网络的环境中可以完成：
+项目已完成 **M1～M9**，包括可选互动的生成、保存、隔离运行与 fallback；多样化增量已完成本轮实现与验证，最新状态见下节。当前默认 mock 路径不需要模型 Key 和模型网络，正式课程仍以本机 MySQL 为唯一来源：
 
 ```text
-首页填写主题、选择 3～5 个场景并可选展开高级要求
-  → 在 MySQL 创建带 provisional CourseBrief 的 v2 draft 课程
-  → outline.v2.1 同一次调用检测明确要求并生成带角色的大纲
+首页填写主题、选择 4～8 个场景（默认 5 个）并可选展开高级要求
+  → 在 MySQL 创建带 provisional CourseBrief 的 v4 draft 课程
+  → 大纲页选择 off/required 互动模式；outline.v2.3 同一次调用检测明确要求并生成带角色的大纲
   → 服务端按设置 > 描述 > 默认值复算 Brief，再执行 Schema、语义门与必要时一次模型修复
   → 用 operation id + expectedRevision 短事务提交 outline_ready
   → 人工编辑并由服务端复验、保存、确认
-  → 按 outline 顺序逐个登记和生成 slide / quiz
+  → 按 outline 顺序逐个登记和生成 slide / quiz / interactive
   → 每场独立解析、语义校验、装配 Action 并短事务提交
   → 单场失败时保留其他结果、继续后续场景并显式重试
   → 至少一个场景成功后可进入部分课堂预览；全部完成才标记 ready
@@ -27,6 +27,34 @@
 MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository` 仍用于不依赖数据库的单元测试，但正式 `.env.local` 使用 `COURSE_REPOSITORY=mysql`，不会在数据库失败时静默切换到内存。
 
 ## 2. 已实现内容
+
+### M9 多样化增量（2026-08-31，已完成本轮验证）
+
+正式路径已扩展为 diagram/simulation/game/code。分类选择 Prompt，不限制具体玩法；大纲可以编辑 widgetType、设计意图与 code 语言（Python/JavaScript）。outline.v2.3，互动 Prompt 为 scene-<type>.v2.1。模型直接输出 HTML，服务端从 scene-meta 提取讲解/fallback 后装配；避免整页 JSON 转义失败。diagram/simulation 16,000 tokens，game/code 20,000，注入后 256 KiB；没有增加 repair 轮次、玩法门禁或自动视觉审核。
+
+允许外部资源/连接，iframe 仍只有 allow-scripts，无 allow-same-origin。CSP 禁止对象/子 frame/表单等；网络开放意味着不能承诺防外传，页面显示敏感数据提醒。代码使用可终止 Worker，Python 加载固定 Pyodide，初始化60秒、默认执行5秒，错误答案与代码异常留在页内。平台30秒初始化超时或未处理错误时卸载 iframe 并显示 fallback，可重载同一HTML或跳过。无关库消息忽略，课堂协议仍检查来源/结构。
+
+新增迁移003修复数据库仍限制3～5场景的遗漏：存量约束扩为3～8以保留历史行，新课程领域约束4～8。迁移已应用，无数据删除。v4已保存HTML不回写，v1～v3仍不兼容。
+
+校准目录为 `eval/runs/m9-diversity-v0.4/2026-08-31T02-40-51.257Z/`。两门6场景课程覆盖四类型，已保存12/12；原JSON包装导致的模拟/游戏解析失败、一次description字段别名失败保留。改为原始HTML后模拟26,578ms、游戏37,977ms均一次调用0 repair。新Python clamp课程 `c61b1c84-370a-402f-8cce-552a12f87301` 四场景和大纲全部一次成功，code 约27秒。较早的工具路由code存在CDN编辑器高度覆盖按钮问题，未手工改写该页；新版Prompt补充编辑器尺寸与工具栏规则。
+
+最终 `pnpm verify:full` 全部通过：109单元、15 MySQL、production build、Chromium E2E 1/1。既有E2E增加JS死循环终止和终止后再次执行，不增加独立质量门。浏览器探针验证JS/Python真实输出、停止、父DOM读取SecurityError与内存存储兼容。
+
+真实操作：simulation 在0%/100%失败率下分别20/20与0/20成功，完成/重置通过；game 正确顺序消耗预算10→3并完成，重置恢复；clamp code 的错误实现显示断言失败且宿主不降级，正确实现7/7测试通过并完成，重置恢复初始代码，1280×720下按钮无遮挡。最终diagram课程 `d67c6d7f-6dd5-4381-adbb-a4972f6b825a` 的第2场支持天气/数学两条路径，比较后完成，重置和刷新恢复通过；该课大纲与4场景也均一次调用、0 repair。
+
+四门课程共20/20场景保存、20份MHTML，完整课程、生成历史与runtimeChecks收束到同目录report.json。保留两份旧v2.0运行失败页：工具路由code的编辑器覆盖按钮、数据救援diagram的入口漏绑/弹窗/SVG越界，未手工修改。game 样例虽能完成，仍有无效操作推进进度、顶部磁盘状态未更新的小问题，已列入报告，留给人工评估，不称为无缺陷或稳定成功率。MHTML只作静态对照，脚本能力请在课堂验收。
+
+### M9 diagram 基础版历史（已被上述范围扩展取代）
+
+课程范围已改为 4～8 场景、默认 5。大纲页由用户选择 off/required，默认关闭，模型不能自动开启；required 在 4/5～6/7～8 场景下分别允许 1/1～2/1～3 个 interactive，至少 2 个 slide 和 1 个 quiz，首场 slide、互动不相邻。当前 Course v4 不兼容 v1～v3，旧行不删除、不迁移，只隐藏并明确拒绝。
+
+`outline.v2.2 → scene-diagram.v1.3 → HTML 后处理 → Scene JSON/MySQL → InteractiveRenderer` 已进入正式链。Prompt 裁剪自 OpenMAIC diagram-content，版权与路径在 THIRD_PARTY_NOTICES.md。首版收敛为点击节点看详情、完成探索和重置；不引入编辑器、导出、第二种 widget 或复杂自动修复。HTML 预算 12,000 tokens、注入后不超过 100 KiB；iframe 只有 allow-scripts，CSP 禁止外部网络，宿主检查 source 和严格 v1 消息。5 秒未 ready、脚本错误、非法消息显示纯文本 fallback，可以跳过，其他场景不受影响。
+
+101 项单元测试（18 文件）及 13 项 MySQL 集成测试覆盖新契约与持久化；production build 和 Chromium E2E 1/1 已通过。E2E 包含互动操作、重置、完成、伪造来源忽略、非法消息降级、quiz 和刷新恢复。真实浏览器探针确认父 DOM 与 localStorage 被 SecurityError 阻止，外部 fetch 被 CSP 阻止；注入脚本错误进入 STATIC FALLBACK。
+
+真实 DeepSeek 校准与逐场景 MHTML 收束在 `eval/runs/m9-interactive-v0.4/2026-08-31T01-41-38-550Z/`，不改动 M7.0 冻结六题。初版 HTML 检查误伤 SVG 命名空间/普通 function 已修正；repair 提示词补齐 interactive 分支。后续样例的 SVG 越界、额外 RESET_ACK 和漏绑下一步事件均按运行失败保留，再通过 Prompt 和最小交互逻辑收敛，不手工改数据库伪造通过。生成成功率与实际互动可用性分开记录，不据此小样本宣称稳定成功率。
+
+最终 `scene-diagram.v1.3` 样例为“事务状态转换图：开始、提交与回滚”，courseId=`a3dfc090-4bc0-41c4-8da3-4e0b96af7225`，Course v4/revision 10/ready。大纲和四个场景全部一次调用通过、0 repair；互动 13,856ms。真实 Chromium 验证四个节点、完成事件、播放器完成、宿主重置和刷新恢复；1280×720 课堂下 iframe 为 821×387，文档同尺寸且无滚动溢出。最终 `pnpm verify:full` 通过 101 项单元测试、13 项 MySQL 集成测试、production build、Chromium E2E 1/1。当时 diagram 基础版退出验收完成；生成内容的教学与视觉质量仍需人工评价，不承诺所有新 HTML 无逻辑或版式错误。
 
 ### 数据库与仓储
 

@@ -71,3 +71,17 @@ M8 的临时真实模型校准仍收束在本目录，不新建第二套评测�
 `runs/m8-slide-v0.4/2026-08-30T09-23-19-191Z/` 包含 3 门课程、4 个已保存场景的
 `report.json` 与逐场景 MHTML；没有 PNG、DOM 密度报告或评分表。该目录被 Git 忽略，
 用于本机人工查看，不属于 M7.0 六题冻结基线，也不会提前替代 M10 的同题配对评分。
+
+## M9 互动校准证据
+
+M9 继续使用相同结构，统一保存在 `runs/m9-interactive-v0.4/2026-08-31T01-41-38-550Z/`。
+`report.json` 保存完整课程（含 HTML/fallback）、生成元数据、校准失败和运行检查；
+`scenes/<样例>/` 保存逐场景 MHTML，没有新增评分表、截图或第二套验收文档。
+校准发现的 SVG 越界、额外 ACK 和遗漏事件绑定也保留，不把“JSON 已保存”当作“互动可用”。
+MHTML 用于静态对照；操作、重置和完成请在本机课堂中检查。
+
+## M9 多样化增量
+
+运行 `node eval/scripts/smoke-interactive-diversity.mjs --run-remote`（默认服务3101，可用 EVAL_BASE_URL 指定），会创建两门真实 DeepSeek 六场景课程，分别请求 simulation/code 与 diagram/game，并持续保存失败和元数据。该命令会产生费用，不自动删除或反复重试课程。
+
+本轮证据在 `runs/m9-diversity-v0.4/2026-08-31T02-40-51.257Z/`。report.json 保留初次失败和后续重试，code-final.json 为独立原始HTML版Python课程，diagram-final.json 为最终关系探索课程，scenes/保存20份MHTML。report.json的finalCourses保存四门完整课程，runtimeChecks明确操作通过项、早期失败和残留问题。实际操作验证与生成成功分开记录。需要CDN/Pyodide的页面不承诺离线可执行，不增加评分表或截图目录。

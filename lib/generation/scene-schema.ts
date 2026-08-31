@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { SceneSchema, type GenerationMetadata, type Scene, type SceneOutline } from "@/lib/domain/schemas";
+import { InvalidInteractiveHtmlError, postProcessInteractiveHtml } from "@/lib/interactive/html-policy";
+import { WidgetTypeSchema } from "@/lib/interactive/widget-types";
+import { parseModelJson } from "./parse-json";
 import {
   assembleSlide,
   InvalidGeneratedSlideError,
@@ -23,7 +26,24 @@ const QuizSceneModelSchema = z.object({
   summary: z.string().trim().min(1).max(300),
 }).strict();
 
-export type SceneModelOutput = NormalizedSlideSceneOutput | z.infer<typeof QuizSceneModelSchema>;
+const InteractiveSceneModelSchema = z.object({
+  type: z.literal("interactive"),
+  content: z.object({
+    type: z.literal("interactive"),
+    widgetType: WidgetTypeSchema,
+    runtimeContractVersion: z.literal(1),
+    html: z.string().min(1),
+    fallback: z.object({
+      title: z.string().trim().min(1).max(100),
+      description: z.string().trim().min(1).max(500),
+      steps: z.array(z.string().trim().min(1).max(200)).min(2).max(8),
+    }).strict(),
+  }).strict(),
+  narration: z.string().trim().min(1).max(1_500),
+  summary: z.string().trim().min(1).max(300),
+}).strict();
+
+export type SceneModelOutput = NormalizedSlideSceneOutput | z.infer<typeof QuizSceneModelSchema> | z.infer<typeof InteractiveSceneModelSchema>;
 export type SceneIssue = { path: string; message: string };
 
 export class InvalidSceneError extends Error {
@@ -42,6 +62,12 @@ function collectVisibleText(output: SceneModelOutput): Array<{ path: string; val
     { path: "narration", value: output.narration },
     { path: "summary", value: output.summary },
   ];
+  if (output.type === "interactive") {
+    fields.push({ path: "content.fallback.title", value: output.content.fallback.title });
+    fields.push({ path: "content.fallback.description", value: output.content.fallback.description });
+    output.content.fallback.steps.forEach((step, index) => fields.push({ path: `content.fallback.steps.${index}`, value: step }));
+    return fields;
+  }
   if (output.type === "quiz") {
     fields.push({ path: "title", value: output.title });
     output.content.questions.forEach((question, questionIndex) => {
@@ -52,6 +78,27 @@ function collectVisibleText(output: SceneModelOutput): Array<{ path: string; val
     return fields;
   }
   return fields;
+}
+
+/** 与 OpenMAIC 一样接收原始 HTML，避免整页脚本嵌入 JSON 字符串时反复转义出错。 */
+export function parseSceneResponse(text: string, outline: SceneOutline): unknown {
+  if (outline.type !== "interactive") return parseModelJson(text);
+  const html = text.trim().replace(/^```(?:html)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
+  // mock 适配器仍可返回领域 DTO，真实 HTML 与它进入相同的校验/装配边界。
+  if (!/^<!doctype html>|^<html[\s>]/i.test(html)) return parseModelJson(text);
+  const match = html.match(/<script\b[^>]*\bid\s*=\s*["']scene-meta["'][^>]*>([\s\S]*?)<\/script>/i);
+  let meta: Record<string, unknown> = {};
+  if (match) {
+    try { meta = JSON.parse(match[1]); } catch { throw new InvalidSceneError([{ path: "scene-meta", message: "讲解元数据必须为合法 JSON" }]); }
+    if (!meta || typeof meta !== "object" || Array.isArray(meta)) throw new InvalidSceneError([{ path: "scene-meta", message: "讲解元数据必须是对象" }]);
+  }
+  return {
+    type: "interactive",
+    content: { type: "interactive", widgetType: outline.widgetType, runtimeContractVersion: 1, html,
+      fallback: meta.fallback ?? { title: outline.title, description: outline.teachingObjective, steps: outline.keyPoints } },
+    narration: meta.narration ?? outline.teachingObjective,
+    summary: meta.summary ?? outline.teachingObjective,
+  };
 }
 
 /** 校验场景 DTO；slide 先走元素规范化，quiz 继续执行严格题目契约。 */
@@ -67,6 +114,22 @@ export function validateSceneOutput(value: unknown, outline: SceneOutline): Scen
     const unsafeField = collectVisibleText(output).find((field) => containsForbiddenMarkup(field.value));
     if (unsafeField) throw new InvalidSceneError([{ path: unsafeField.path, message: "讲稿和摘要不能包含 HTML 标签或外部 URL" }]);
     return output;
+  }
+
+  if (outline.type === "interactive") {
+    const parsed = InteractiveSceneModelSchema.safeParse(value);
+    if (!parsed.success) {
+      throw new InvalidSceneError(parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })));
+    }
+    const unsafeField = collectVisibleText(parsed.data).find((field) => containsForbiddenMarkup(field.value));
+    if (unsafeField) throw new InvalidSceneError([{ path: unsafeField.path, message: "互动降级内容、讲稿和摘要不能包含 HTML 或 URL" }]);
+    if (parsed.data.content.widgetType !== outline.widgetType) throw new InvalidSceneError([{ path: "content.widgetType", message: "互动类型必须与当前大纲一致" }]);
+    try {
+      return { ...parsed.data, content: { ...parsed.data.content, html: postProcessInteractiveHtml(parsed.data.content.html) } };
+    } catch (error) {
+      if (error instanceof InvalidInteractiveHtmlError) throw new InvalidSceneError(error.issues, { cause: error });
+      throw error;
+    }
   }
 
   const parsed = QuizSceneModelSchema.safeParse(value);
@@ -96,7 +159,7 @@ export function assembleScene(input: {
 }): Scene {
   const { output, courseId, outline, metadata, now } = input;
   // 1. 根据场景类型创建播放动作。
-  const actions = output.type === "quiz"
+  const actions = output.type === "quiz" || output.type === "interactive"
     ? [{ id: randomUUID(), type: "speech" as const, text: output.narration }, { id: randomUUID(), type: "pause" as const, reason: "learner" as const }]
     : [{ id: randomUUID(), type: "speech" as const, text: output.narration }];
   if (output.type === "slide") {
@@ -104,6 +167,13 @@ export function assembleScene(input: {
     return SceneSchema.parse({
       id: randomUUID(), courseId, outlineId: outline.id, type: "slide", title: outline.title, summary: output.summary, order: outline.order,
       content: { type: "slide", canvas: assembleSlide(output) },
+      actions, generation: metadata, createdAt: now, updatedAt: now,
+    });
+  }
+  if (output.type === "interactive") {
+    return SceneSchema.parse({
+      id: randomUUID(), courseId, outlineId: outline.id, type: "interactive", title: outline.title, summary: output.summary, order: outline.order,
+      content: output.content,
       actions, generation: metadata, createdAt: now, updatedAt: now,
     });
   }

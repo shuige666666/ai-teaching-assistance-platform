@@ -14,6 +14,15 @@ Slide/PPTElement、规范化和只读渲染的职责划分参考了同一提交�
 Renderer，但由本项目按毕业设计范围重新实现。
 
 OpenMAIC is licensed under the MIT License:
+M9 的 `scene-interactive.v2` 裁剪自上述提交的
+`packages/@openmaic/generation/templates/` 下 `diagram-content`、`simulation-content`、
+`game-content`、`code-content` 的 system.md/user.md。保留分类教学意图、玩法与布局建议，
+移除 OpenMAIC 专用动作与 3D 等未实现能力，改接本项目大纲、原始 HTML 输出、scene-meta、
+fallback 和 InteractiveRuntime 桥接；允许外部依赖，但 iframe 仅 `allow-scripts`。
+`lib/interactive/runtime-bootstrap.ts` 的内存存储兼容与错误转发裁剪自上游
+`lib/utils/iframe.ts`；后处理与宿主职责参考 `interactive-post-processor.ts`、
+`InteractiveIframeHost.tsx`。可终止 Worker、超时/停止和播放器接入由本项目实现。
+
 
 MIT License
 

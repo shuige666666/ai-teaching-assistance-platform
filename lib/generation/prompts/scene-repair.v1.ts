@@ -9,7 +9,9 @@ export const SCENE_REPAIR_SYSTEM_PROMPT = `你负责修复不符合约束的课�
 - slide 不允许图片、视频、图表、LaTeX、外部 URL、React 组件或可执行页面
 - quiz option 只能是 {"label":"..."}，禁止使用 text、value 或 id
 - quiz question 只能包含 type、prompt、options、correctOptionIndex、explanation
-slide 完整骨架必须是 {"type":"slide","content":{"background":{"type":"solid","color":"#ffffff"},"elements":[]},"narration":"完整讲解稿","summary":"短摘要"}`;
+- interactive 不得改成 slide 或 quiz，完整骨架必须是 {"type":"interactive","content":{"type":"interactive","widgetType":"与当前大纲一致的diagram/simulation/game/code","runtimeContractVersion":1,"html":"完整 HTML","fallback":{"title":"标题","description":"说明","steps":["步骤1","步骤2"]}},"narration":"完整讲解稿","summary":"短摘要"}
+- interactive 允许 HTTPS CDN 和运行时依赖，不能访问宿主 DOM、创建子 iframe、表单提交或跳转；使用注入的 InteractiveRuntime.ready/onReset/reset/complete/error，编程使用 InteractiveRuntime.runCode({language,code,timeoutMs}) 与 stopCode。不得把原玩法降级为点击节点以规避错误
+根据原任务中的场景 type 选择对应骨架，禁止为了规避错误而改变 type。slide 完整骨架必须是 {"type":"slide","content":{"background":{"type":"solid","color":"#ffffff"},"elements":[]},"narration":"完整讲解稿","summary":"短摘要"}`;
 
 export function buildSceneRepairPrompt(originalPrompt: string, rawOutput: string, issues: SceneIssue[]): string {
   const issueText = issues.slice(0, 12).map((issue) => `${issue.path || "root"}: ${issue.message}`).join("\n");

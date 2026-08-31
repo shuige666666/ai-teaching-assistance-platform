@@ -7,19 +7,33 @@ import { createCourseDraft } from "@/lib/domain/fixture";
 import { CourseConflictError, DatabaseUnavailableError, type CourseRepository } from "@/lib/repository/course-repository";
 import { InMemoryCourseRepository } from "@/lib/repository/in-memory-course-repository";
 
-async function createOutlineReady(repository: InMemoryCourseRepository, count = 3) {
+async function createOutlineReady(repository: InMemoryCourseRepository, count = 4) {
   const draft = await repository.create(createCourseDraft(`M4 服务测试 ${crypto.randomUUID()}`, count));
   return new OutlineGenerationService(repository, new MockAIAdapter()).generate(draft.id, 0, "outline-request");
 }
 
 describe("SceneGenerationService", () => {
+  it("开启互动后四场景课程生成一个可持久化 diagram", async () => {
+    const repository = new InMemoryCourseRepository();
+    const draft = await repository.create(createCourseDraft("事务状态机制", 4, { interactionMode: "required" }));
+    let course = await new OutlineGenerationService(repository, new MockAIAdapter()).generate(draft.id, draft.revision, "interactive-outline");
+    expect(course.outlines.filter((outline) => outline.type === "interactive")).toHaveLength(1);
+    const service = new SceneGenerationService(repository, new MockAIAdapter());
+    for (const outline of course.outlines) course = await service.generate(course.id, outline.id, course.revision, `interactive-${outline.order}`);
+    const interactive = course.scenes.find((scene) => scene.type === "interactive");
+    expect(course.status).toBe("ready");
+    expect(interactive?.generation.promptVersion).toBe("scene-diagram.v2.1");
+    if (!interactive || interactive.type !== "interactive") throw new Error("interactive scene expected");
+    expect(interactive.content.html).toContain("Content-Security-Policy");
+  });
+
   it("逐场景使用两个短事务，全部完成后才进入 ready", async () => {
     const repository = new InMemoryCourseRepository();
     let course = await createOutlineReady(repository);
     const service = new SceneGenerationService(repository, new MockAIAdapter());
     for (const outline of course.outlines) course = await service.generate(course.id, outline.id, course.revision, `scene-${outline.order}`);
-    expect(course).toMatchObject({ status: "ready", revision: 8 });
-    expect(course.scenes).toHaveLength(3);
+    expect(course).toMatchObject({ status: "ready", revision: 10 });
+    expect(course.scenes).toHaveLength(4);
     expect(course.sceneProgress.every((item) => item.status === "ready" && item.attempts === 1)).toBe(true);
   });
 
@@ -35,13 +49,17 @@ describe("SceneGenerationService", () => {
     expect(course.sceneProgress.find((item) => item.outlineId === failedOutlineId)?.lastError).toMatchObject({ code: "INVALID_MODEL_OUTPUT", retryable: true });
     expect(course.scenes).toHaveLength(1);
 
-    course = await new SceneGenerationService(repository, new MockAIAdapter()).generate(course.id, course.outlines[2].id, course.revision, "scene-last");
+    course = await new SceneGenerationService(repository, new MockAIAdapter()).generate(course.id, course.outlines[2].id, course.revision, "scene-third");
     expect(course.status).toBe("partial_failed");
     expect(course.scenes).toHaveLength(2);
 
-    course = await new SceneGenerationService(repository, new MockAIAdapter()).generate(course.id, failedOutlineId, course.revision, "scene-retry");
-    expect(course).toMatchObject({ status: "ready", revision: 10 });
+    course = await new SceneGenerationService(repository, new MockAIAdapter()).generate(course.id, course.outlines[3].id, course.revision, "scene-last");
+    expect(course.status).toBe("partial_failed");
     expect(course.scenes).toHaveLength(3);
+
+    course = await new SceneGenerationService(repository, new MockAIAdapter()).generate(course.id, failedOutlineId, course.revision, "scene-retry");
+    expect(course).toMatchObject({ status: "ready", revision: 12 });
+    expect(course.scenes).toHaveLength(4);
     expect(course.sceneProgress.find((item) => item.outlineId === failedOutlineId)?.attempts).toBe(2);
   });
 

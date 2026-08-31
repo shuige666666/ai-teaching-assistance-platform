@@ -118,7 +118,7 @@ function displayBriefValue(brief: CourseBrief, field: CourseBriefField) {
   if (field === "learnerLevel") return levelLabels[value as CourseBrief["learnerLevel"]];
   if (field === "teachingStyle") return styleLabels[value as CourseBrief["teachingStyle"]];
   if (field === "durationMinutes") return `${value} 分钟`;
-  if (field === "interactionMode") return "关闭（M7.1）";
+  if (field === "interactionMode") return value === "required" ? "需要互动场景" : "不需要互动场景";
   return String(value);
 }
 
@@ -251,6 +251,31 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
     } catch (caught) {
       finishOperation(caught instanceof DOMException && caught.name === "AbortError" ? "cancelled" : "failed");
       setError(caughtNotice(caught, "课程要求保存失败"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** 在生成大纲前直接保存互动选择，确保模型只读取 MySQL 中的课程事实。 */
+  async function chooseInteractionMode(interactionMode: "off" | "required") {
+    if (course.brief.interactionMode === interactionMode || course.outlines.length > 0) return;
+    setBusy("interaction");
+    setError(null);
+    const requestId = beginOperation("正在保存互动场景选择");
+    try {
+      const response = await request(`/api/courses/${course.id}/brief`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-request-id": requestId },
+        body: JSON.stringify({ expectedRevision: course.revision, changes: { interactionMode } }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw responseError(payload, "互动场景选择保存失败");
+      setCourse(payload.data.course);
+      setBriefDraft(structuredClone(payload.data.course.brief));
+      finishOperation("succeeded", interactionMode === "required" ? "已开启互动场景" : "已关闭互动场景");
+    } catch (caught) {
+      finishOperation("failed");
+      setError(caughtNotice(caught, "互动场景选择保存失败"));
     } finally {
       setBusy(null);
     }
@@ -550,6 +575,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
               <label className="brief-editor__wide"><span>学习目标</span><input value={briefDraft.learningGoal} maxLength={300} onChange={(event) => setBriefDraft({ ...briefDraft, learningGoal: event.target.value })} /></label>
               <label><span>预计时长</span><select value={briefDraft.durationMinutes} onChange={(event) => setBriefDraft({ ...briefDraft, durationMinutes: Number(event.target.value) as 10 | 15 | 20 })}><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="20">20 分钟</option></select></label>
               <label><span>教学风格</span><select value={briefDraft.teachingStyle} onChange={(event) => setBriefDraft({ ...briefDraft, teachingStyle: event.target.value as CourseBrief["teachingStyle"] })}><option value="structured">结构化讲解</option><option value="case_based">案例导向</option><option value="practice_oriented">练习导向</option></select></label>
+              <label><span>互动场景</span><select value={briefDraft.interactionMode === "required" ? "required" : "off"} onChange={(event) => setBriefDraft({ ...briefDraft, interactionMode: event.target.value as "off" | "required" })}><option value="off">不需要</option><option value="required">需要，由 AI 安排</option></select></label>
               <label><span>先修知识（每行一项）</span><textarea value={briefDraft.prerequisites.join("\n")} onChange={(event) => setBriefDraft({ ...briefDraft, prerequisites: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) })} /></label>
               <label><span>附加要求（每行一项）</span><textarea value={briefDraft.additionalRequirements.join("\n")} onChange={(event) => setBriefDraft({ ...briefDraft, additionalRequirements: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) })} /></label>
               <div className="brief-editor__notice">保存后旧大纲会失效，但不会调用模型；重新生成大纲时才会产生一次 outline.v2 请求。</div>
@@ -576,14 +602,15 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
           </div>
 
           {course.outlines.length === 0 ? (
-            <div className="outline-empty">
+            <div className="outline-empty outline-empty--interactive">
               <span>00</span>
               <div>
-                <h3>还没有课程骨架</h3>
-                <p>
-                  点击右侧按钮后，mock 或当前服务端 Provider 会生成结构化大纲。模型返回的 JSON
-                  不会直接写入数据库。
-                </p>
+                <h3>先选择这门课是否需要互动</h3>
+                <p>开启后，4 场景安排 1 个，5～6 场景安排 1～2 个，7～8 场景安排 1～3 个互动。按内容设计关系探索、模拟、挑战或编程实验。</p>
+                <div className="interaction-choice" role="group" aria-label="互动场景选择">
+                  <button type="button" className={course.brief.interactionMode === "off" ? "is-active" : ""} disabled={busy !== null} onClick={() => chooseInteractionMode("off")}><strong>不需要</strong><small>使用 slide 与 quiz</small></button>
+                  <button type="button" className={course.brief.interactionMode === "required" ? "is-active" : ""} disabled={busy !== null} onClick={() => chooseInteractionMode("required")}><strong>需要互动</strong><small>AI 按教学目标设计玩法</small></button>
+                </div>
               </div>
             </div>
           ) : (
@@ -655,6 +682,16 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
                             }
                           />
                         </label>
+                        {outline.type === "interactive" ? (
+                          <label>
+                            <span>互动设计 · {outline.widgetType}</span>
+                            <select aria-label={`第 ${outline.order} 场互动类型`} value={outline.widgetType} disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetType: event.target.value as SceneOutline["widgetType"] })}>
+                              <option value="diagram">关系探索</option><option value="simulation">过程模拟</option><option value="game">互动挑战</option><option value="code">编程实验</option>
+                            </select>
+                            <textarea aria-label={`第 ${outline.order} 场互动设计`} value={outline.widgetOutline?.designIdea ?? ""} placeholder="学生做什么，操作如何改变结果，如何反馈与完成" disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetOutline: event.target.value.trim() ? { ...outline.widgetOutline, designIdea: event.target.value } : undefined })} />
+                            {outline.widgetType === "code" ? <select aria-label={`第 ${outline.order} 场编程语言`} value={outline.widgetOutline?.language ?? "python"} disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetOutline: { designIdea: outline.widgetOutline?.designIdea ?? "编写代码、运行并通过测试", language: event.target.value as "python" | "javascript" } })}><option value="python">Python</option><option value="javascript">JavaScript</option></select> : null}
+                          </label>
+                        ) : null}
                         {progress?.lastError ? (
                           <p className="scene-error-inline">
                             {progress.lastError.code} · {progress.lastError.message}

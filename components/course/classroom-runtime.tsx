@@ -13,7 +13,7 @@ const statusLabels = {
   idle: "准备就绪",
   playing: "正在讲解",
   paused: "已暂停",
-  awaitingLearner: "等待作答",
+  awaitingLearner: "等待学习者",
   completed: "本场景完成",
 } as const;
 
@@ -82,7 +82,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
     if (playback.state.status === "playing") return <button className="runtime-primary" type="button" onClick={playback.pause}><span>Ⅱ</span>暂停讲解</button>;
     if (playback.state.status === "paused") return <button className="runtime-primary" type="button" onClick={playback.resume}><span>▶</span>继续讲解</button>;
     if (playback.state.status === "completed") return <button className="runtime-primary" type="button" onClick={() => { setContinuousPlay(false); playback.replay(); }}><span>↻</span>重新播放</button>;
-    if (playback.state.status === "awaitingLearner") return <div className="runtime-wait"><i />请完成当前测验</div>;
+    if (playback.state.status === "awaitingLearner") return <div className="runtime-wait"><i />{scene.type === "interactive" ? "请完成当前互动" : "请完成当前测验"}</div>;
     return <button className="runtime-primary" type="button" onClick={() => { setContinuousPlay(true); playback.play(); }}><span>▶</span>开始课堂</button>;
   }
 
@@ -101,12 +101,12 @@ export function ClassroomRuntime({ course }: { course: Course }) {
           <p>SCENES</p>
           {course.scenes.map((item, index) => (
             <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} onClick={() => moveTo(index)} aria-label={`打开场景 ${item.order}：${item.title}`}>
-              <span>{String(item.order).padStart(2, "0")}</span><i /><small>{item.type === "quiz" ? "测验" : "讲解"}</small>
+              <span>{String(item.order).padStart(2, "0")}</span><i /><small>{item.type === "quiz" ? "测验" : item.type === "interactive" ? "互动" : "讲解"}</small>
             </button>
           ))}
         </nav>
 
-        <section className={`classroom-stage${scene.type === "slide" ? " classroom-stage--slide" : ""}`}>
+        <section className={`classroom-stage${scene.type === "slide" ? " classroom-stage--slide" : scene.type === "interactive" ? " classroom-stage--interactive" : ""}`}>
           {isPartialPreview ? (
             <div className="partial-course-notice" role="status">
               <div><span>PARTIAL COURSE PREVIEW</span><strong>已生成 {course.scenes.length} / {course.requestedSceneCount} 个场景</strong></div>
@@ -127,6 +127,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
             quizSessionId={playback.state.runId}
             onQuizSubmit={submitQuiz}
             onQuizCompleted={playback.completeLearner}
+            onInteractiveCompleted={playback.completeLearner}
           />
         </section>
 
@@ -140,7 +141,7 @@ export function ClassroomRuntime({ course }: { course: Course }) {
             <div><span>浏览器朗读</span><small>{browserSpeechSupported ? "可选增强 · 失败自动回退文本" : "当前浏览器不支持，使用文本计时"}</small></div>
             <button type="button" role="switch" aria-checked={browserSpeechEnabled} disabled={!browserSpeechSupported} className={browserSpeechEnabled ? "is-on" : ""} onClick={toggleBrowserSpeech}><i /></button>
           </div>
-          <div className="runtime-note"><span>PLAYBACK POLICY</span><strong>{continuousPlay ? "连续播放已开启" : "手动场景导航"}</strong><p>切换场景会取消旧语音与计时器；测验可直接作答，全部提交成功后完成本场景。</p></div>
+          <div className="runtime-note"><span>PLAYBACK POLICY</span><strong>{continuousPlay ? "连续播放已开启" : "手动场景导航"}</strong><p>切换场景会取消旧语音与计时器；测验提交或互动场景完成后，播放器才会结束学习者等待。</p></div>
         </aside>
       </div>
 

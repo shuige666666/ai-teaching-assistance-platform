@@ -1,4 +1,5 @@
 import type { AIAdapter, GenerateTextInput, GenerateTextResult } from "./contracts";
+import { createMockWidget, escapeWidgetText } from "@/lib/interactive/mock-widgets";
 import type { CourseBrief, SceneOutline } from "@/lib/domain/schemas";
 
 type MockOutline = {
@@ -8,7 +9,7 @@ type MockOutline = {
   outlines: Array<Omit<SceneOutline, "id">>;
 };
 type MockScene = {
-  type: "slide" | "quiz";
+  type: "slide" | "quiz" | "interactive";
   title?: string;
   content: unknown;
   narration: string;
@@ -27,10 +28,30 @@ function readPromptJson<T>(prompt: string, label: string): T | undefined {
 
 function createMockScene(prompt: string): MockScene {
   const topic = readPromptJson<string>(prompt, "课程描述 JSON") ?? readPromptValue(prompt, "教学主题") ?? "示例主题";
-  const slideOutline = readPromptJson<Pick<SceneOutline, "title" | "keyPoints">>(prompt, "当前 SceneOutline JSON");
-  const title = slideOutline?.title ?? readPromptValue(prompt, "场景标题") ?? "示例场景";
-  const type = slideOutline ? "slide" : readPromptValue(prompt, "场景类型") === "quiz" ? "quiz" : "slide";
-  const keyPoints = slideOutline?.keyPoints ?? (readPromptValue(prompt, "关键点") ?? "核心概念；实际应用").split("；").filter(Boolean);
+  const outline = readPromptJson<Pick<SceneOutline, "type" | "title" | "keyPoints" | "widgetType">>(prompt, "当前 SceneOutline JSON");
+  const title = outline?.title ?? readPromptValue(prompt, "场景标题") ?? "示例场景";
+  const type = outline?.type ?? (readPromptValue(prompt, "场景类型") === "quiz" ? "quiz" : "slide");
+  const keyPoints = outline?.keyPoints ?? (readPromptValue(prompt, "关键点") ?? "核心概念；实际应用").split("；").filter(Boolean);
+  if (type === "interactive" && outline?.widgetType && outline.widgetType !== "diagram") {
+    return { type, content: { type, widgetType: outline.widgetType, runtimeContractVersion: 1, html: createMockWidget(outline.widgetType, title), fallback: { title, description: "通过操作、观察反馈和重试理解当前知识。", steps: keyPoints } }, narration: "请阅读任务说明，操作控件观察结果，完成后可重置重试。", summary: `${title}通过操作与反馈帮助理解知识。` };
+  }
+  if (type === "interactive") {
+    const first = keyPoints[0] ?? "问题输入";
+    const second = keyPoints[1] ?? "关键机制";
+    const third = keyPoints[2] ?? "结果反馈";
+    return {
+      type,
+      content: {
+        type: "interactive",
+        widgetType: "diagram",
+        runtimeContractVersion: 1,
+        html: `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>*{box-sizing:border-box}body{margin:0;background:#f4f0e7;color:#242621;font-family:"Microsoft YaHei",sans-serif}.shell{min-height:100vh;padding:28px 34px}.eyebrow{font:12px monospace;letter-spacing:.18em;color:#a33b25}.nodes{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:36px 0 22px}.node{border:1px solid #8d887e;background:#fff;padding:26px 14px;font-size:18px;cursor:pointer;transition:.2s}.node:hover,.node.active{background:#dce8d9;border-color:#335d45;transform:translateY(-3px)}.detail{min-height:92px;border-left:5px solid #d14424;background:#fff;padding:18px 22px}.actions{display:flex;justify-content:space-between;margin-top:20px}.actions button{border:0;background:#242621;color:#fff;padding:12px 20px;cursor:pointer}.actions button:disabled{opacity:.35}</style></head><body><main class="shell"><p class="eyebrow">INTERACTIVE DIAGRAM</p><h1>${escapeWidgetText(title)}</h1><div class="nodes"><button class="node" data-index="0">${escapeWidgetText(first)}</button><button class="node" data-index="1">${escapeWidgetText(second)}</button><button class="node" data-index="2">${escapeWidgetText(third)}</button></div><section class="detail" id="detail">请依次点击三个节点，观察概念如何连接。</section><div class="actions"><button id="reset">重置</button><button id="complete" disabled>完成探索</button></div></main><script>(()=>{const labels=${JSON.stringify([first, second, third]).replaceAll("<", "\\u003c")};const visited=new Set();const detail=document.getElementById('detail');const complete=document.getElementById('complete');let sent=false;function reset(){visited.clear();sent=false;document.querySelectorAll('.node').forEach(n=>n.classList.remove('active'));detail.textContent='请依次点击三个节点，观察概念如何连接。';complete.disabled=true}document.querySelectorAll('.node').forEach(node=>node.addEventListener('click',()=>{const i=Number(node.dataset.index);visited.add(i);node.classList.add('active');detail.textContent='已探索：'+labels[i]+'。当前进度 '+visited.size+'/3。';complete.disabled=visited.size<3}));document.getElementById('reset').addEventListener('click',reset);complete.addEventListener('click',()=>{if(visited.size===3&&!sent){sent=true;detail.textContent='已完成全部节点探索。';parent.postMessage({type:'INTERACTIVE_COMPLETED',version:1},'*')}});addEventListener('message',event=>{if(event.source===parent&&event.data?.type==='INTERACTIVE_RESET'&&event.data?.version===1)reset()});addEventListener('DOMContentLoaded',()=>parent.postMessage({type:'INTERACTIVE_READY',version:1},'*'))})();</script></body></html>`,
+        fallback: { title, description: `这个互动图说明了${topic}的三个相关部分。`, steps: [first, second, third] },
+      },
+      narration: `请依次点击图中节点，观察${topic}的关键关系，全部探索后完成本场。`,
+      summary: `${title}通过三个可操作节点串联了${topic}的核心关系。`,
+    };
+  }
   if (type === "quiz") {
     return {
       type,
@@ -86,16 +107,21 @@ export class MockAIAdapter implements AIAdapter {
     const explicitBrief = readPromptJson<Partial<CourseBrief>>(input.userPrompt, "显式设置 JSON") ?? {};
     if (!defaultBrief) throw new Error("mock outline prompt missing default brief");
     // mock 不猜测原文字段，因此用同一优先级确定性合并显式设置与默认值。
-    const resolvedBrief = { ...defaultBrief, ...explicitBrief, interactionMode: "off" as const };
-    const titles = ["建立问题地图", "拆解核心机制", "检验关键理解", "连接工程实践", "形成复习路径"];
+    const resolvedBrief = { ...defaultBrief, ...explicitBrief };
+    const titles = ["建立问题地图", "拆解核心机制", "探索概念关系", "检验关键理解", "连接工程实践", "分析边界条件", "整合应用路径", "形成复习闭环"];
+    const interactiveIndexes = resolvedBrief.interactionMode === "required"
+      ? count === 4 ? new Set([2]) : count <= 6 ? new Set([2, 4].filter((index) => index < count - 1)) : new Set([2, 4, 6].filter((index) => index < count - 1))
+      : new Set<number>();
     const output: MockOutline = {
       courseTitle: `${topic}：从概念到实践`,
       detectedBrief: {},
       warnings: [],
       outlines: Array.from({ length: count }, (_, index) => {
-        const type = index === 2 ? "quiz" as const : "slide" as const;
+        const type = index === count - 1 ? "quiz" as const : interactiveIndexes.has(index) ? "interactive" as const : "slide" as const;
         const role: SceneOutline["role"] = type === "quiz"
           ? "assessment"
+          : type === "interactive"
+            ? "mechanism"
           : index === 0
             ? "hook"
             : index === count - 1
@@ -105,10 +131,13 @@ export class MockAIAdapter implements AIAdapter {
                 : "worked_example";
         return {
           type,
+          ...(type === "interactive" ? { widgetType: (["diagram", "simulation", /代码|编程|Agent/i.test(topic) ? "code" : "game"] as const)[Math.floor((index - 2) / 2)], widgetOutline: { designIdea: "操作参数或工具，观察结果、比较反馈并完成任务。" } } : {}),
           role,
           title: `${titles[index]}：${topic}`,
           teachingObjective: type === "quiz"
             ? `检查${resolvedBrief.audience}能否围绕“${resolvedBrief.learningGoal}”辨析核心概念与常见误区`
+            : type === "interactive"
+              ? `通过操作关系图，帮助${resolvedBrief.audience}建立${topic}的节点、流程与因果联系`
             : index === 0
               ? `帮助${resolvedBrief.audience}建立${topic}的问题背景，并进入目标“${resolvedBrief.learningGoal}”`
               : `围绕“${resolvedBrief.learningGoal}”理解${topic}在第 ${index + 1} 个学习层次中的作用与边界`,

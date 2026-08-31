@@ -24,7 +24,7 @@ describe("MySQLCourseRepository integration", () => {
 
   it("新仓储实例可以读取此前实例创建的课程", async () => {
     const firstRepository = new MySQLCourseRepository(pool);
-    const created = await firstRepository.create(createFixtureCourse(`进程恢复 ${crypto.randomUUID()}`, 3));
+    const created = await firstRepository.create(createFixtureCourse(`进程恢复 ${crypto.randomUUID()}`, 4));
     cleanupIds.push(created.id);
     const secondRepository = new MySQLCourseRepository(pool);
     expect((await secondRepository.get(created.id))?.topic).toBe(created.topic);
@@ -42,31 +42,59 @@ describe("MySQLCourseRepository integration", () => {
     expect(recovered?.outlines).toHaveLength(4);
   });
 
-  it.each([1, 2])("列表隐藏 v%s 行，按 ID 访问时明确报告旧课程不支持", async (legacyVersion) => {
+  it.each([1, 2, 3])("列表隐藏 v%s 行，按 ID 访问时明确报告旧课程不支持", async (legacyVersion) => {
     const repository = new MySQLCourseRepository(pool);
-    const created = await repository.create(createCourseDraft(`旧版课程 ${crypto.randomUUID()}`, 3));
+    const created = await repository.create(createCourseDraft(`旧版课程 ${crypto.randomUUID()}`, 4));
     cleanupIds.push(created.id);
     await pool.execute("UPDATE courses SET schema_version = ? WHERE id = ?", [legacyVersion, created.id]);
     await expect(repository.get(created.id)).rejects.toBeInstanceOf(LegacyCourseUnsupportedError);
     expect((await repository.list()).some((course) => course.id === created.id)).toBe(false);
   });
 
-  it("三个场景逐项提交后可恢复为包含 slide 与 quiz 的 ready 课程", async () => {
+  it("四个场景逐项提交后可恢复为包含 slide 与 quiz 的 ready 课程", async () => {
     const repository = new MySQLCourseRepository(pool);
-    const draft = await repository.create(createCourseDraft(`场景持久化 ${crypto.randomUUID()}`, 3));
+    const draft = await repository.create(createCourseDraft(`场景持久化 ${crypto.randomUUID()}`, 4));
     cleanupIds.push(draft.id);
     let course = await new OutlineGenerationService(repository, new MockAIAdapter()).generate(draft.id, 0, "mysql-scene-outline");
     const sceneService = new SceneGenerationService(repository, new MockAIAdapter());
     for (const outline of course.outlines) course = await sceneService.generate(course.id, outline.id, course.revision, `mysql-scene-${outline.order}`);
     const recovered = await new MySQLCourseRepository(pool).get(draft.id);
-    expect(course).toMatchObject({ status: "ready", revision: 8 });
-    expect(recovered?.scenes.map((scene) => scene.type)).toEqual(["slide", "slide", "quiz"]);
-    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2.1", "scene-slide.v2.1", "scene-quiz.v1"]);
+    expect(course).toMatchObject({ status: "ready", revision: 10 });
+    expect(recovered?.scenes.map((scene) => scene.type)).toEqual(["slide", "slide", "slide", "quiz"]);
+    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2.1", "scene-slide.v2.1", "scene-slide.v2.1", "scene-quiz.v1"]);
+  });
+
+  it("互动 HTML、fallback 和生成元数据可从 MySQL 完整恢复", async () => {
+    const repository = new MySQLCourseRepository(pool);
+    const draft = await repository.create(createCourseDraft(`互动持久化 ${crypto.randomUUID()}`, 4, { interactionMode: "required" }));
+    cleanupIds.push(draft.id);
+    let course = await new OutlineGenerationService(repository, new MockAIAdapter()).generate(draft.id, draft.revision, "mysql-interactive-outline");
+    const service = new SceneGenerationService(repository, new MockAIAdapter());
+    for (const outline of course.outlines) course = await service.generate(course.id, outline.id, course.revision, `mysql-interactive-${outline.order}`);
+    const recovered = await new MySQLCourseRepository(pool).get(draft.id);
+    const interactive = recovered?.scenes.find((scene) => scene.type === "interactive");
+    if (!interactive || interactive.type !== "interactive") throw new Error("interactive scene missing");
+    expect(interactive.content.html).toContain("Content-Security-Policy");
+    expect(interactive.content.fallback.steps.length).toBeGreaterThanOrEqual(2);
+    expect(interactive.generation).toMatchObject({ promptVersion: "scene-diagram.v2.1", provider: "mock" });
+  });
+
+  it.each([6, 8])("%s 场景课程可实际落库并恢复不同类型的互动", async (count) => {
+    const repository = new MySQLCourseRepository(pool);
+    const draft = await repository.create(createCourseDraft(`Agent 编程 ${count} 场景 ${crypto.randomUUID()}`, count, { interactionMode: "required" }));
+    cleanupIds.push(draft.id);
+    let course = await new OutlineGenerationService(repository, new MockAIAdapter()).generate(draft.id, 0, "diversity-outline");
+    const service = new SceneGenerationService(repository, new MockAIAdapter());
+    for (const outline of course.outlines) course = await service.generate(course.id, outline.id, course.revision, `diversity-${outline.order}`);
+    const recovered = await new MySQLCourseRepository(pool).get(course.id);
+    expect(recovered?.status).toBe("ready");
+    const types = recovered?.scenes.filter(scene => scene.type === "interactive").map(scene => scene.content.widgetType);
+    expect(types).toEqual(count === 6 ? ["diagram", "simulation"] : ["diagram", "simulation", "code"]);
   });
 
   it("删除课程会级联删除 quiz_attempts", async () => {
     const repository = new MySQLCourseRepository(pool);
-    const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`级联删除 ${crypto.randomUUID()}`, 3)));
+    const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`级联删除 ${crypto.randomUUID()}`, 4)));
     const quizScene = created.scenes.find((scene) => scene.type === "quiz");
     if (!quizScene || quizScene.type !== "quiz") throw new Error("fixture quiz missing");
     const question = quizScene.content.questions[0];
@@ -81,7 +109,7 @@ describe("MySQLCourseRepository integration", () => {
 
   it("服务端判分后可由新作答仓储实例恢复记录", async () => {
     const courseRepository = new MySQLCourseRepository(pool);
-    const course = await courseRepository.create(materializeFixtureCourse(createFixtureCourse(`作答恢复 ${crypto.randomUUID()}`, 3)));
+    const course = await courseRepository.create(materializeFixtureCourse(createFixtureCourse(`作答恢复 ${crypto.randomUUID()}`, 4)));
     cleanupIds.push(course.id);
     const scene = course.scenes.find((item) => item.type === "quiz");
     if (!scene || scene.type !== "quiz") throw new Error("fixture quiz missing");
@@ -99,7 +127,7 @@ describe("MySQLCourseRepository integration", () => {
 
   it("读取损坏 JSON 聚合时返回 STORED_COURSE_INVALID", async () => {
     const repository = new MySQLCourseRepository(pool);
-    const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`损坏数据 ${crypto.randomUUID()}`, 3)));
+    const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`损坏数据 ${crypto.randomUUID()}`, 4)));
     cleanupIds.push(created.id);
     await pool.execute("UPDATE courses SET scenes_json = JSON_ARRAY() WHERE id = ?", [created.id]);
     await expect(repository.get(created.id)).rejects.toBeInstanceOf(StoredCourseInvalidError);

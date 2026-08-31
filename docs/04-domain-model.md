@@ -155,7 +155,7 @@ export interface SceneProgress {
 - 新课程必须包含非空 CourseBrief；M7.1 中 `interactionMode === 'off'`；
 - `id` 非空且创建后不可修改；
 - `topic.trim().length` 为 2～500；
-- `requestedSceneCount` 为 3～5 的整数；
+- `requestedSceneCount` 为 4～8 的整数，默认 5；
 - revision 为从 0 开始的非负整数，只能由 Repository 在成功提交时递增；
 - outline_ready 及之后状态必须有与 requestedSceneCount 相同数量的大纲；
 - outlines 的 id 唯一，order 为从 1 开始的连续整数；
@@ -240,7 +240,7 @@ interface BadScene {
 
 ## 7. v0.3 Slide 内容（历史契约）
 
-v0.3/v2 幻灯片曾采用以下固定内容块；当前 v3 已改为第 16.4 节的 `content.canvas: Slide`，不再读取该联合。这里保留旧定义只用于解释历史基线和版本拒绝原因，不能用于新代码。
+v0.3/v2 幻灯片曾采用以下固定内容块；当前 v4 已改为第 16.4 节的 `content.canvas: Slide`，不再读取该联合。这里保留旧定义只用于解释历史基线和版本拒绝原因，不能用于新代码。
 
 ```ts
 export interface SlideContent {
@@ -694,26 +694,28 @@ create/save 在写入前调用 CourseSchema.parse；get 在读取并组装后再
 
 - 增加可选字段且旧读者允许时，可保持 schemaVersion；
 - 删除字段、改变 Course 顶层语义或存储布局时必须升级 Course schemaVersion；新增 slide/interactive 判别分支仍必须保持旧分支可读，互动消息协议可独立使用 `runtimeContractVersion`；
-- 每次版本升级必须明确选择“迁移”或“保留旧行并拒绝读取”；当前 v1/v2 采用后者，不伪造新内容；
+- 每次版本升级必须明确选择“迁移”或“保留旧行并拒绝读取”；当前 v1/v2/v3 采用后者，不伪造新内容；
 - 新 Scene 类型只有在 Schema、Renderer、生成器和测试同时存在时才能加入；
 - 新 Action 类型只有在 Schema、Executor、取消语义和测试同时存在时才能加入；
 - 不允许用 `any` 绕开外部输入校验，也不允许用类型断言代替运行时验证。
 
-## 16. v0.4/M7～M10 契约：Course schemaVersion 3
+## 16. v0.4/M7～M10 契约：Course schemaVersion 4
 
 ### 16.1 版本兼容策略
 
-M7.1 曾以 `schemaVersion: 2` 引入 CourseBrief 和 SceneOutlineV2；M8 删除 block slide 并把唯一 slide 表达改为 `content.canvas`，因此当前 Course 聚合升级到 `schemaVersion: 3`。本阶段明确不兼容旧课程：Repository 不自动删除或改写旧行，也不把 v1/v2 内容交给当前 Schema。读取顺序为：
+M7.1 以 v2 引入 CourseBrief；M8 以 v3 删除 block slide、改用 `content.canvas`。M9 新增 interactive，并将场景数从 3～5 改为 4～8，因此当前版本为 v4。按用户确认不兼容旧课程：Repository 不删除或改写旧行，也不把 v1～v3 交给当前 Schema。读取顺序为：
 
 ```text
 MySQL row
-  → schema_version = 3：CurrentCourseSchema(v3)
-  → schema_version = 1/2：LEGACY_COURSE_UNSUPPORTED
-  → schema_version > 3：FUTURE_COURSE_SCHEMA_VERSION
+  → schema_version = 4：CurrentCourseSchema(v4)
+  → schema_version = 1/2/3：LEGACY_COURSE_UNSUPPORTED
+  → schema_version > 4：FUTURE_COURSE_SCHEMA_VERSION
   → 应用服务
 ```
 
-`brief_json` 继续存储 `{ brief, resolution }`。新建 v3 Course 必须写入非空 provisional brief；`outline.v2.1` 成功后在保存大纲的同一事务中写入 resolved brief 和来源信息。`list()` 只查询 v3，按旧 ID 读取明确拒绝；旧行既不会丢失，也不会被伪装成符合当前画布契约的课程。
+`brief_json` 继续存储 `{ brief, resolution }`。新建 v4 Course 写入 provisional brief；`outline.v2.3` 成功后同事务保存 resolved brief 和来源。`list()` 只查询 v4，旧 ID 明确拒绝；旧行不丢失。无需新增 SQL 表或列，互动 HTML/fallback 复用 Scene 内容 JSON。
+
+M9 数量规则：默认 5 场景，可选 4～8。大纲页 `off/required` 为用户明确选择，模型不能从描述中覆盖。required 在 4/5～6/7～8 场景下分别允许 1/1～2/1～3 个互动；至少 2 个 slide、1 个 quiz，首场 slide，互动不相邻。互动的 `widgetType` 为 diagram/simulation/game/code；大纲可含 widgetOutline.designIdea、language(python/javascript)，内容含 html、fallback 和 runtimeContractVersion=1；Action 为 speech 后追加 learner pause，宿主完成事件解除等待。
 
 ### 16.2 CourseBrief
 
@@ -775,7 +777,7 @@ export interface CourseV3 extends Omit<CourseV2, 'schemaVersion' | 'scenes'> {
 - prerequisites 为 0～5 项，每项 1～120 个字符，规范化后不能重复；
 - additionalRequirements 为 0～5 项，每项 1～160 个字符，规范化后不能重复；
 - 只有 topic 仍为必填用户输入；`briefOverrides` 中字段缺失表示“未显式设置”，显式 `[]` 表示用户确认列表为空，两者不能在请求解析时合并；
-- 默认值为“无特定专业背景的学习者”、beginner、15 分钟、case_based、off、空先修知识和空附加要求，并从 topic 构造不超过 300 字的通用学习目标；M9 才开放 auto/required；
+- 默认值为“无特定专业背景的学习者”、beginner、15 分钟、case_based、off、空先修知识和空附加要求，并从 topic 构造不超过 300 字的通用学习目标；M9 大纲页开放 off/required，auto 仅保留内部枚举；
 - 字段来源优先级固定为 `explicit_setting > prompt > default`，模型只能报告 Prompt 中能定位到的明确要求；
 - 创建成功时 resolution 为 provisional；outline.v2 成功后变为 resolved，并和大纲使用同一个 Course revision；
 - 场景生成接口不得接受另一份 brief 覆盖 Course.brief；它只使用仓储加载的 resolved Brief。
@@ -819,21 +821,22 @@ export interface SceneOutlineV2 {
   keyPoints: string[];
   misconceptions?: string[];
   assessmentFocus?: string;
-  widgetType?: 'diagram';
+  widgetType?: 'diagram' | 'simulation' | 'game' | 'code';
+  widgetOutline?: { designIdea: string; language?: 'python' | 'javascript' };
   order: number;
   estimatedMinutes?: number;
 }
 ```
 
-除 v1 规则外，v2 课程级不变量为：
+当前 v4 的课程级不变量为：
 
 - role 必须与教学目标一致，但不强制每门课机械包含所有 role；
 - misconceptions 为 0～3 项，每项 1～160 个字符；
 - quiz 应使用 `assessment`，也可以在需要即时练习时使用 `practice`；
-- interactive 必须提供 `widgetType: 'diagram'`，其他 Scene 不得提供 widgetType；
-- `interactionMode=off` 时 interactive 数量为 0，`auto` 时为 0～1，`required` 时恰好为 1；
+- interactive 必须提供受支持的 widgetType，其他 Scene 不得提供 widgetType/widgetOutline；
+- `interactionMode=off` 时 interactive 为 0；required 在 4/5～6/7～8 场景下为 1/1～2/1～3；auto 仅保留内部枚举，最多采用同档上限；
 - interactive 不能是第一场，且其 teachingObjective 必须引用课程中已引入的概念；
-- requestedSceneCount 在 v2 仍为 3～5，至少一个 quiz、最多两个 quiz 的规则不变。
+- requestedSceneCount 为 4～8，默认 5；至少两个 slide、1～2 个 quiz，第一场 slide，interactive 不相邻。
 
 ### 16.4 GeneratedSlideData、Slide 与有限 PPTElement
 
@@ -958,7 +961,7 @@ export interface InteractiveFallback {
 
 export interface InteractiveContent {
   type: 'interactive';
-  widgetType: 'diagram';
+  widgetType: 'diagram' | 'simulation' | 'game' | 'code';
   runtimeContractVersion: 1;
   html: string;
   fallback: InteractiveFallback;
@@ -971,13 +974,13 @@ export interface InteractiveScene extends SceneBase {
 
 export type QuizSceneV3 = QuizScene;
 export type SceneV3 = SlideSceneV3 | QuizSceneV3;
-export type FutureSceneWithInteractive = SceneV3 | InteractiveScene;
+export type SceneV4 = SceneV3 | InteractiveScene;
 ```
 
 约束：
 
-- html 为完整、自包含文档，UTF-8 字节长度不超过 100 KiB；
-- html 不接受 url fallback，不允许外部网络依赖；
+- html 为完整文档，注入后 UTF-8 字节长度不超过 256 KiB；
+- html 不接受 url 替代正文，允许外部网络依赖；运行隔离策略见 docs/09 第6节；
 - fallback.title 为 1～100 字，description 为 1～500 字，steps 为 2～8 项；
 - runtimeContractVersion 当前只能为 1；
 - InteractiveScene 至少有 speech，最后一个 Action 为 learner pause；
@@ -988,12 +991,12 @@ export type FutureSceneWithInteractive = SceneV3 | InteractiveScene;
 
 ```ts
 export type WidgetToHostMessage =
-  | { type: 'INTERACTIVE_READY'; contractVersion: 1 }
-  | { type: 'INTERACTIVE_COMPLETED'; contractVersion: 1 }
-  | { type: 'INTERACTIVE_ERROR'; contractVersion: 1; message: string };
+  | { type: 'INTERACTIVE_READY'; version: 1 }
+  | { type: 'INTERACTIVE_COMPLETED'; version: 1 }
+  | { type: 'INTERACTIVE_ERROR'; version: 1; message: string };
 
 export type HostToWidgetMessage =
-  | { type: 'INTERACTIVE_RESET'; contractVersion: 1 };
+  | { type: 'INTERACTIVE_RESET'; version: 1 };
 ```
 
 所有消息使用 `.strict()` Schema，message 最多 300 字。宿主必须先验证 `event.source === iframe.contentWindow`，再验证消息；不得仅凭 `event.origin`，因为无同源权限的 srcDoc iframe 使用不透明来源。
@@ -1011,4 +1014,4 @@ OpenMAIC 固定提交的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC
 
 ### 16.8 分阶段启用门
 
-Course `schemaVersion: 3` 已随 Slide/PPTElement Schema、轻量规范化、文本净化、只读 Renderer、MySQL 恢复、真实模型 smoke 和 production E2E 同时进入正式调用链。v1/v2 只保留明确拒绝分支，不参与运行时迁移。M9 的 InteractiveScene 也只有在生成器、必要安全边界、iframe Renderer、消息协议、fallback、fixture 和 E2E 同时完成后才能产生；只提前修改联合类型或让模型输出下游尚不能处理的分支，都会破坏阶段可运行性，因此禁止分离发布。
+当前 Course v4 同时包含 slide、quiz 和 interactive 的生成、保存与渲染分支，v1～v3 仅保留明确拒绝，不做迁移。新 Scene 类型必须随生成器、隔离边界、Renderer、协议、fallback、fixture 和回归一起启用；只改联合类型而让下游无法处理，会破坏可运行性。M10 再生成仍未实现。

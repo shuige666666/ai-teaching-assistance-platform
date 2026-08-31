@@ -1,6 +1,6 @@
 # 08. 部署、恢复与验收手册
 
-> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M10/v0.4 的增量验收，其中 M7.1 已完成。当前版本没有账户与权限系统，不允许直接暴露到公网。
+> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M10/v0.4 的增量验收，其中 M7.1、M8、M9 已完成。当前版本没有账户与权限系统，不允许直接暴露到公网。
 
 ## 1. 最小生产启动
 
@@ -19,7 +19,7 @@ pnpm start
 
 - `GET /api/health/database`：确认 MySQL 数据库名和版本；
 - `GET /api/health/config`：确认当前 mode、provider、model 和超时配置；该接口不返回 Key 或 Base URL；
-- `/`：创建一门 3 场景 mock 课程，完成大纲、场景、播放和测验。
+- `/`：创建一门 4～8 场景 mock 课程，完成大纲、场景、播放和测验。
 
 `pnpm db:migrate` 可以重复执行；已登记的迁移会显示 `skip`。生产运行使用 `pnpm build && pnpm start`，不要把 `pnpm dev` 当作交付启动方式。
 
@@ -151,25 +151,32 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 
 | 测试层 | M7～M10 必须覆盖 |
 | --- | --- |
-| Domain | Course v1/v2/v3 判别与旧行隔离、CourseBrief 默认值/字段来源/合并优先级/冲突警告、GeneratedSlideSceneDTO、唯一 canvas Slide、四类 PPTElement 和互动数量规则 |
+| Domain | Course v4 与 v1～v3 旧行隔离、CourseBrief 默认值/字段来源/合并优先级/冲突警告、GeneratedSlideSceneDTO、唯一 canvas Slide、四类 PPTElement 和互动数量规则 |
 | Slide/Renderer | 未支持元素过滤、必要默认值、非有限坐标/非正尺寸、text 白名单净化、code 文本转义、`text/shape/line/code` 渲染、16:9 缩放和未知元素 fallback |
 | Slide visual | 3 个 DeepSeek 代表主题在 `1280×720` 的逐场景 MHTML 与人工检查，确认主次、可读性、关系表达和主要内容未被裁掉；不建立 PNG 档案或自动美学评分 |
-| Interactive boundary | 完整自包含 HTML、外部依赖拒绝、CSP、`sandbox="allow-scripts"`、消息来源/Schema 和 fallback |
+| Interactive boundary | 完整 HTML、允许外部依赖的 CSP、`sandbox="allow-scripts"`、消息来源/Schema 和 fallback |
 | MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、v1 隐藏与明确拒绝、互动内容恢复、再生成原位替换和 conflict |
 | API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2.1 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 解析/规范化失败、interactive 失败分类、ready 场景再生成 |
 | Playwright | `1280×720` 桌面只读 SlideCanvas 的四类元素与恢复，以及 required diagram 的操作、重置、完成、刷新和 fallback |
 | Regression | 原 M6 创建、slide/quiz、播放、作答、删除和 mock E2E 全部保持通过 |
 
-mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。另保留一个尝试外部 fetch/访问父页面和一个伪造消息来源的失败 fixture，证明隔离与 fallback 即可；首版不穷举浏览器全部 API。
+mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。另保留一个尝试读取父页面和一个伪造消息来源的失败 fixture，证明隔离与 fallback 即可；首版不穷举浏览器全部 API。
 
 ### 8.3 M9 DeepSeek 互动 smoke test
 
-M9 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `interactionMode=required` 的 5 场景课程。验收必须核对：
+当前多样化版本以 docs/09 第6节为需求、docs/07 为最新实测记录。先运行 `pnpm db:migrate` 应用003数量约束修复，再 build/start。需要联网加载的脚本不承诺完全离线；MHTML只作视觉归档。人工试用重点为模拟参数改变结果、游戏操作影响资源/结局、代码可编辑执行及错误/正确测试反馈，以及各类重置。下面保留的是较早 diagram-only 结果，不代表当前的禁止网络策略。
 
-- MySQL 中存在且只存在一个 interactive/diagram，保存 promptVersion、耗时、upstreamCalls 和修复标记；
+
+2026-08-31 已完成。当前 Course v4、outline.v2.2、scene-diagram.v1.3，最终事务状态课程 `a3dfc090-4bc0-41c4-8da3-4e0b96af7225` 为 ready，4/4 场景，整课 5 次上游调用、0 repair。互动页 13,856ms，实际点击全部节点后可完成，宿主重置与刷新恢复通过。校准中的 SVG 越界、额外 ACK 和遗漏事件绑定保留为失败事实，不计作运行成功。报告和 16 份 MHTML 位于 `eval/runs/m9-interactive-v0.4/2026-08-31T01-41-38-550Z/`。
+
+最终 `pnpm verify:full`：101 单元、13 MySQL、production build、Chromium E2E 1/1 全部通过。浏览器故障探针确认父 DOM/存储隔离、CSP 阻断外部 fetch、脚本异常显示 fallback；自动 E2E 另覆盖伪造来源与非法协议。正常样例与主动故障注入的预期错误分开记录。
+
+M9 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `interactionMode=required` 的 4～8 场景课程。验收必须核对：
+
+- MySQL 中存在符合分档数量的 interactive（diagram/simulation/game/code）（4 场景 1 个；5～6 场景 1～2 个；7～8 场景 1～3 个），保存 promptVersion、耗时、upstreamCalls 和修复标记；
 - iframe 在 production Chromium 中报告 ready，核心节点/步骤可操作，reset 恢复初始状态，completed 可以解除 learner pause；
 - 页面刷新后重新读取同一 HTML，不依赖生成页内存；
-- 控制台没有未处理错误，iframe 没有成功发起外部网络请求；
+- 控制台没有未处理错误，iframe 不可读取父页面 DOM/存储，CDN 失败可重载；允许外部网络请求；
 - 若首次 HTML 不合法，记录修复或失败，不手工改数据库伪造成功。
 
 ### 8.4 课程质量验收
@@ -191,10 +198,10 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 | AC-Q02 v1 隔离与明确错误 | M7 | repository integration + 旧行读取 | 已通过 |
 | AC-Q03 outline.v2.1 同调用解析与大纲生成；后续场景 Prompt 使用完整上下文 | M7/M8 | golden + 调用计数 + 生成元数据 | outline.v2.1 已通过；scene v2 随 M8 接入 |
 | AC-Q04 OpenMAIC 式 Slide/PPTElement 生成、规范化、保存恢复与桌面只读渲染 | M8 | Schema + normalize + component + 真实模型 MHTML + 桌面 E2E | 已实现 |
-| AC-Q05 required diagram 数量 | M9 | domain + API | 未实现 |
-| AC-Q06 HTML 安全门 | M9 | validator 恶意 fixture | 未实现 |
-| AC-Q07 iframe 协议 | M9 | Playwright + network/console 记录 | 未实现 |
-| AC-Q08 fallback 与失败隔离 | M9 | 故障注入 + E2E | 未实现 |
+| AC-Q05 required diagram 数量 | M9 | domain + API | 已通过 |
+| AC-Q06 HTML 安全门 | M9 | validator 恶意 fixture | 已通过 |
+| AC-Q07 iframe 协议 | M9 | Playwright + network/console 记录 | 已通过 |
+| AC-Q08 fallback 与失败隔离 | M9 | 故障注入 + E2E | 已通过 |
 | AC-Q09 ready 场景再生成 | M10 | application + MySQL conflict | 未实现 |
 | AC-Q10 桌面端成对质量提升 | M10 | 冻结的桌面 v2 量表报告 | 未实现 |
 | AC-Q11 M6 全量回归 | M7～M10 | `pnpm verify:full` | 每个里程碑退出时复跑 |

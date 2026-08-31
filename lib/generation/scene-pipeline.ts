@@ -1,9 +1,11 @@
 import type { AIAdapter, GenerateTextInput, GenerateTextResult } from "@/lib/ai/contracts";
 import { AIAdapterError, type AIErrorCode } from "@/lib/ai/contracts";
 import type { Course, GenerationMetadata, Scene, SceneOutline } from "@/lib/domain/schemas";
-import { parseModelJson } from "./parse-json";
-import { assembleScene, InvalidSceneError, validateSceneOutput } from "./scene-schema";
+import { writeServerEvent } from "@/lib/observability/server-log";
+import { InvalidOutlineError } from "./outline-schema";
+import { assembleScene, InvalidSceneError, parseSceneResponse, validateSceneOutput } from "./scene-schema";
 import { buildQuizUserPrompt, QUIZ_PROMPT_VERSION, QUIZ_SYSTEM_PROMPT } from "./prompts/scene-quiz.v1";
+import { buildInteractivePrompt } from "./prompts/scene-interactive.v2";
 import { buildSceneRepairPrompt, SCENE_REPAIR_SYSTEM_PROMPT } from "./prompts/scene-repair.v1";
 import { buildSlideUserPrompt, SLIDE_PROMPT_VERSION, SLIDE_SYSTEM_PROMPT } from "./prompts/scene-slide.v2";
 import { logUpstreamFailure, logUpstreamSuccess, retryDelayMs, waitForRetry } from "./retry-policy";
@@ -46,13 +48,15 @@ export async function generateScene(
   const maxCalls = 4;
   // 1. 读取上一场的摘要，作为本场的上下文。
   const previousSummary = previousSceneSummary(input.course, input.outline);
-  const isSlide = input.outline.type === "slide";
-  const promptVersion = isSlide ? SLIDE_PROMPT_VERSION : QUIZ_PROMPT_VERSION;
-  const systemPrompt = isSlide ? SLIDE_SYSTEM_PROMPT : QUIZ_SYSTEM_PROMPT;
-  // 2. 根据大纲类型选择 slide 或 quiz 提示词。
-  const userPrompt = isSlide
-    ? buildSlideUserPrompt(input.course, input.outline, previousSummary)
-    : buildQuizUserPrompt(input.course, input.outline, previousSummary);
+  const promptSpec = input.outline.type === "slide"
+    ? { version: SLIDE_PROMPT_VERSION, system: SLIDE_SYSTEM_PROMPT, user: buildSlideUserPrompt(input.course, input.outline, previousSummary), maxOutputTokens: SLIDE_MAX_OUTPUT_TOKENS }
+    : input.outline.type === "quiz"
+      ? { version: QUIZ_PROMPT_VERSION, system: QUIZ_SYSTEM_PROMPT, user: buildQuizUserPrompt(input.course, input.outline, previousSummary), maxOutputTokens: QUIZ_MAX_OUTPUT_TOKENS }
+      : buildInteractivePrompt(input.course, input.outline, previousSummary);
+  const promptVersion = promptSpec.version;
+  const systemPrompt = promptSpec.system;
+  // 2. 互动按教学类型分流，复用同一调用预算和保存链路。
+  const userPrompt = promptSpec.user;
 
   async function callAI(call: Omit<GenerateTextInput, "requestId" | "signal" | "maxOutputTokens">): Promise<GenerateTextResult> {
     let lastError: AIAdapterError | undefined;
@@ -64,7 +68,8 @@ export async function generateScene(
           ...call,
           requestId: input.requestId,
           signal: input.signal,
-          maxOutputTokens: isSlide ? SLIDE_MAX_OUTPUT_TOKENS : QUIZ_MAX_OUTPUT_TOKENS,
+          maxOutputTokens: promptSpec.maxOutputTokens,
+          outputFormat: input.outline.type === "interactive" ? "text" : "json",
         });
         successfulResults.push(result);
         logUpstreamSuccess(result, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls });
@@ -97,18 +102,37 @@ export async function generateScene(
   let output;
   let repaired = false;
   try {
-    output = validateSceneOutput(parseModelJson(first.text), input.outline);
+    output = validateSceneOutput(parseSceneResponse(first.text, input.outline), input.outline);
   } catch (error) {
-    // 6. 把文本解析成 JSON，并检查它是否符合当前 slide 或 quiz 的格式。
-    const invalid = error instanceof InvalidSceneError ? error : new InvalidSceneError([{ path: "", message: "无法验证场景输出" }], { cause: error });
+    // 保留公共 JSON 解析器的固定诊断，不把解析失败压缩成无信息的场景错误。
+    const invalid = error instanceof InvalidSceneError ? error : new InvalidSceneError(
+      error instanceof InvalidOutlineError ? error.issues : [{ path: "", message: "无法验证场景输出" }], { cause: error },
+    );
+    writeServerEvent("info", "scene.validation.failed", {
+      requestId: input.requestId,
+      stage: "scene",
+      outlineType: input.outline.type,
+      upstreamCalls,
+      issueCount: invalid.issues.length,
+      issues: invalid.issues.slice(0, 8),
+      willRepair: upstreamCalls < maxCalls,
+    });
     if (upstreamCalls >= maxCalls) throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "场景输出无效且已没有修复预算", true, upstreamCalls, invalid.issues);
     // 7. 第一次结果不合格时，把错误原因交给模型，请它修正一次。
-    const repair = await callAI({ stage: "repair", systemPrompt: SCENE_REPAIR_SYSTEM_PROMPT, userPrompt: buildSceneRepairPrompt(userPrompt, first.text, invalid.issues) });
+    const repair = await callAI({ stage: "repair", systemPrompt: input.outline.type === "interactive" ? `${systemPrompt}\n请修正报错，重新返回一份完整 HTML，保留原教学意图。` : SCENE_REPAIR_SYSTEM_PROMPT, userPrompt: buildSceneRepairPrompt(userPrompt, first.text, invalid.issues) });
     repaired = true;
     try {
-      output = validateSceneOutput(parseModelJson(repair.text), input.outline);
+      output = validateSceneOutput(parseSceneResponse(repair.text, input.outline), input.outline);
     } catch (repairError) {
       const finalError = repairError instanceof InvalidSceneError ? repairError : invalid;
+      writeServerEvent("error", "scene.repair.failed", {
+        requestId: input.requestId,
+        stage: "repair",
+        outlineType: input.outline.type,
+        upstreamCalls,
+        issueCount: finalError.issues.length,
+        issues: finalError.issues.slice(0, 8),
+      });
       // 本次修复预算已经耗尽，但下一次请求会重新采样，仍允许用户显式重试。
       throw new SceneGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合场景契约", true, upstreamCalls, finalError.issues, { cause: repairError });
     }

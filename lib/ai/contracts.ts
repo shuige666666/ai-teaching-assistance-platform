@@ -10,6 +10,7 @@ export interface GenerateTextInput {
   userPrompt: string;
   signal: AbortSignal;
   maxOutputTokens: number;
+  outputFormat?: "json" | "text";
 }
 
 export interface GenerateTextResult {

@@ -16,6 +16,17 @@ function input(signal = new AbortController().signal) {
 }
 
 describe("OpenAICompatibleAdapter", () => {
+  it("互动原始 HTML 请求不发送 JSON mode，其他参数保留", async () => {
+    let body: Record<string, unknown> = {};
+    const adapter = new OpenAICompatibleAdapter(config, async (_url, options) => {
+      body = JSON.parse(String(options?.body));
+      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "<!doctype html><html></html>" } }] }));
+    });
+    await adapter.generateText({ ...input(), stage: "scene", outputFormat: "text" });
+    expect(body).not.toHaveProperty("response_format");
+    expect(body).toMatchObject({ thinking: { type: "disabled" }, max_tokens: 1000 });
+  });
+
   it("向服务端配置的 chat/completions 发送 JSON mode 请求并缩减响应", async () => {
     let capturedUrl = "";
     let capturedOptions: RequestInit | undefined;

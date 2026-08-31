@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 状态说明：M1～M7.1 已进入正式调用链；M7.0 的 DeepSeek v0.3 基线保持冻结，M7.1 已实现 CourseBrief、Course schema v2 与 outline.v2.1。Slide/PPTElement、interactive 和再生成仍分别属于 M8～M10。
+> 状态说明：M1～M9 功能已接入，M9 已完成验收。当前为 Course v4、4～8 场景（默认 5）、outline.v2.3、PPTElement slide、quiz 与可选 interactive（diagram/simulation/game/code）；再生成属于 M10，编辑/导出仍不实施。历史 M7.0 基线不改写。
 
 ## 1. 架构结论
 
@@ -62,7 +62,7 @@ Stage
 9. `classroom/[id]` 从存储加载数据，并继续生成剩余场景和媒体；
 10. 每个场景完成后增量保存，失败场景单独记录和重试。
 
-“先生成首场景再进入课堂”降低了首屏等待时间，但也引入了恢复、并发、媒体任务和完成屏障等复杂状态。毕设 MVP 仍串行生成全部 3～5 个场景，并只在全部成功时把课程标记为 `ready`；若中途失败但已有成功场景，生成页和课堂路由允许只读增量预览这些已持久化结果，不把部分预览伪装成正式完成。后续确有性能需求时再采用生成期间自动切换课堂。
+“先生成首场景再进入课堂”降低了首屏等待时间，但也引入了恢复、并发、媒体任务和完成屏障等复杂状态。毕设 MVP 仍串行生成全部 4～8 个场景，并只在全部成功时把课程标记为 `ready`；若中途失败但已有成功场景，生成页和课堂路由允许只读增量预览这些已持久化结果，不把部分预览伪装成正式完成。后续确有性能需求时再采用生成期间自动切换课堂。
 
 ### 2.4 服务端异步生成链
 
@@ -161,7 +161,7 @@ slide 可以包含 code block，其中 HTML、JSX、TSX 只作为源码字符串
 
 CourseBrief 是系统最终采用的教学上下文，不等同于一张必填表单。原始 topic 按用户提交内容保存；受众、学习者水平、学习目标、先修知识、时长、教学风格、互动偏好和附加要求则记录为 Course 事实，并为每个字段保存 `explicit_setting`、`prompt` 或 `default` 来源。首页保持 topic 必填，其余设置折叠且可选。
 
-创建草稿时不增加模型调用。服务端先用显式设置覆盖确定性默认值，保存 `provisional` Brief。`outline.v2.1` 调用同时输出原文检测字段、解析警告和大纲，但不重复回传 resolved Brief；服务端按 `explicit_setting > prompt > default` 独占计算最终值，模型不能改变高级设置或字段来源。最终 Brief、Resolution 和 Outline 在同一 expectedRevision 短事务中提交，之后场景生成和再生成只读取这份 `resolved` CourseBrief。
+创建草稿时不增加模型调用。服务端先用显式设置覆盖确定性默认值，保存 `provisional` Brief。`outline.v2.3` 调用同时输出原文检测字段、解析警告和大纲，但不重复回传 resolved Brief；服务端按 `explicit_setting > prompt > default` 独占计算最终值，模型不能改变高级设置或字段来源。最终 Brief、Resolution 和 Outline 在同一 expectedRevision 短事务中提交，之后场景生成和再生成只读取这份 `resolved` CourseBrief。
 
 该设计让“用户在 Prompt 中已经说明要求”和“用户只写主题”共用一条链：前者只为未说明字段补默认值，后者全部使用可解释默认值；正常路径不会增加独立的 Prompt 解析调用。描述与高级设置冲突时设置优先并保存警告。用户在确认大纲前修改 Brief 会使旧大纲失效并要求重新生成；场景生成后直接修改整课 Brief 不属于 M7.1。
 
@@ -169,17 +169,15 @@ CourseBrief 是系统最终采用的教学上下文，不等同于一张必填�
 
 M8 的产品形态只有一种：固定比例、一次展示一个场景的 PPT 式 slide，不再建设类 Markdown、纵向讲义或同课双视图。其持久化事实与 OpenMAIC 的 `Slide` 同构：固定 `viewportSize: 1000`、`viewportRatio: 0.5625`，并在 `content.canvas` 中保存带稳定 id、绝对坐标、尺寸和样式的 `text/shape/line/code` 有限 PPTElement。
 
-模型按照裁剪后的 OpenMAIC `slide-content` Prompt 直接返回背景和带 `left/top/width/height` 的元素。服务端不重新排版，只负责 JSON/Schema 校验、过滤未支持元素、补齐默认值、净化 text 富文本、丢弃损坏元素并分配 id，再参考 OpenMAIC `scene-builder` 装配为 Slide。`content.canvas` 是 v3 的唯一 slide 表达，v1/v2 课程由版本门整体隔离。这里的 canvas 是 Slide 的逻辑坐标容器，不是 HTML `<canvas>` 或另一套页面格式。
+模型按照裁剪后的 OpenMAIC `slide-content` Prompt 直接返回背景和带 `left/top/width/height` 的元素。服务端不重新排版，只负责 JSON/Schema 校验、过滤未支持元素、补齐默认值、净化 text 富文本、丢弃损坏元素并分配 id，再参考 OpenMAIC `scene-builder` 装配为 Slide。`content.canvas` 是当前 v4 的唯一 slide 表达，v1/v2/v3 课程由版本门整体隔离。这里的 canvas 是 Slide 的逻辑坐标容器，不是 HTML `<canvas>` 或另一套页面格式。
 
 桌面课堂用只读 SlideCanvas 等比缩放 16:9 页面；`1280×720` 及更大桌面视口中主要内容无需幻灯片内部滚动即可查看。首版通过 3 个真实主题 MHTML 和人工检查调整 Prompt，不建设通用自动排版、碰撞求解或逐元素质量报告。移动端、平板和窄屏不进入 M8～M10 架构承诺。
 
 参考链必须成套查看：生成侧的 [`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md)、[`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts)、[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts) 和 [`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts)，以及 DSL/渲染侧的 [`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts)、[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts)、[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 与 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx)。移植时保留 MIT 许可，裁掉媒体、复杂公式、动效、编辑器依赖，并为上游富文本渲染增加本项目的小型白名单净化。详细边界见 [09-v0.4 方案第 5 节](09-v0.4-quality-and-interaction-plan.md)。
 
-### AD-11：互动脚本只能在无同源权限的 iframe 中执行
+### AD-11：互动资源开放，宿主保持隔离
 
-`InteractiveContent.html` 是不可信完整文档，只允许进入 `srcDoc` iframe。sandbox 仅包含 `allow-scripts`，明确排除同源权限、表单提交、弹窗、下载和顶层导航；宿主注入拒绝外部资源与连接的 CSP，并用 `event.source` + 小型 Zod 联合管理 ready/reset/completed/error。首版只做完整文档、大小和外部能力等必要检查，不建设通用 JavaScript 审计平台。
-
-可参考 OpenMAIC 的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/interactive.ts)、[`interactive-renderer.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/interactive-renderer.tsx) 和 [`InteractiveIframeHost.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/components/scene-renderers/InteractiveIframeHost.tsx) 的职责拆分，但不能照搬其 `allow-forms/allow-popups`；本项目 diagram 仍只允许 `allow-scripts`。
+四种 widgetType 共用 iframe；允许外部依赖、网络连接、动态执行和 Worker，不设 CDN 域名白名单。sandbox 仍只有 allow-scripts；CSP 禁止子 frame、object、base 与表单提交。localStorage/sessionStorage 仅为内存兼容；宿主检查消息来源与已识别协议，无关库消息忽略。加载/运行失败卸载 iframe，支持重新加载和跳过。编程通过注入的可终止 Worker 执行，Python 依赖 Pyodide CDN，不引入服务端执行。详细限制与风险见 09 第 6 节。
 
 ### AD-12：M7～M10 不引入 LangGraph、多智能体和多模态
 
@@ -191,7 +189,7 @@ CourseBrief、Prompt v2、Slide/PPTElement 和 diagram HTML 都是现有两阶�
 
 ### AD-X01：可选编辑器和导出继续复用 `Slide/PPTElement`
 
-M11 的编辑器可以把 M8 的只读 SlideCanvas 作为绘制层，在其上叠加命中区域、选择框、拖拽和缩放交互；编辑操作最终通过 CourseRepository 保存。M12 的 PPTX 导出器也读取相同 `Slide/PPTElement`；互动场景不嵌入 PPTX，只以自包含 HTML 放入 ZIP 的 `interactive/` 目录。两项扩展都不得反向要求 M8 预先实现编辑状态、导出字段或第二份页面数据。
+M11 的编辑器可以把 M8 的只读 SlideCanvas 作为绘制层，在其上叠加命中区域、选择框、拖拽和缩放交互；编辑操作最终通过 CourseRepository 保存。M12 的 PPTX 导出器也读取相同 `Slide/PPTElement`；互动场景不嵌入 PPTX，以 HTML 放入 ZIP（外部依赖离线策略到M12确认） 的 `interactive/` 目录。两项扩展都不得反向要求 M8 预先实现编辑状态、导出字段或第二份页面数据。
 
 ## 4. 组件视图
 
@@ -256,7 +254,7 @@ flowchart LR
     Repo --> DB[(MySQL)]
 
     DB --> Generation["GenerationService"]
-    Generation --> OutlineV2["outline.v2.1<br/>检测字段 + outlines"]
+    Generation --> OutlineV2["outline.v2.3<br/>检测字段 + outlines"]
     OutlineV2 --> Resolve["BriefResolver<br/>设置 > Prompt > 默认值"]
     Resolve --> OutlineGate["Brief/Outline Schema + 一致性门"]
     OutlineGate --> AtomicSave["同 revision 保存 Brief + Resolution + Outline"]
@@ -350,7 +348,7 @@ sequenceDiagram
     G->>C: POST /api/courses/{id}/outline/generate
     C->>A: generateOutline(id)
     A->>R: load + mark outlining
-    A->>M: outline.v2.1(topic, settings, defaults)
+    A->>M: outline.v2.3(topic, settings, defaults)
     M-->>A: detectedBrief + warnings + outlines
     A->>A: parse + Zod + 服务端复算 + 一致性门
     A->>R: transaction save resolved Brief + Resolution + outline_ready
@@ -450,7 +448,7 @@ Route Handler / 应用服务：状态转换、Prompt、输出校验、事务
 - 模型输出一律视为不可信；
 - v0.3 不支持模型生成可执行 HTML；`code.code` 可保存只读 HTML/JSX/TSX 源码并由 React 转义，v0.4 只有 InteractiveRenderer 可以创建 script 执行路径；
 - code block 始终按文本转义，不允许 `eval`、动态 import 或 `dangerouslySetInnerHTML`；
-- interactive HTML 只能进入无 `allow-same-origin` 的 sandbox iframe，并由 CSP 禁止外部连接、子 frame、对象和表单提交；
+- interactive HTML 只能进入无 `allow-same-origin` 的 sandbox iframe，允许外部依赖，但由 CSP 禁止子 frame、对象和表单提交；
 - postMessage 只接受绑定 iframe 的 `event.source` 和严格消息联合，切页后拒绝旧 iframe 事件；
 - API 限制 topic、outline 和响应长度，防止无界输入；
 - 日志只记录 requestId、阶段、模型、耗时、尝试次数和校验结果。
@@ -473,11 +471,11 @@ Next.js Server
 
 ## 13. 已选 v0.4 扩展与更远期边界
 
-M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、diagram 互动和单场景再生成，按接口扩展而不重写主链。M11 的 PPT 式幻灯片编辑器与 M12 的简化资源包导出是两个独立可选产品里程碑，不阻塞 v0.4 或 MX。以下能力仍属于 MX 或更远期候选：
+M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、多样化互动和单场景再生成，按接口扩展而不重写主链。M11 的 PPT 式幻灯片编辑器与 M12 的简化资源包导出是两个独立可选产品里程碑，不阻塞 v0.4 或 MX。以下能力仍属于 MX 或更远期候选：
 
 - 文档输入：在 outline 请求前增加 DocumentExtractor；
 - 生成优化：替换 GenerationPolicy，不改变已持久化身份和恢复语义；
-- 新互动类型：只有 diagram 通过 M9 退出门后才扩展 Scene 判别联合和专用 Renderer/运行契约；
+- 新互动类型：当前 diagram/simulation/game/code 共用 HTML 宿主，更远期类型另行确认；
 - 新动作：扩展 Action 联合和 ActionExecutor；
 - 多智能体：在 discussion Action 后增加独立 ChatOrchestrator；
 - 多用户：增加认证、ownerId、授权检查和租户级查询；

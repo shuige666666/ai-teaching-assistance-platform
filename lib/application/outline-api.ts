@@ -14,7 +14,7 @@ export const GenerateSceneInputSchema = z.object({ expectedRevision: z.number().
 export const EditOutlineInputSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
   courseTitle: z.string().trim().min(1).max(120),
-  outlines: z.array(SceneOutlineSchema).min(3).max(5),
+  outlines: z.array(SceneOutlineSchema).min(4).max(8),
 }).strict();
 
 export async function readLimitedJson(request: Request): Promise<unknown> {

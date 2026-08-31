@@ -11,7 +11,7 @@ import {
 } from "./schemas";
 
 export const CourseBriefOverridesSchema = CourseBriefSchema.partial().extend({
-  interactionMode: z.literal("off").optional(),
+  interactionMode: z.enum(["off", "required"]).optional(),
 }).strict();
 
 export const DetectedCourseBriefSchema = CourseBriefSchema.omit({ interactionMode: true }).partial().strict();
@@ -119,7 +119,8 @@ export function resolveCourseBrief(input: {
       sources[field] = "default";
     }
   }
-  values.interactionMode = "off";
+  // 互动是用户在大纲生成前的显式选择，不允许模型从自由文本中擅自开启。
+  values.interactionMode = explicit.interactionMode ?? "off";
   sources.interactionMode = Object.hasOwn(explicit, "interactionMode") ? "explicit_setting" : "default";
 
   const informationalWarnings = (input.modelWarnings ?? []).filter((warning) =>

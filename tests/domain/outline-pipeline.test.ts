@@ -13,27 +13,51 @@ function validOutline(topic = "测试主题", detectedBrief: Record<string, unkn
     outlines: [
       { type: "slide", role: "hook", title: "概念入口", teachingObjective: "建立问题背景", keyPoints: ["问题", "背景"], order: 1, estimatedMinutes: 4 },
       { type: "slide", role: "mechanism", title: "机制拆解", teachingObjective: "理解运行机制", keyPoints: ["结构", "过程"], order: 2, estimatedMinutes: 5 },
-      { type: "quiz", role: "assessment", title: "理解检查", teachingObjective: "辨析概念误区", keyPoints: ["判断", "反馈"], assessmentFocus: "检查核心概念辨析", order: 3, estimatedMinutes: 3 },
+      { type: "slide", role: "worked_example", title: "案例连接", teachingObjective: "将机制应用到案例", keyPoints: ["案例", "边界"], order: 3, estimatedMinutes: 4 },
+      { type: "quiz", role: "assessment", title: "理解检查", teachingObjective: "辨析概念误区", keyPoints: ["判断", "反馈"], assessmentFocus: "检查核心概念辨析", order: 4, estimatedMinutes: 3 },
     ],
   });
 }
 
 function outlineInput(requestId: string, overrides: Parameters<typeof createProvisionalCourseBrief>[1] = {}) {
   const provisional = createProvisionalCourseBrief("测试主题", overrides);
-  return { topic: "测试主题", sceneCount: 3, provisionalBrief: provisional.brief, provisionalResolution: provisional.resolution, requestId, signal: new AbortController().signal };
+  return { topic: "测试主题", sceneCount: 4, provisionalBrief: provisional.brief, provisionalResolution: provisional.resolution, requestId, signal: new AbortController().signal };
 }
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("outline generation pipeline", () => {
+  it("接受互动设计 description 别名但保存统一的 designIdea", async () => {
+    const value = JSON.parse(validOutline());
+    value.outlines[2] = { ...value.outlines[2], type: "interactive", widgetType: "game", widgetOutline: { description: "调度工具救回数据", ignored: true } };
+    const result = await generateOutline(new MockAIAdapter([JSON.stringify(value)]), outlineInput("widget-alias", { interactionMode: "required" }));
+    expect(result.outlines[2].widgetOutline).toEqual({ designIdea: "调度工具救回数据" });
+    expect(result.metadata.upstreamCalls).toBe(1);
+  });
+
+  it.each([4, 5, 6, 7, 8])("%i 场景按用户选择生成分档互动数量，关闭时不生成", async (sceneCount) => {
+    const maxInteractive = sceneCount === 4 ? 1 : sceneCount <= 6 ? 2 : 3;
+    for (const interactionMode of ["off", "required"] as const) {
+      const result = await generateOutline(new MockAIAdapter(), { ...outlineInput(`count-${sceneCount}-${interactionMode}`, { interactionMode }), sceneCount });
+      const interactiveCount = result.outlines.filter((item) => item.type === "interactive").length;
+      expect(result.outlines).toHaveLength(sceneCount);
+      expect(result.brief.interactionMode).toBe(interactionMode);
+      expect(interactiveCount).toBeGreaterThanOrEqual(interactionMode === "required" ? 1 : 0);
+      expect(interactiveCount).toBeLessThanOrEqual(interactionMode === "required" ? maxInteractive : 0);
+      expect(result.outlines[0].type).toBe("slide");
+      expect(result.outlines.filter((item) => item.type === "slide").length).toBeGreaterThanOrEqual(2);
+      expect(result.outlines.some((item, index) => item.type === "interactive" && result.outlines[index - 1]?.type === "interactive")).toBe(false);
+    }
+  });
+
   it("可从代码围栏提取唯一 JSON 对象", () => {
     expect(parseModelJson(`说明\n\`\`\`json\n${validOutline()}\n\`\`\``)).toMatchObject({ courseTitle: "测试主题课程" });
   });
 
   it("mock 也经过正式校验、装配 ID 与元数据", async () => {
     const result = await generateOutline(new MockAIAdapter([validOutline()]), outlineInput("request-1"));
-    expect(result.outlines).toHaveLength(3);
-    expect(new Set(result.outlines.map((item) => item.id)).size).toBe(3);
+    expect(result.outlines).toHaveLength(4);
+    expect(new Set(result.outlines.map((item) => item.id)).size).toBe(4);
     expect(result.metadata).toMatchObject({ provider: "mock", upstreamCalls: 1, repaired: false, requestId: "request-1" });
   });
 
@@ -85,7 +109,7 @@ describe("outline generation pipeline", () => {
       new MockAIAdapter([validOutline("一次生成", { audience: "描述受众", learnerLevel: "intermediate" })]),
       input,
     );
-    expect(result.metadata).toMatchObject({ upstreamCalls: 1, repaired: false, promptVersion: "outline.v2.1" });
+    expect(result.metadata).toMatchObject({ upstreamCalls: 1, repaired: false, promptVersion: "outline.v2.3" });
     expect(result.brief.audience).toBe("显式受众");
     expect(result.brief.learnerLevel).toBe("intermediate");
     expect(result.briefResolution.sources.audience).toBe("explicit_setting");

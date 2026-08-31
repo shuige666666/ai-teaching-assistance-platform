@@ -11,9 +11,9 @@ describe("CourseSchema", () => {
     expect(topic.startsWith(course.title)).toBe(true);
   });
 
-  it("接受包含 Course v3 slide、quiz 和代码元素的完整 fixture", () => {
+  it("接受包含 Course v4 slide、quiz 和代码元素的完整 fixture", () => {
     const course = materializeFixtureCourse(createFixtureCourse("TCP 拥塞控制", 4));
-    expect(course.schemaVersion).toBe(3);
+    expect(course.schemaVersion).toBe(4);
     expect(CourseSchema.parse(course).status).toBe("ready");
     expect(course.scenes.some((scene) => scene.type === "quiz")).toBe(true);
     expect(course.scenes.some((scene) => scene.type === "slide" && scene.content.canvas.elements.some((element) => element.type === "code"))).toBe(true);

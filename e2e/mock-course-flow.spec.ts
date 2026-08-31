@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ page, request }) => {
-  const topic = `M6 自动验收 ${Date.now()}`;
+test("mock 课程从创建、互动、测验到刷新恢复", async ({ page, request }) => {
+  const topic = `M9 互动验收 ${Date.now()}`;
   const browserErrors: string[] = [];
   let courseId: string | undefined;
   let interceptedCourseId: string | undefined;
@@ -13,7 +13,7 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /把一个主题/ })).toBeVisible();
     await page.getByLabel("这堂课要讲什么？").fill(topic);
-    await page.getByRole("button", { name: "3", exact: true }).click();
+    await page.getByRole("button", { name: "4", exact: true }).click();
     await page.getByText("高级课程要求").click();
     await page.getByLabel("目标受众").fill("有 Java 基础的本科生");
     await page.getByLabel("学习目标").fill("能够解释核心机制并辨析常见误区");
@@ -41,6 +41,9 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     await expect(page.getByText("有 Java 基础的本科生", { exact: true })).toBeVisible();
     await expect(page.getByText("高级设置", { exact: true }).first()).toBeVisible();
 
+    await page.getByRole("button", { name: /需要互动/ }).click();
+    await expect(page.getByText("需要互动场景", { exact: true })).toBeVisible();
+
     // 暂存大纲成功响应，验证用户在等待远端调用时能看到心跳、预算和 requestId。
     await page.route(`**/api/courses/${courseId}/outline/generate`, async (route) => {
       const response = await route.fetch();
@@ -57,7 +60,7 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     await page.getByRole("button", { name: /确认大纲并生成场景/ }).click();
     const enterClassroom = page.getByRole("link", { name: /进入课堂/ });
     await expect(enterClassroom).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("03 / 03")).toBeVisible();
+    await expect(page.getByText("04 / 04")).toBeVisible();
     await enterClassroom.click();
 
     await expect(page).toHaveURL(new RegExp(`/classroom/${courseId}$`));
@@ -80,7 +83,38 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     await expect(pause).toBeVisible();
 
     await page.getByRole("button", { name: /打开场景 3/ }).click();
-    await expect(page.getByText("QUIZ · SCENE 03")).toBeVisible();
+    const interactiveHost = page.getByTestId("interactive-host");
+    await expect(interactiveHost).toHaveAttribute("data-runtime-state", "ready");
+    const widget = page.frameLocator('[data-testid="interactive-host"] iframe');
+    for (const node of await widget.locator(".node").all()) await node.click();
+    await widget.getByRole("button", { name: "完成探索" }).click();
+    await expect(interactiveHost).toHaveAttribute("data-runtime-state", "completed");
+    await page.getByRole("button", { name: "重置互动" }).click();
+    await expect(widget.getByRole("button", { name: "完成探索" })).toBeDisabled();
+    await page.evaluate(() => window.postMessage({ type: "INTERACTIVE_COMPLETED", version: 1 }, "*"));
+    await expect(interactiveHost).toHaveAttribute("data-runtime-state", "ready");
+    const widgetFrame = page.frames().find((frame) => frame !== page.mainFrame());
+    expect(widgetFrame).toBeTruthy();
+    // 覆盖学生代码的终止和恢复，不依赖 CDN 或额外模型调用。
+    const execution = await widgetFrame!.evaluate(async () => {
+      const runtime = (window as unknown as { InteractiveRuntime: { runCode(input: { language: string; code: string; timeoutMs?: number }): Promise<{ stdout: string }> } }).InteractiveRuntime;
+      let timeout = "";
+      try { await runtime.runCode({ language: "javascript", code: "while(true){}", timeoutMs: 100 }); }
+      catch (error) { timeout = (error as Error).message; }
+      const result = await runtime.runCode({ language: "javascript", code: "console.log(6 * 7)" });
+      return { timeout, stdout: result.stdout };
+    });
+    expect(execution.timeout).toContain("代码运行超时");
+    expect(execution.stdout).toBe("42\n");
+    await widgetFrame!.evaluate(() => window.parent.postMessage({ type: "UNKNOWN_MESSAGE", version: 1 }, "*"));
+    await expect(interactiveHost).toHaveAttribute("data-runtime-state", "ready");
+    await widgetFrame!.evaluate(() => window.parent.postMessage({ type: "INTERACTIVE_COMPLETED", version: 99 }, "*"));
+    await expect(interactiveHost).toHaveAttribute("data-runtime-state", "failed");
+    await expect(page.getByText("STATIC FALLBACK")).toBeVisible();
+    await page.getByRole("button", { name: "跳过互动" }).click();
+
+    await page.getByRole("button", { name: /打开场景 4/ }).click();
+    await expect(page.getByText("QUIZ · SCENE 04")).toBeVisible();
     await expect(page.getByRole("radio").first()).toBeEnabled();
     await page.getByRole("radio").first().check();
     await page.getByRole("button", { name: "提交答案" }).click();
@@ -88,7 +122,7 @@ test("mock 课程从创建、生成、播放到测验和刷新恢复", async ({ 
     await expect(page.getByText("本场景完成", { exact: true }).first()).toBeVisible();
 
     await page.reload();
-    await expect(page.getByText(/REV\.8 · MOCK/)).toBeVisible();
+    await expect(page.getByText(/REV\.11 · MOCK/)).toBeVisible();
     await expect(page.getByTestId("slide-canvas")).toBeVisible();
     await expect(page.getByTestId("slide-canvas").locator('[data-text-type="title"]')).toContainText(topic);
     await page.goto("/");

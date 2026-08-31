@@ -16,7 +16,7 @@ function deriveDraftTitle(topic: string, maxLength: number = 120) {
 /** 创建尚未调用模型的课程草稿，并记录用户显式设置和默认值的来源。 */
 export function createCourseDraft(topic: string, requestedSceneCount: number, briefOverrides: CourseBriefOverrides = {}): Course {
   const normalizedTopic = topic.trim();
-  const parsedCount = Math.min(5, Math.max(3, Math.trunc(requestedSceneCount)));
+  const parsedCount = Math.min(8, Math.max(4, Math.trunc(requestedSceneCount)));
   const now = Date.now();
   const { brief, resolution } = createProvisionalCourseBrief(normalizedTopic, briefOverrides);
   return CourseSchema.parse({
@@ -44,9 +44,9 @@ function mockMetadata(now: number): GenerationMetadata {
 /** 创建仅包含已确认大纲的固定课程，模拟真实管线进入场景生成前的边界。 */
 export function createFixtureCourse(topic: string, requestedSceneCount: number): Course {
   const normalizedTopic = topic.trim();
-  const parsedCount = Math.min(5, Math.max(3, Math.trunc(requestedSceneCount)));
+  const parsedCount = Math.min(8, Math.max(4, Math.trunc(requestedSceneCount)));
   const now = Date.now();
-  const titles = ["建立问题地图", "拆解核心机制", "检查关键理解", "连接工程实践", "形成复习路径"];
+  const titles = ["建立问题地图", "拆解核心机制", "检查关键理解", "连接工程实践", "形成复习路径", "分析边界条件", "整合应用路径", "形成复习闭环"];
   const outlines: SceneOutline[] = Array.from({ length: parsedCount }, (_, index) => {
     const type = index === 2 ? ("quiz" as const) : ("slide" as const);
     const role: SceneOutline["role"] = type === "quiz"

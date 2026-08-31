@@ -125,7 +125,7 @@ export class OutlineGenerationService {
       throw new OutlineApplicationError("INVALID_COURSE_STATE", "不能通过编辑接口修改大纲 ID、类型、角色或顺序");
     }
     // 3. 校验用户修改后的标题、目标和关键点。
-    const validated = validateEditedOutline(courseTitle, outlines, current.requestedSceneCount);
+    const validated = validateEditedOutline(courseTitle, outlines, current.requestedSceneCount, current.brief.interactionMode);
     // 4. 保存修改后的大纲，并把课程版本号加一。
     return this.repository.save(CourseSchema.parse({ ...current, title: validated.courseTitle, outlines: validated.outlines, updatedAt: this.now() }), expectedRevision);
   }

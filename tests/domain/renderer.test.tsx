@@ -45,7 +45,7 @@ describe("SlideRenderer", () => {
   });
 
   it("根据 Scene 判别字段选择 slide 和 quiz 渲染器", () => {
-    const course = materializeFixtureCourse(createFixtureCourse("软件测试", 3));
+    const course = materializeFixtureCourse(createFixtureCourse("软件测试", 4));
     const slide = course.scenes.find((scene) => scene.type === "slide");
     const quiz = course.scenes.find((scene) => scene.type === "quiz");
     expect(slide && renderToStaticMarkup(<SceneRenderer scene={slide} />)).toContain("data-testid=\"slide-renderer\"");
@@ -53,7 +53,7 @@ describe("SlideRenderer", () => {
   });
 
   it("partial_failed 课程只渲染已保存场景并标明原始场景序号", () => {
-    const complete = materializeFixtureCourse(createFixtureCourse("增量课堂预览", 3));
+    const complete = materializeFixtureCourse(createFixtureCourse("增量课堂预览", 4));
     const failedOutline = complete.outlines[1];
     const now = Date.now();
     const partial = CourseSchema.parse({
@@ -72,7 +72,7 @@ describe("SlideRenderer", () => {
 
     const html = renderToStaticMarkup(<ClassroomRuntime course={partial} />);
     expect(html).toContain("PARTIAL COURSE PREVIEW");
-    expect(html).toContain("已生成 2 / 3 个场景");
+    expect(html).toContain("已生成 3 / 4 个场景");
     expect(html).toContain("打开场景 3");
     expect(html).not.toContain("打开场景 2");
   });

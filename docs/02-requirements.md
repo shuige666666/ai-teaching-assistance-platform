@@ -27,7 +27,7 @@ MVP 只有一个逻辑参与者：本地用户。
 **主流程**：
 
 1. 用户在首页输入教学主题；
-2. 用户选择 3～5 个场景，默认 4 个；
+2. 用户选择 4～8 个场景，默认 5 个；在大纲页选择是否需要互动，默认关闭；
 3. 系统校验输入，通过 `POST /api/courses` 在 MySQL 创建课程草稿；
 4. 系统跳转到生成页面并请求课程大纲。
 
@@ -108,7 +108,7 @@ MVP 只有一个逻辑参与者：本地用户。
 
 ### UC-08 学习互动场景（v0.4 计划）
 
-**前置条件**：课程包含一个 ready 的 `interactive/diagram` 场景。
+**前置条件**：课程包含一个 ready 的 `interactive` 场景。
 **主流程**：
 
 1. 用户进入互动场景，先看到固定 React fallback 和加载状态；
@@ -133,7 +133,7 @@ MVP 只有一个逻辑参与者：本地用户。
 |---|---|
 | FR-001 | 首页必须提供主题输入框和创建按钮。 |
 | FR-002 | 主题规范化后长度必须为 2～500 个字符。 |
-| FR-003 | 用户可以选择 3～5 个场景，默认 4 个。 |
+| FR-003 | 用户可以选择 4～8 个场景，默认 5 个。 |
 | FR-004 | 点击创建后，服务端必须生成 courseId 并把 draft 写入 MySQL，成功后客户端才能跳转。 |
 | FR-005 | 重复点击创建按钮不能产生并发重复提交。 |
 | FR-006 | 首页必须通过 `GET /api/courses` 显示 MySQL 中的历史课程及其状态。 |
@@ -144,7 +144,7 @@ MVP 只有一个逻辑参与者：本地用户。
 | 编号 | 需求 |
 |---|---|
 | FR-101 | 系统必须通过 `POST /api/courses/{courseId}/outline/generate` 生成并保存大纲。 |
-| FR-102 | 响应必须包含 courseTitle 和 3～5 个 SceneOutline。 |
+| FR-102 | 响应必须包含 courseTitle 和与请求数量一致的 4～8 个 SceneOutline。 |
 | FR-103 | SceneOutline.type 只能是 slide 或 quiz。 |
 | FR-104 | SceneOutline.order 必须唯一且连续。 |
 | FR-105 | 大纲写入 MySQL 前必须通过 Zod 和领域不变量校验。 |
@@ -255,27 +255,27 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-Q202 | M8 首版只支持 `text/shape/line/code` 四类 PPTElement。模型可以直接返回 left、top、width、height、rotate 和样式，但不能控制元素 id、Course/Scene 标识、状态、revision 或 Action。 |
 | FR-Q203 | `scene-slide.v2` 应从 OpenMAIC 的 `slide-content` Prompt 裁剪：保留 1000 × 562.5 画布、对齐、留白、字号、视觉层级和“幻灯片不是讲稿”等规则，删除图片、视频、图表、复杂公式及其他未实现元素。 |
 | FR-Q204 | 通用只读 SlideCanvas 必须在 `1280×720` 及更大桌面视口等比缩放 16:9 逻辑画布并完整展示主要内容；M8～M10 不要求为移动端、平板或窄屏实现专门重排。 |
-| FR-Q205 | `content.canvas` 是 Course v3 的唯一 slide 表达；v1/v2 课程保留但隐藏并明确拒绝，未知或损坏的模型元素应在规范化时局部丢弃，不能导致整个课堂白屏。 |
+| FR-Q205 | `content.canvas` 是当前 Course v4 的唯一 slide 表达；v1～v3 课程保留但隐藏并明确拒绝，未知或损坏的模型元素应在规范化时局部丢弃，不能导致整个课堂白屏。 |
 | FR-Q206 | 服务端必须对模型元素执行轻量规范化：过滤未支持类型，补齐必要默认值，拒绝非有限坐标、非正尺寸和关键字段缺失，净化 text 富文本，并为保留元素分配 id；若最终元素为空则按场景生成失败处理。 |
 | FR-Q207 | 展示字体只用于短标题或关键结论，关键正文和要点使用无衬线字体且不得低于 16px 等效字号；不能靠缩小、隐藏、画布外元素或内部滚动规避内容超载。 |
 | FR-Q208 | M8 使用 3 个代表主题做 DeepSeek 真实生成，并以固定桌面视口 MHTML 供人工检查标题、正文、视觉关系和留白；不建立 PNG 档案或自动美学评分。 |
 | FR-Q209 | 浏览器测试证明 16:9 等比缩放、`text/shape/line/code` 可渲染、主要内容没有被容器裁掉；移动端和窄屏视觉档案不属于 M8～M10 硬门。 |
-| FR-Q210 | Course v3 slide 只采用 `content.canvas` 下的 PPT 式 `Slide/PPTElement` 表达；系统不同时提供新的类 Markdown、纵向讲义或同课第二套 Renderer，旧 block 路径不再读取。 |
+| FR-Q210 | Course v4 slide 只采用 `content.canvas` 下的 PPT 式 `Slide/PPTElement` 表达；系统不同时提供新的类 Markdown、纵向讲义或同课第二套 Renderer，旧 block 路径不再读取。 |
 | FR-Q211 | PPT 式页面必须执行统一视觉基线：四周安全边距、短标题与副标题层级、可选标题强调线、等宽卡片/步骤、稳定列间距和简洁要点；页面外层阴影与圆角只属于 Web 播放 chrome，不写入导出画布。 |
 | FR-Q212 | 每张 slide 必须在 PPT 画布内包含一个 `textType=title` 标题；网页外层只保留场景编号等元信息，不能把未来导出所需标题放在画布外。 |
 
-### 4.11 互动场景（M9 计划）
+### 4.11 互动场景（M9）
 
 | 编号 | 需求 |
 |---|---|
-| FR-I101 | Scene 判别联合增加 `interactive`，v0.4 的 widgetType 只能是 `diagram`。 |
-| FR-I102 | `interactionMode=off` 时不得生成互动场景；`auto` 时最多一个；`required` 时必须恰好一个。 |
-| FR-I103 | 互动模型输出必须包含完整自包含 HTML、固定 fallback 和 `runtimeContractVersion:1`，不得包含实体 ID。 |
-| FR-I104 | HTML 最大 100 KiB，必须自包含；首版禁止外部 script/link、外部 URL、子 iframe、object/embed、下载和表单提交。 |
+| FR-I101 | Scene 判别联合增加 `interactive`，widgetType 支持 `diagram/simulation/game/code`，分类用于选择 Prompt，不锁定玩法。 |
+| FR-I102 | 大纲页提供不需要/需要互动两项，默认 `off`，开启为 `required`。关闭时为 0 个；开启时 4 场景为 1 个、5～6 场景为 1～2 个、7～8 场景为 1～3 个。至少 2 个 slide、1 个 quiz，首场为 slide，互动不连续。`auto` 仅保留内部枚举，不开放 UI，最多按同档上限生成。 |
+| FR-I103 | 模型直接输出完整 HTML 和 scene-meta 讲解元数据，服务端装配 fallback、runtimeContractVersion:1 与实体 ID。 |
+| FR-I104 | HTML 注入后最大 256 KiB，允许外部脚本、样式与网络；不开放子 iframe、object/embed、下载和表单提交。 |
 | FR-I105 | InteractiveRenderer 必须用 iframe `srcDoc` 渲染，sandbox 只能包含 `allow-scripts`。 |
-| FR-I106 | iframe 必须注入拒绝外部资源与连接、对象、子 frame、base URI 和表单提交的 CSP；不为模型页面开放 `unsafe-eval`、弹窗或顶层导航。 |
-| FR-I107 | 父子页面消息必须经过来源检查和 Zod 校验，只支持 ready、reset、completed 和 error 最小协议。 |
-| FR-I108 | 互动页 5 秒未 ready、运行报错或消息非法时必须显示固定 fallback，不能影响课堂导航和其他场景。 |
+| FR-I106 | iframe CSP 允许 HTTP(S) 资源/连接、动态执行与 blob Worker，禁止对象、子 frame、base URI 和表单提交；sandbox 不开放弹窗或顶层导航。 |
+| FR-I107 | 父子页面消息必须经过来源检查和 Zod 校验，只支持 ready、reset、completed、error 及防止 READY 竞态的 ping 最小协议，忽略无关库消息。 |
+| FR-I108 | 互动页 30 秒未 ready、未处理运行错误或已识别协议消息非法时必须显示固定 fallback，不能影响课堂导航和其他场景。 |
 | FR-I109 | 互动场景使用 speech + learner pause；合法 completed 事件解除等待，切页或卸载必须拒绝迟到事件。 |
 | FR-I110 | 互动 HTML、fallback、生成元数据和失败状态必须通过 CourseRepository 持久化并可在刷新后恢复。 |
 
@@ -299,7 +299,7 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-X102 | M11 第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和基于 expectedRevision 的 MySQL 保存；冲突或保存失败必须保留原版本。 |
 | FR-X103 | M12 导出包固定为一个 ZIP：根目录一个课程 PPTX，`interactive/` 下按 `Scene.order` 保存自包含 HTML；不额外生成 manifest、README 或 assets 目录。 |
 | FR-X104 | PPTX 只写入 slide 场景并保持其相对顺序；互动 HTML 文件名必须包含补零后的原始场景序号和安全化标题，例如 `03_流程互动.html`。 |
-| FR-X105 | 互动 HTML 的 CSS、JavaScript 和运行所需小型资源必须内联，使解压后的单个 HTML 在无网络环境下可打开；导出不能放宽 M9 的生成安全边界。 |
+| FR-X105 | M12 再确认外部依赖的导出策略；当前互动页允许 CDN，不承诺单个 HTML 离线执行。 |
 | FR-X106 | M11/M12 不属于 M7～M10/v0.4 退出门；只有 M10/v0.4 已完成且用户再次确认范围后，才进入实现和独立验收。 |
 
 ## 5. 非功能需求
@@ -315,7 +315,7 @@ MVP 只有一个逻辑参与者：本地用户。
 | NFR-SEC-05 | `.env.local` 必须被 Git 忽略。 |
 | NFR-SEC-06 | 无登录版本只能部署在本机或受信任网络，不能作为公开多用户服务暴露。 |
 | NFR-SEC-07 | 数据库查询必须参数化或由受控 ORM 构造，不得拼接用户输入形成 SQL。 |
-| NFR-SEC-08 | 互动 iframe 不得拥有同源权限、主页面 DOM、Cookie、localStorage 或外部网络访问能力。 |
+| NFR-SEC-08 | 互动 iframe 不得拥有同源权限或读取主页面 DOM、Cookie、localStorage；网络可用，不能视为防泄漏隔离。页内仅提供内存存储兼容。 |
 | NFR-SEC-09 | 主页面必须按 `event.source` 绑定具体 iframe，并对所有 postMessage 数据执行严格 Schema。 |
 | NFR-SEC-10 | 互动安全回归必须包含恶意 HTML fixture，验证主页面状态和凭据未被读取或修改。 |
 
@@ -328,7 +328,7 @@ MVP 只有一个逻辑参与者：本地用户。
 | NFR-REL-03 | 网络超时、429 和 5xx 最多自动重试 2 次，并采用退避。 |
 | NFR-REL-04 | 单个模型请求最多进行 1 次格式修复调用。 |
 | NFR-REL-05 | 一次自动生成运行最多发出 `1 + sceneCount` 个业务请求；单个 API 请求最多调用上游模型 4 次，不能无限循环。 |
-| NFR-REL-06 | mock 模式必须完全确定性且不访问外部网络。 |
+| NFR-REL-06 | mock 生成必须完全确定性且不访问模型网络；基础 fixture 原生执行，显式运行 Python 练习时仍需下载 Pyodide。 |
 | NFR-REL-07 | 大纲或场景只有在 MySQL 事务提交成功后才能向客户端报告持久化成功。 |
 | NFR-REL-08 | v1 课程必须通过确定性迁移读取，升级不得要求用户清空数据库。 |
 | NFR-REL-09 | 互动运行失败不能改变 Course 内容或播放器的其他场景状态。 |
@@ -365,7 +365,7 @@ MVP 只有一个逻辑参与者：本地用户。
 
 **Given** `AI_MODE=mock` 且测试 MySQL 中没有历史数据  
 **When** 用户输入“二叉树遍历”并确认大纲  
-**Then** 系统生成 3～5 个场景，进入课堂，slide 和 quiz 均可操作，刷新后课程仍存在。
+**Then** 系统生成 4～8 个场景，进入课堂，slide、quiz 与已开启的互动均可操作，刷新后课程仍存在。
 
 ### 场景 B：非法模型输出
 
@@ -423,9 +423,9 @@ MVP 只有一个逻辑参与者：本地用户。
 
 ### 场景 H：互动脚本异常（v0.4）
 
-**Given** 互动 HTML 尝试访问外部网络或运行时抛出异常<br>
+**Given** 互动 HTML 尝试读取父页面 DOM 或抛出未处理异常<br>
 **When** 课堂加载该场景<br>
-**Then** CSP/sandbox 阻止越界能力，主页面显示 fallback 与错误状态，其他场景仍可播放，用户可以跳过或再生成。
+**Then** CSP/sandbox 阻止越界能力，主页面显示 fallback 与错误状态，其他场景仍可播放，用户可以跳过或重新加载同一 HTML。
 
 ### 场景 I：再生成失败（v0.4）
 

@@ -8,7 +8,7 @@ import { createApiError, mapRepositoryError } from "@/lib/repository/error-respo
 
 const CreateCourseInputSchema = z.object({
   topic: z.string().trim().min(2, "主题至少需要 2 个字符").max(500, "主题不能超过 500 个字符"),
-  requestedSceneCount: z.number().int().min(3).max(5),
+  requestedSceneCount: z.number().int().min(4).max(8),
   briefOverrides: CourseBriefOverridesSchema.optional(),
 }).strict();
 

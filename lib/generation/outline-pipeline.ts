@@ -64,7 +64,7 @@ export async function generateOutline(
 
   /** 校验模型大纲后，由服务端根据检测字段独占计算最终 Brief。 */
   function validateResponse(value: unknown) {
-    const output = validateAndNormalizeOutline(value, input.sceneCount);
+    const output = validateAndNormalizeOutline(value, input.sceneCount, input.provisionalBrief.interactionMode);
     const resolved = resolveCourseBrief({
       topic: input.topic,
       provisionalBrief: input.provisionalBrief,

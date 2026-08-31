@@ -24,7 +24,8 @@ export async function captureCourseSceneArchives(browser, baseUrl, course, topic
     for (const scene of [...course.scenes].sort((left, right) => left.order - right.order)) {
       const page = await context.newPage();
       activePage = page;
-      const navigation = await page.goto(new URL(`/classroom/${course.id ?? course.courseId}`, baseUrl).href, { waitUntil: "networkidle" });
+      // 外部资源可能维持连接；页面可操作与互动 READY 才是归档依据，不等待全站网络空闲。
+      const navigation = await page.goto(new URL(`/classroom/${course.id ?? course.courseId}`, baseUrl).href, { waitUntil: "domcontentloaded" });
       if (!navigation?.ok()) throw new Error(`课堂页面返回 ${navigation?.status() ?? "unknown"}`);
       await page.locator("nav.scene-rail").waitFor({ state: "attached" });
       await page.getByRole("button", { name: new RegExp(`打开场景 ${scene.order}：`) }).click();
@@ -33,7 +34,12 @@ export async function captureCourseSceneArchives(browser, baseUrl, course, topic
         ? page.locator(".scene-slide-meta").filter({ hasText: sceneNumber })
         : page.locator(".scene-heading .eyebrow").filter({ hasText: sceneNumber });
       await activeSceneLabel.waitFor();
-      await page.getByTestId(scene.type === "quiz" ? "quiz-renderer" : "slide-renderer").waitFor();
+      if (scene.type === "interactive") {
+        // 等 iframe 进入可见状态再留档，避免把初始化占位当作互动页面。
+        await page.locator('[data-testid="interactive-host"][data-runtime-state="ready"], [data-testid="interactive-host"][data-runtime-state="completed"], [data-testid="interactive-host"][data-runtime-state="failed"]').waitFor({ timeout: 35_000 });
+      } else {
+        await page.getByTestId(scene.type === "quiz" ? "quiz-renderer" : "slide-renderer").waitFor();
+      }
       await page.evaluate(() => window.scrollTo(0, 0));
       const filename = `${String(scene.order).padStart(2, "0")}-${scene.type}.mhtml`;
       const filePath = path.join(topicDirectory, filename);

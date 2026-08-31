@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-30）：`outline.v2.1`、CourseBrief、`scene-slide.v2`、Slide/PPTElement 规范化与只读画布已进入正式调用路径；quiz 仍使用稳定的 `scene-quiz.v1`。短事务、失败隔离、单场重试和 M7.0 六题基线保持不变；interactive 与 regenerate 分别属于 M9/M10。
+> 实现状态（2026-08-31）：outline.v2.3、scene-slide.v2.1、scene-quiz.v1 与 scene-diagram/simulation/game/code.v2.1 已接入正式路径。大纲默认不生成互动；开启后按 4/5～6/7～8 场景分别安排 1/1～2/1～3 个互动，且至少 2 个 slide、1 个 quiz，首场 slide、互动不相邻。diagram/simulation 输出预算 16,000，game/code 为 20,000，HTML 注入 CSP/桥接后不超过 256 KiB；每个请求仍最多 4 次上游调用、至多一次 repair。
 
 ## 1. 设计结论
 
@@ -42,7 +42,7 @@ scene-outlines-stream
 | 首场景完成即自动切入课堂 | MVP 串行生成；全部完成才标记正式 ready，已有成功场景可手动部分预览 |
 | 图片、视频、云 TTS | 不进入生成管线 |
 
-v0.4 只追加 OpenMAIC 中最接近当前质量问题的四点：更完整的教学要求、专用场景 Prompt、PPT 式只读幻灯片，以及一个自包含 diagram 互动页面。新生成的 slide 不再并行产生类 Markdown/纵向讲义版本。媒体、多智能体、其他 widget 和直接幻灯片编辑仍不复刻。
+v0.4 只追加 OpenMAIC 中最接近当前质量问题的四点：更完整的教学要求、专用场景 Prompt、PPT 式只读幻灯片，以及按教学目的选择的 diagram/simulation/game/code 互动页面。新生成的 slide 不再并行产生类 Markdown/纵向讲义版本。媒体、多智能体、3D/procedural-skill 和直接幻灯片编辑仍不复刻。
 
 M8 不只参考 Prompt 文案，而是裁剪一条完整纵向链：[`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md) 与 [`user.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/user.md) 约束直接坐标输出，[`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts) 定义模型响应，[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts) 解析并处理元素，[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts) 补默认值，[`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts) 装配 Slide。项目保留自己的 AIAdapter、调用预算、MySQL 和错误恢复，只裁出 `text/shape/line/code` 并增加 text 白名单净化。
 
@@ -82,7 +82,7 @@ flowchart TD
     Repair --> Adapter
 ```
 
-### 3.1 v0.4 增量管线（M8 已实现，M9 分支待实现）
+### 3.1 v0.4 增量管线（M8/M9 已接入）
 
 ```mermaid
 flowchart TD
@@ -95,7 +95,7 @@ flowchart TD
 
     Route -->|slide| SlideV2["scene-slide.v2<br/>adapted OpenMAIC prompt"]
     Route -->|quiz| QuizV1["scene-quiz.v1"]
-    Route -->|interactive| DiagramV1["scene-interactive-diagram.v1"]
+    Route -->|interactive| DiagramV1["scene-interactive.v2"]
 
     Memory["covered / remaining / bounded summaries"] --> SlideV2
     Memory --> QuizV1
@@ -117,7 +117,7 @@ flowchart TD
     RepairOnce --> Route
 ```
 
-diagram 的运行错误不会触发浏览器内自动模型循环。用户看到 fallback 后显式点击再生成，服务端重新执行有硬上限的正常请求；这样费用、revision 和恢复证据仍可追踪。
+diagram 的运行错误不会触发浏览器内自动模型循环。用户看到 fallback 后可以重载同一份已保存 HTML 或跳过，不调用模型；生成失败仍在大纲页显式重试；这样费用、revision 和恢复证据仍可追踪。
 
 ## 4. AI Adapter
 
@@ -390,7 +390,7 @@ Prompt 要求：
 - 不把 Zod Schema 原样无限展开到 Prompt，可维护一份紧凑格式说明；
 - 不能依赖“模型应该懂”来代替运行时校验。
 
-### 7.1 Prompt v2 设计（M8 当前实现与 M9 计划）
+### 7.1 Prompt v2 设计（M8/M9 当前实现）
 
 v2 不覆盖 v1 文件，而是新增并保留版本元数据：
 
@@ -399,7 +399,7 @@ prompts/
 ├─ outline.v2.ts
 ├─ scene-slide.v2.ts
 ├─ scene-quiz.v1.ts
-├─ scene-interactive-diagram.v1.ts
+├─ scene-interactive.v2.ts
 ├─ scene-regenerate.v1.ts
 └─ repair-interactive.v1.ts
 ```
@@ -425,7 +425,7 @@ export interface OutlineGenerationV2DTO {
 
 模型只能把原始描述中明确出现的内容放入 `detectedBrief`，不能按主题难度猜测受众或偏好；Prompt 要求模型在内部按 `explicit_setting > prompt > default` 理解最终要求并据此设计 outlines，但不再回传一份冗余 resolved Brief。服务端使用显式设置、detectedBrief 和默认值独占计算最终 Brief；检测字段越界或大纲数量/角色非法时进入大纲失败/受限 repair。
 
-正常路径仍只有一次 `outline.v2.1` 上游调用，不先调用一个“Prompt 解析模型”再调用一个“大纲模型”。若结构或语义失败，repair 与传输重试继续共享单请求最多四次上游调用预算，但主要目标是通过完整 JSON 骨架、枚举说明和确定性归一实现首次成功。校验通过后，resolved Brief、字段来源、合并后的警告和 outlines 使用一个 expectedRevision 短事务落库；后续 `scene-*.v2` 只读取这个已保存版本。
+正常路径仍只有一次 `outline.v2.3` 上游调用，不先调用一个“Prompt 解析模型”再调用一个“大纲模型”。若结构或语义失败，repair 与传输重试继续共享单请求最多四次上游调用预算，但主要目标是通过完整 JSON 骨架、枚举说明和确定性归一实现首次成功。校验通过后，resolved Brief、字段来源、合并后的警告和 outlines 使用一个 expectedRevision 短事务落库；后续 `scene-*.v2` 只读取这个已保存版本。
 
 `outline.v2.1` 单次上游调用的 `maxOutputTokens` 为 8,000，大纲业务超时默认 120 秒。旧版 2,000 和过渡期 6,000 都曾在 DeepSeek 推理阶段耗尽并返回 `empty_content + finish_reason=length`；8,000 + 120 秒的 6 主题真实测试全部以一次上游调用完成。M8 slide 同样使用 8,000，quiz 保持 3,500。
 
@@ -435,7 +435,7 @@ export interface OutlineGenerationV2DTO {
 
 大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定版式强加给所有主题。`scene-slide.v2` 由 OpenMAIC `slide-content` Prompt 裁剪而来，明确“页面是视觉提示，不是讲稿”，细节进入 narration；模型返回完整 `{type, content, narration, summary}` 外壳，其中 content 只有背景和带坐标的 `text/shape/line/code`。服务端过滤、补默认值、净化文本、分配 id 并装配 Slide；quiz.v1 继续生成可机械验证的答案与解析。
 
-diagram Prompt 只生成一个完整 HTML 文档和 fallback DTO，不使用 Markdown。它必须遵守宿主提供的元素 ID、reset、ready/completed/error 协议和无网络限制；生成器不得要求 CDN、外部字体或第三方库。完整脚本仍须经过服务端安全门，Prompt 约束不能替代运行时隔离。
+互动按 widgetType 分流 Prompt，直接输出 HTML 而不是转义到 JSON 字符串；适配器不发送 JSON response_format。head 中 scene-meta 保存 narration/summary/fallback，缺省时从大纲取得纯文本替代内容。服务端提取元数据、检查完整文档与 256 KiB 大小、注入 CSP/InteractiveRuntime，再装配 Scene。允许 CDN，保留无同源 iframe 隔离；Prompt 不是安全证明。code 使用可终止 Worker 执行 Python/JavaScript。详细边界以 docs/09 第6节为准。
 
 ## 8. 解析与修复
 
@@ -486,14 +486,14 @@ MVP 不进行大量正则替换和猜测性字段补全。过度“修好”JSON
 
 ### 9.2 调用硬上限
 
-一门课程最多 5 个场景，正常调用数量为：
+一门课程最多 8 个场景，正常调用数量为：
 
 ```text
-1 次 outline + N 次 scene，N ∈ [3,5]
-正常总数 = 4～6 次
+1 次 outline + N 次 scene，N ∈ [4,8]
+正常总数 = 5～9 次
 ```
 
-一次自动运行只允许 1 个 outline 请求和 N 个 scene 请求，因此业务请求上限为 `1 + sceneCount`，最多 6 个。单个 API 请求设置 `MAX_UPSTREAM_CALLS_PER_REQUEST = 4`，初次调用、网络重试和 repair 全部计入；到达上限后立即返回 `GENERATION_BUDGET_EXHAUSTED`。由此一次自动运行的上游调用理论硬上限为 24，而正常值仍为 4～6。
+一次自动运行只允许 1 个 outline 请求和 N 个 scene 请求，因此业务请求上限为 `1 + sceneCount`，最多 9 个。单个 API 请求最多 4 次上游调用，初次调用、网络重试和 repair 共享；耗尽返回 `GENERATION_BUDGET_EXHAUSTED`。一次自动运行的理论硬上限为 36，正常值为 5～9；M9 不增加新的 repair 循环。
 
 每个 Route Handler 独立限制本请求，数据库中的 Course 状态、activeOperation 和 revision 保证同一个 pending outline 在一次自动运行中只提交一次。手动重试是用户明确触发的新请求，仍受单请求上限控制；Course.sceneProgress.attempts 持续累计。响应和持久化 GenerationMetadata 都记录 upstreamCalls，不能只用 HTTP 请求数估算模型成本。
 
