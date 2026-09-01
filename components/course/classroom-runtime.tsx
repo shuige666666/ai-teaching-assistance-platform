@@ -20,6 +20,12 @@ const statusLabels = {
 export function ClassroomRuntime({ course: initialCourse }: { course: Course }) {
   const [course, setCourse] = useState(initialCourse);
   const [regenerating, setRegenerating] = useState(false);
+  const [replacementMode, setReplacementMode] = useState<"revise" | "regenerate">("revise");
+  const [regenerationElapsedSeconds, setRegenerationElapsedSeconds] = useState(0);
+  const [regenerationOpen, setRegenerationOpen] = useState(false);
+  const [regenerationInstruction, setRegenerationInstruction] = useState("");
+  const [quizDeletionConfirmed, setQuizDeletionConfirmed] = useState(false);
+  const [manualRegenerationError, setManualRegenerationError] = useState<string | null>(null);
   const regenerationRequest = useRef<AbortController | null>(null);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [continuousPlay, setContinuousPlay] = useState(false);
@@ -36,25 +42,43 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   // 离开课堂时取消请求，避免迟到响应写入已离开的页面。
   useEffect(() => () => regenerationRequest.current?.abort(), []);
 
-  /** 以当前 revision 再生成本场互动，失败后同步租约释放后的版本以便显式重试。 */
-  async function regenerateInteractive(runtimeError: string) {
-    if (regenerationRequest.current || scene.type !== "interactive") return;
+  // 模型响应时间不可预测；等待层持续显示真实经过时间，不伪造完成百分比。
+  useEffect(() => {
+    if (!regenerating) return;
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => setRegenerationElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(interval);
+  }, [regenerating]);
+
+  /** 两个外部入口共用等待与刷新反馈，但只向对应接口提交其所需字段。 */
+  async function replaceScene(mode: "revise" | "regenerate", options: { instruction?: string; runtimeError?: string; confirmQuizAttemptDeletion?: boolean }) {
+    if (regenerationRequest.current) return;
     const controller = new AbortController();
     regenerationRequest.current = controller;
+    setReplacementMode(mode);
+    setRegenerationElapsedSeconds(0);
     setRegenerating(true);
     setContinuousPlay(false);
     playback.pause();
     try {
-      const response = await fetch(`/api/courses/${course.id}/scenes/${scene.outlineId}/regenerate`, {
+      const response = await fetch(`/api/courses/${course.id}/scenes/${scene.outlineId}/${mode}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-        body: JSON.stringify({ expectedRevision: course.revision, runtimeError: runtimeError.slice(0, 500) }),
+        body: JSON.stringify({
+          expectedRevision: course.revision,
+          ...(mode === "revise" ? { instruction: options.instruction?.slice(0, 500), confirmQuizAttemptDeletion: options.confirmQuizAttemptDeletion ?? false } : {}),
+          ...(mode === "regenerate" ? { runtimeError: options.runtimeError?.slice(0, 500) } : {}),
+        }),
       });
       const payload = await response.json() as { data?: { course: Course }; error?: { code?: string; message?: string; requestId?: string } };
       if (!response.ok || !payload.data?.course) {
         throw new Error(`${payload.error?.code ?? "REGENERATION_FAILED"}：${payload.error?.message ?? "重新生成失败"}${payload.error?.requestId ? `（请求 ${payload.error.requestId}）` : ""}`);
       }
       controller.signal.throwIfAborted();
-      setCourse(payload.data.course);
+      setRegenerationOpen(false);
+      setRegenerationInstruction("");
+      setQuizDeletionConfirmed(false);
+      // 提交完成后整页重新读取 MySQL，避免局部状态遗漏新场景的 Action 或作答关联。
+      window.location.reload();
     } catch (error) {
       // 读取失败不覆盖主错误；取消后服务端也可能仍在清理租约，下一次请求仍有版本保护。
       try {
@@ -62,10 +86,27 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
         const payload = await refreshed.json() as { course?: Course };
         if (refreshed.ok && payload.course) setCourse(payload.course);
       } catch { /* 保留本地旧课程，提示用户刷新核对。 */ }
-      throw new Error(controller.signal.aborted ? "已取消本次等待，请刷新核对状态后再试。原内容不会在新结果提交前被删除。" : `${error instanceof Error ? error.message : "重新生成失败"}。未成功提交的新结果不会替换原互动。`);
+      const actionName = mode === "revise" ? "修订" : "重新生成";
+      throw new Error(controller.signal.aborted ? "已取消本次等待，请刷新核对状态后再试。原内容不会在新结果提交前被删除。" : `${error instanceof Error ? error.message : `${actionName}失败`}。未成功提交的新结果不会替换原场景。`);
     } finally {
       regenerationRequest.current = null;
       setRegenerating(false);
+    }
+  }
+
+  /** 从课堂修订面板提交用户意见；quiz 必须先明确确认清理旧作答。 */
+  async function submitManualRegeneration(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setManualRegenerationError(null);
+    // 关闭输入面板后让课堂继续可见，按钮区域承担后台请求的反馈。
+    setRegenerationOpen(false);
+    try {
+      await replaceScene("revise", {
+        instruction: regenerationInstruction.trim() || undefined,
+        confirmQuizAttemptDeletion: scene.type === "quiz" ? quizDeletionConfirmed : false,
+      });
+    } catch (error) {
+      setManualRegenerationError(error instanceof Error ? error.message : "重新生成失败，原场景已保留");
     }
   }
 
@@ -92,7 +133,6 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
 
   /** 手工切页会停止连续播放，旧 Action 由 controller 在 scene 变化时取消。 */
   function moveTo(index: number) {
-    if (regenerationRequest.current) return;
     // 5. 手动切页时，停止连续播放。
     setContinuousPlay(false);
     setSceneIndex(Math.max(0, Math.min(course.scenes.length - 1, index)));
@@ -119,7 +159,6 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   }
 
   function primaryControl() {
-    if (regenerating) return <div className="runtime-wait" role="status">正在重新生成当前互动</div>;
     if (playback.state.status === "playing") return <button className="runtime-primary" type="button" onClick={playback.pause}><span>Ⅱ</span>暂停讲解</button>;
     if (playback.state.status === "paused") return <button className="runtime-primary" type="button" onClick={playback.resume}><span>▶</span>继续讲解</button>;
     if (playback.state.status === "completed") return <button className="runtime-primary" type="button" onClick={() => { setContinuousPlay(false); playback.replay(); }}><span>↻</span>重新播放</button>;
@@ -141,7 +180,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
         <nav className="scene-rail" aria-label="课程场景">
           <p>SCENES</p>
           {course.scenes.map((item, index) => (
-            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" disabled={regenerating} key={item.id} onClick={() => moveTo(index)} aria-label={`打开场景 ${item.order}：${item.title}`}>
+            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} onClick={() => moveTo(index)} aria-label={`打开场景 ${item.order}：${item.title}`}>
               <span>{String(item.order).padStart(2, "0")}</span><i /><small>{item.type === "quiz" ? "测验" : item.type === "interactive" ? "互动" : "讲解"}</small>
             </button>
           ))}
@@ -169,7 +208,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             onQuizSubmit={submitQuiz}
             onQuizCompleted={playback.completeLearner}
             onInteractiveCompleted={playback.completeLearner}
-            onInteractiveRegenerate={regenerateInteractive}
+            onInteractiveRegenerate={(runtimeError) => replaceScene("regenerate", { runtimeError })}
             onCancelRegeneration={() => regenerationRequest.current?.abort()}
           />
         </section>
@@ -184,14 +223,40 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             <div><span>浏览器朗读</span><small>{browserSpeechSupported ? "可选增强 · 失败自动回退文本" : "当前浏览器不支持，使用文本计时"}</small></div>
             <button type="button" role="switch" aria-checked={browserSpeechEnabled} disabled={!browserSpeechSupported} className={browserSpeechEnabled ? "is-on" : ""} onClick={toggleBrowserSpeech}><i /></button>
           </div>
+          <button className={`scene-regenerate-toggle${regenerating ? " is-running" : ""}`} type="button" disabled={regenerating} onClick={() => {
+            setManualRegenerationError(null);
+            setQuizDeletionConfirmed(false);
+            setRegenerationOpen(true);
+          }}>{regenerating ? <><i className="scene-regenerate-spinner" aria-hidden="true" /><strong>后台{replacementMode === "revise" ? "修订" : "重生成"}中 · {String(Math.floor(regenerationElapsedSeconds / 60)).padStart(2, "0")}:{String(regenerationElapsedSeconds % 60).padStart(2, "0")}</strong></> : <><span>↻</span>修订本场</>}</button>
+          {regenerating ? <p className="scene-regenerate-status" role="status">课程仍可浏览；完成后将自动刷新。</p> : null}
+          {!regenerating && manualRegenerationError ? <p className="scene-regenerate-status is-error" role="alert">{manualRegenerationError}</p> : null}
           <div className="runtime-note"><span>PLAYBACK POLICY</span><strong>{continuousPlay ? "连续播放已开启" : "手动场景导航"}</strong><p>切换场景会取消旧语音与计时器；测验提交或互动场景完成后，播放器才会结束学习者等待。</p></div>
         </aside>
       </div>
 
+      {regenerationOpen ? (
+        <div className="scene-regeneration-backdrop" role="presentation">
+          <section className="scene-regeneration-dialog" role="dialog" aria-modal="true" aria-labelledby="scene-regeneration-title">
+            <header><div><p className="eyebrow">SCENE REVISION · {scene.type.toUpperCase()}</p><h2 id="scene-regeneration-title">修订本场</h2></div><button type="button" aria-label="关闭修订面板" disabled={regenerating} onClick={() => setRegenerationOpen(false)}>×</button></header>
+            <p>新内容完整生成并保存成功后才会替换当前场景；失败、取消或版本冲突都会保留原内容。</p>
+            <form onSubmit={submitManualRegeneration}>
+              <label htmlFor="scene-regeneration-instruction">修改意见 <small>必填 · 最多 500 字</small></label>
+              <textarea id="scene-regeneration-instruction" maxLength={500} value={regenerationInstruction} disabled={regenerating} onChange={(event) => setRegenerationInstruction(event.target.value)} placeholder="例如：减少文字，增加一个贴近实际开发的案例，并突出关键结论。" />
+              <div className="scene-regeneration-count">{regenerationInstruction.length} / 500</div>
+              {scene.type === "quiz" ? (
+                <label className="scene-regeneration-confirm"><input type="checkbox" checked={quizDeletionConfirmed} disabled={regenerating} onChange={(event) => setQuizDeletionConfirmed(event.target.checked)} /><span><strong>确认清理本场旧作答记录</strong><small>新测验的问题和选项会使用新的 ID，旧作答不能继续对应。</small></span></label>
+              ) : null}
+              {manualRegenerationError ? <p className="scene-regeneration-error" role="alert">{manualRegenerationError}</p> : null}
+              <footer><button type="button" disabled={regenerating} onClick={() => setRegenerationOpen(false)}>保留原场景</button><button type="submit" disabled={regenerating || !regenerationInstruction.trim() || (scene.type === "quiz" && !quizDeletionConfirmed)}>{regenerating ? "正在修订…" : "确认修订"}</button></footer>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
       <footer className="classroom-controls">
-        <button className="control-button" type="button" disabled={regenerating || sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>
+        <button className="control-button" type="button" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>
         <div className="control-center"><span className="control-index">{String(scene.order).padStart(2, "0")}</span><span className="control-divider" /><span>{statusLabels[playback.state.status]}</span></div>
-        <button className="control-button" type="button" disabled={regenerating || sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span> →</button>
+        <button className="control-button" type="button" disabled={sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span> →</button>
       </footer>
     </main>
   );

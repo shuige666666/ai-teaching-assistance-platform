@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AIAdapter } from "@/lib/ai/contracts";
-import { CourseSchema, type Course, type DomainError } from "@/lib/domain/schemas";
+import { CourseSchema, type Course, type DomainError, type Scene } from "@/lib/domain/schemas";
 import { generateScene, SceneGenerationError } from "@/lib/generation/scene-pipeline";
+import { extractInteractiveAuthorHtml } from "@/lib/interactive/html-policy";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
 
 export class SceneApplicationError extends Error {
@@ -24,6 +25,20 @@ function asDomainError(error: unknown): DomainError {
   return { code: "INTERNAL_ERROR", message: "场景生成过程中发生内部错误", retryable: true, stage: "scene" };
 }
 
+/** 只构造当前场景的修订参考；互动内容剥离平台运行注入，其他数据库字段不外发。 */
+function buildRevisionReference(scene: Scene) {
+  const narration = scene.actions.filter((action) => action.type === "speech").map((action) => action.text);
+  return {
+    type: scene.type,
+    title: scene.title,
+    summary: scene.summary,
+    narration,
+    content: scene.type === "interactive"
+      ? { ...scene.content, html: extractInteractiveAuthorHtml(scene.content.html) }
+      : scene.content,
+  };
+}
+
 export class SceneGenerationService {
   constructor(
     private readonly repository: CourseRepository,
@@ -32,8 +47,37 @@ export class SceneGenerationService {
     private readonly now: () => number = Date.now,
   ) {}
 
-  /** 只再生成已保存的互动；沿用短事务租约，候选失败时保留旧场景与其他课程内容。 */
-  async regenerateInteractive(courseId: string, outlineId: string, expectedRevision: number, requestId: string, runtimeError?: string, requestSignal?: AbortSignal): Promise<Course> {
+  /** 运行失败的互动采用干净重生成，只发送错误背景，不向模型发送旧 HTML。 */
+  async regenerateFailedInteractive(courseId: string, outlineId: string, expectedRevision: number, requestId: string, options: {
+    runtimeError: string;
+    requestSignal?: AbortSignal;
+  }): Promise<Course> {
+    return this.replaceReadyScene(courseId, outlineId, expectedRevision, requestId, {
+      kind: "regenerate",
+      runtimeError: options.runtimeError.slice(0, 500),
+      requestSignal: options.requestSignal,
+    });
+  }
+
+  /** 根据用户意见修订 ready 场景；仅当前旧场景会作为不可信参考发送给模型。 */
+  async revise(courseId: string, outlineId: string, expectedRevision: number, requestId: string, options: {
+    instruction: string;
+    confirmQuizAttemptDeletion?: boolean;
+    requestSignal?: AbortSignal;
+  }): Promise<Course> {
+    return this.replaceReadyScene(courseId, outlineId, expectedRevision, requestId, {
+      kind: "revise",
+      instruction: options.instruction.slice(0, 500),
+      confirmQuizAttemptDeletion: options.confirmQuizAttemptDeletion,
+      requestSignal: options.requestSignal,
+    });
+  }
+
+  /** 两个入口共用租约、候选校验和原子替换，避免并发语义出现分叉。 */
+  private async replaceReadyScene(courseId: string, outlineId: string, expectedRevision: number, requestId: string, options:
+    | { kind: "regenerate"; runtimeError: string; requestSignal?: AbortSignal }
+    | { kind: "revise"; instruction: string; confirmQuizAttemptDeletion?: boolean; requestSignal?: AbortSignal }
+  ): Promise<Course> {
     const current = await this.repository.get(courseId);
     if (!current) throw new SceneApplicationError("COURSE_NOT_FOUND", "课程不存在");
     if (current.revision !== expectedRevision) throw new CourseConflictError();
@@ -42,13 +86,19 @@ export class SceneGenerationService {
     const oldScene = current.scenes.find((item) => item.outlineId === outlineId);
     const progress = current.sceneProgress.find((item) => item.outlineId === outlineId);
     const expired = current.activeOperation?.stage === "scene" && current.activeOperation.outlineId === outlineId && current.activeOperation.expiresAt <= this.now();
-    if (outline.type !== "interactive" || oldScene?.type !== "interactive" || progress?.status !== "ready") {
-      throw new SceneApplicationError("INVALID_COURSE_STATE", "只能重新生成已经保存的互动场景");
+    if (!oldScene || outline.type !== oldScene.type || progress?.status !== "ready") {
+      throw new SceneApplicationError("INVALID_COURSE_STATE", "只能替换已经保存的 ready 场景");
+    }
+    if (options.kind === "regenerate" && oldScene.type !== "interactive") {
+      throw new SceneApplicationError("INVALID_COURSE_STATE", "运行失败重生成只适用于 interactive 场景");
+    }
+    if (options.kind === "revise" && oldScene.type === "quiz" && !options.confirmQuizAttemptDeletion) {
+      throw new SceneApplicationError("INVALID_COURSE_STATE", "修订测验前必须确认清理本场旧作答记录");
     }
     if ((current.activeOperation && !expired) || (!["ready", "partial_failed"].includes(current.status) && !expired)) {
       throw new SceneApplicationError("INVALID_COURSE_STATE", "课程已有生成操作，请稍后刷新重试");
     }
-    requestSignal?.throwIfAborted();
+    options.requestSignal?.throwIfAborted();
     const operationId = randomUUID(), startedAt = this.now();
     // 1. 只登记租约和尝试次数；旧 HTML、ready 进度与其他场景全部保留。
     const registered = await this.repository.save(CourseSchema.parse({
@@ -58,14 +108,16 @@ export class SceneGenerationService {
       updatedAt: startedAt,
     }), expectedRevision);
     const timeout = AbortSignal.timeout(this.timeoutMs);
-    const signal = requestSignal ? AbortSignal.any([requestSignal, timeout]) : timeout;
+    const signal = options.requestSignal ? AbortSignal.any([options.requestSignal, timeout]) : timeout;
     const settledStatus = current.sceneProgress.every((item) => item.status === "ready") ? "ready" : "partial_failed";
     let upstreamCalls = 0;
     try {
-      // 2. 复用首次生成的预算、Prompt、解析和装配，不将旧源码交给模型逐行修补。
+      // 2. 复用首次生成的预算、Prompt、解析和装配；不同入口只改变模型上下文。
       signal.throwIfAborted();
       const scene = await generateScene(this.adapter, { course: registered, outline, requestId, signal,
-        regeneration: { previousSummary: oldScene.summary, runtimeError: runtimeError?.slice(0, 500) } });
+        regeneration: options.kind === "regenerate"
+          ? { kind: "regenerate", replacedSceneSummary: oldScene.summary, runtimeError: options.runtimeError }
+          : { kind: "revise", instruction: options.instruction, existingScene: buildRevisionReference(oldScene) } });
       upstreamCalls = scene.generation.upstreamCalls;
       signal.throwIfAborted();
       const latest = await this.repository.get(courseId);
@@ -78,10 +130,10 @@ export class SceneGenerationService {
         sceneProgress: latest.sceneProgress.map((item) => item.outlineId === outlineId ? { ...item, lastError: undefined, updatedAt: this.now() } : item),
         lastError: settledStatus === "ready" ? undefined : current.lastError,
         updatedAt: this.now(),
-      }), latest.revision);
+      }), latest.revision, options.kind === "revise" && oldScene.type === "quiz" ? { clearQuizAttemptsForSceneId: oldScene.id } : undefined);
     } catch (error) {
       const failure = signal.aborted && !(error instanceof SceneGenerationError)
-        ? new SceneGenerationError("AI_TIMEOUT", "再生成已取消或超时，原互动已保留", true, upstreamCalls, undefined, { cause: error }) : error;
+        ? new SceneGenerationError("AI_TIMEOUT", "场景替换已取消或超时，原场景已保留", true, upstreamCalls, undefined, { cause: error }) : error;
       const latest = await this.repository.get(courseId);
       // 4. 仅清理本请求仍持有的租约，不用失败回滚覆盖其他请求的新结果。
       if (latest?.revision === registered.revision && latest.activeOperation?.id === operationId) {

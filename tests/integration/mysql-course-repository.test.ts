@@ -78,12 +78,36 @@ describe("MySQLCourseRepository integration", () => {
     expect(interactive.content.fallback.steps.length).toBeGreaterThanOrEqual(2);
     expect(interactive.generation).toMatchObject({ promptVersion: "scene-diagram.v2.3", provider: "mock" });
     // 再生成仅替换目标 JSON，其他场景与大纲由同一短事务完整保留。
-    const regenerated = await service.regenerateInteractive(course.id, interactive.outlineId, course.revision, "mysql-interactive-regenerate", "layout loop");
+    const regenerated = await service.regenerateFailedInteractive(course.id, interactive.outlineId, course.revision, "mysql-interactive-regenerate", { runtimeError: "layout loop" });
     const refreshed = (await new MySQLCourseRepository(pool).get(course.id))!;
     expect(refreshed).toEqual(regenerated);
     expect(refreshed.scenes.find(s => s.outlineId === interactive.outlineId)?.id).not.toBe(interactive.id);
     expect(refreshed.scenes.filter(s => s.outlineId !== interactive.outlineId)).toEqual(course.scenes.filter(s => s.outlineId !== interactive.outlineId));
     expect(refreshed.outlines).toEqual(course.outlines);
+  });
+
+  it("quiz 再生成与旧作答清理在同一 MySQL 提交中完成", async () => {
+    const repository = new MySQLCourseRepository(pool);
+    const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`测验修订 ${crypto.randomUUID()}`, 4)));
+    cleanupIds.push(created.id);
+    const quiz = created.scenes.find((scene) => scene.type === "quiz");
+    if (!quiz || quiz.type !== "quiz") throw new Error("fixture quiz missing");
+    const question = quiz.content.questions[0];
+    await pool.execute(
+      "INSERT INTO quiz_attempts (id, course_id, scene_id, question_id, selected_option_id, correct, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [crypto.randomUUID(), created.id, quiz.id, question.id, question.correctOptionId, true, Date.now()],
+    );
+    const regenerated = await new SceneGenerationService(repository, new MockAIAdapter()).revise(
+      created.id, quiz.outlineId, created.revision, "mysql-quiz-regenerate", { instruction: "增加一个情境判断题", confirmQuizAttemptDeletion: true },
+    );
+    const replacement = regenerated.scenes.find((scene) => scene.outlineId === quiz.outlineId);
+    const [rows] = await pool.execute<Array<RowDataPacket & { count: number }>>(
+      "SELECT COUNT(*) AS count FROM quiz_attempts WHERE course_id = ? AND scene_id = ?", [created.id, quiz.id],
+    );
+    expect(replacement).toMatchObject({ type: "quiz" });
+    expect(replacement?.id).not.toBe(quiz.id);
+    expect(Number(rows[0].count)).toBe(0);
+    expect((await new MySQLCourseRepository(pool).get(created.id))).toEqual(regenerated);
   });
 
   it.each([6, 8])("%s 场景课程可实际落库并恢复不同类型的互动", async (count) => {

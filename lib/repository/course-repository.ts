@@ -1,10 +1,14 @@
 import type { Course, CourseSummary } from "@/lib/domain/schemas";
 
+export type CourseSaveOptions = {
+  clearQuizAttemptsForSceneId?: string;
+};
+
 export interface CourseRepository {
   create(course: Course): Promise<Course>;
   get(id: string): Promise<Course | null>;
   list(): Promise<CourseSummary[]>;
-  save(course: Course, expectedRevision: number): Promise<Course>;
+  save(course: Course, expectedRevision: number, options?: CourseSaveOptions): Promise<Course>;
   delete(id: string): Promise<void>;
 }
 

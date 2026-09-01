@@ -162,11 +162,13 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 
 mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包含 HTML fixture，不能用一张静态卡片伪装互动成功。另保留一个尝试读取父页面和一个伪造消息来源的失败 fixture，证明隔离与 fallback 即可；首版不穷举浏览器全部 API。
 
-### 8.2.1 互动降级与单场再生成
+### 8.2.1 ready 场景修订与互动降级再生成
 
 运行异常（包括 ResizeObserver 布局循环）后应卸载 iframe，显示静态 fallback，不继续撑高页面。点击“重新加载原脚本”只重载同一 HTML；点击“重新生成本场互动”才调用模型，期间显示等待状态、禁止重复提交，可以取消等待。
 
 再生成成功后应展示新的互动，刷新仍能读取新版本；大纲与其他场景保持不变。生成失败应显示错误及可用的请求标识，旧场景仍保留，可以再次手动尝试。取消与最终提交可能相遇，刷新后的数据库状态为准；不能把已提交的结果当成已撤回。这里只验证恢复流程，不保证每次生成的 HTML 都没有运行或教学问题，不增加独立质量门。
+
+任意 ready slide/interactive/quiz 的课堂调度台均应显示“修订本场”。修改意见为空时不能提交；输入最多 500 字意见后应调用 `/revise`，并只把当前旧场景作为参考。interactive 参考中不得包含 `data-interactive-runtime` 或平台 CSP。成功只替换该 outline 对应的 Scene；失败、取消和 conflict 保留原内容。quiz 必须先勾选清理确认，提交按钮才可用；成功事务必须同时替换 Scene 并删除旧 sceneId 的 QuizAttempt，其他场景作答不受影响。运行失败降级按钮应调用 `/regenerate`，请求和模型 Prompt 均不得包含旧 HTML。
 
 ### 8.3 M9 DeepSeek 互动 smoke test
 
@@ -208,7 +210,7 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 | AC-Q06 HTML 安全门 | M9 | validator 恶意 fixture | 已通过 |
 | AC-Q07 iframe 协议 | M9 | Playwright + network/console 记录 | 已通过 |
 | AC-Q08 fallback 与失败隔离 | M9 | 故障注入 + E2E | 已通过 |
-| AC-Q09 ready 场景再生成 | M10 | application + MySQL conflict | 未实现 |
+| AC-Q09 ready 场景再生成 | M10 | application + MySQL conflict + production browser smoke | 已通过 |
 | AC-Q10 桌面端成对质量提升 | M10 | 冻结的桌面 v2 量表报告 | 未实现 |
 | AC-Q11 M6 全量回归 | M7～M10 | `pnpm verify:full` | 每个里程碑退出时复跑 |
 

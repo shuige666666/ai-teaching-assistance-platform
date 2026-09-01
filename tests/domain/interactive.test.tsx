@@ -57,6 +57,8 @@ describe("M9 interactive boundary", () => {
     expect(prompt.user).toContain(outline.widgetOutline!.designIdea);
     expect(prompt.system).toContain(`本次 widgetType 必须为 ${widgetType}`);
     expect(prompt.system).toContain("min-height:0");
+    expect(prompt.system).toContain("16:9 单屏可见");
+    expect(prompt.system).toContain("禁止用 body/html 的“min-height:100vh”");
     expect(prompt.system).toContain("InteractiveRuntime.onReset");
     const dto = { type: "interactive", content: { type: "interactive", widgetType, runtimeContractVersion: 1, html: widgetType === "diagram" ? rawHtml : createMockWidget(widgetType, "操作实验"), fallback }, narration: "观察操作反馈", summary: "理解运行过程" };
     expect(validateSceneOutput(dto, outline).type).toBe("interactive");

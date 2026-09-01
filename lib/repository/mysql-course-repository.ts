@@ -8,6 +8,7 @@ import {
   FutureCourseSchemaVersionError,
   LegacyCourseUnsupportedError,
   StoredCourseInvalidError,
+  type CourseSaveOptions,
   type CourseRepository,
 } from "./course-repository";
 
@@ -152,7 +153,7 @@ export class MySQLCourseRepository implements CourseRepository {
   }
 
   /** 在短事务中用 revision 条件更新完整聚合，防止迟到响应覆盖新结果。 */
-  async save(course: Course, expectedRevision: number): Promise<Course> {
+  async save(course: Course, expectedRevision: number, options: CourseSaveOptions = {}): Promise<Course> {
     if (course.revision !== expectedRevision) throw new CourseConflictError();
     // 4. 保存时把课程版本号加一。
     const nextCourse = CourseSchema.parse({
@@ -192,6 +193,13 @@ export class MySQLCourseRepository implements CourseRepository {
         ],
       );
       if (result.affectedRows !== 1) throw new CourseConflictError();
+      // quiz 场景正式替换后，旧题目的作答必须与课程更新在同一事务清理。
+      if (options.clearQuizAttemptsForSceneId) {
+        await connection.execute<ResultSetHeader>(
+          "DELETE FROM quiz_attempts WHERE course_id = ? AND scene_id = ?",
+          [nextCourse.id, options.clearQuizAttemptsForSceneId],
+        );
+      }
       await connection.commit();
       return structuredClone(nextCourse);
     } catch (error) {
