@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-08-31）：outline.v2.3、scene-slide.v2.1、scene-quiz.v1 与 scene-diagram/simulation/game/code.v2.3 已接入正式路径。大纲默认不生成互动；开启后按 4/5～6/7～8 场景分别安排 1/1～2/1～3 个互动，且至少 2 个 slide、1 个 quiz，首场 slide、互动不相邻。diagram/simulation 输出预算 16,000，game/code 为 20,000，HTML 注入 CSP/桥接后不超过 256 KiB；每个请求仍最多 4 次上游调用、至多一次 repair。
+> 实现状态（2026-09-01）：outline.v2.3、scene-slide.v2.1、scene-quiz.v2 与 scene-diagram/simulation/game/code.v2.3 已接入正式路径。quiz 支持单选和多选，答案统一为索引/ID 数组并采用完全匹配判分；人工编辑题目不调用模型。
 
 ## 1. 设计结论
 
@@ -94,7 +94,7 @@ flowchart TD
     Review --> Route{"Scene type"}
 
     Route -->|slide| SlideV2["scene-slide.v2<br/>adapted OpenMAIC prompt"]
-    Route -->|quiz| QuizV1["scene-quiz.v1"]
+    Route -->|quiz| QuizV2["scene-quiz.v2"]
     Route -->|interactive| DiagramV1["scene-interactive.v2"]
 
     Memory["covered / remaining / bounded summaries"] --> SlideV2
@@ -329,7 +329,7 @@ coursePlan 只取大纲标题和类型；previousSummary 最多取数据库中�
           { "label": "往返时延立即归零" },
           { "label": "带宽自动无限增大" }
         ],
-        "correctOptionIndex": 0,
+        "correctOptionIndexes": [0],
         "explanation": "多余数据首先在缓冲区排队，随后才可能因缓冲区耗尽而丢包。"
       }
     ]
@@ -339,7 +339,7 @@ coursePlan 只取大纲标题和类型；previousSummary 最多取数据库中�
 }
 ```
 
-模型输出使用 `correctOptionIndex`，装配器生成 option id 后把它转换为 `correctOptionId`。索引越界必须失败，不能默认选第一个答案。
+模型输出统一使用 `correctOptionIndexes`：单选题数组长度为 1，多选题至少为 2。装配器生成 option id 后把下标转换为 `correctOptionIds`；重复或越界索引必须失败。
 
 ### 6.4 场景语义门
 
@@ -364,7 +364,7 @@ quiz 检查：
 
 - 1～3 题；
 - 选项 2～4 个且规范化后不重复；
-- correctOptionIndex 在范围内；
+- correctOptionIndexes 不重复且在范围内；单选恰好 1 项，多选至少 2 项；
 - explanation 非空；
 - 不出现“以上都对”但答案与其他选项矛盾等可机械发现的问题。
 
@@ -378,7 +378,7 @@ Prompt 分为版本化 System Prompt 和 User Prompt：
 prompts/
 ├─ outline.v1.ts
 ├─ scene-slide.v1.ts
-├─ scene-quiz.v1.ts
+├─ scene-quiz.v2.ts
 └─ repair.v1.ts
 ```
 
@@ -390,7 +390,7 @@ Prompt 要求：
 - 给出完整但最小的 JSON 示例；
 - 明确字段长度、数量和枚举；
 - 明确不要生成 id、Action、可执行 HTML、链接和额外字段；只读 HTML/JSX/TSX 示例只能放在 `slide.code.code`；
-- quiz 明确 correctOptionIndex 的语义；
+- quiz 明确 correctOptionIndexes 的单选/多选语义；
 - 不把 Zod Schema 原样无限展开到 Prompt，可维护一份紧凑格式说明；
 - 不能依赖“模型应该懂”来代替运行时校验。
 
@@ -402,7 +402,7 @@ v2 不覆盖 v1 文件，而是新增并保留版本元数据：
 prompts/
 ├─ outline.v2.ts
 ├─ scene-slide.v2.ts
-├─ scene-quiz.v1.ts
+├─ scene-quiz.v2.ts
 ├─ scene-interactive.v2.ts
 ├─ scene-regenerate.v1.ts
 └─ repair-interactive.v1.ts

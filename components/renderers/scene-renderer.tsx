@@ -6,7 +6,7 @@ import { InteractiveRenderer } from "@/components/interactive/interactive-render
 type SceneRendererProps = {
   scene: Scene;
   quizSessionId?: number;
-  onQuizSubmit?: (questionId: string, selectedOptionId: string) => Promise<{ correct: boolean }>;
+  onQuizSubmit?: (questionId: string, selectedOptionIds: string[]) => Promise<{ correct: boolean }>;
   onQuizCompleted?: () => void;
   onInteractiveCompleted?: () => void;
   onInteractiveRegenerate?: (runtimeError: string) => Promise<void>;

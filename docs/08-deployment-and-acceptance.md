@@ -151,7 +151,7 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 
 | 测试层 | M7～M10 必须覆盖 |
 | --- | --- |
-| Domain | Course v4 与 v1～v3 旧行隔离、CourseBrief 默认值/字段来源/合并优先级/冲突警告、GeneratedSlideSceneDTO、唯一 canvas Slide、四类 PPTElement 和互动数量规则 |
+| Domain | Course v5、v4 单选答案读取升级与 v1～v3 旧行隔离、CourseBrief、单选/多选答案数组、GeneratedSlideSceneDTO、唯一 canvas Slide、四类 PPTElement 和互动数量规则 |
 | Slide/Renderer | 未支持元素过滤、必要默认值、非有限坐标/非正尺寸、text 白名单净化、code 文本转义、`text/shape/line/code` 渲染、16:9 缩放和未知元素 fallback |
 | Slide visual | 3 个 DeepSeek 代表主题在 `1280×720` 的逐场景 MHTML 与人工检查，确认主次、可读性、关系表达和主要内容未被裁掉；不建立 PNG 档案或自动美学评分 |
 | Interactive boundary | 完整 HTML、允许外部依赖的 CSP、`sandbox="allow-scripts"`、消息来源/Schema 和 fallback |
@@ -169,6 +169,8 @@ mock E2E 必须使用真正包含按钮、节点状态和完成事件的自包�
 再生成成功后应展示新的互动，刷新仍能读取新版本；大纲与其他场景保持不变。生成失败应显示错误及可用的请求标识，旧场景仍保留，可以再次手动尝试。取消与最终提交可能相遇，刷新后的数据库状态为准；不能把已提交的结果当成已撤回。这里只验证恢复流程，不保证每次生成的 HTML 都没有运行或教学问题，不增加独立质量门。
 
 任意 ready slide/interactive/quiz 的课堂调度台均应显示“修订本场”。修改意见为空时不能提交；输入最多 500 字意见后应调用 `/revise`，并只把当前旧场景作为参考。interactive 参考中不得包含 `data-interactive-runtime` 或平台 CSP。成功只替换该 outline 对应的 Scene；失败、取消和 conflict 保留原内容。quiz 必须先勾选清理确认，提交按钮才可用；成功事务必须同时替换 Scene 并删除旧 sceneId 的 QuizAttempt，其他场景作答不受影响。运行失败降级按钮应调用 `/regenerate`，请求和模型 Prompt 均不得包含旧 HTML。
+
+Quiz 人工编辑验收：运行 `pnpm db:migrate` 后 004 已登记；ready quiz 显示“手动调整题目”。弹窗允许 1～3 题、每题 2～4 个选项，单选恰好选择一个答案，多选至少选择两个，未确认清理或存在空字段时不能保存。保存调用 PATCH `/scenes/{outlineId}/quiz` 且不调用模型；刷新后新题目仍存在。旧 sceneId 作答计数为 0。多选仅全选正确集合时判定正确，答案顺序不影响，漏选或错选均错误。
 
 ### 8.3 M9 DeepSeek 互动 smoke test
 

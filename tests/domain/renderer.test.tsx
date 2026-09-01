@@ -49,7 +49,10 @@ describe("SlideRenderer", () => {
     const slide = course.scenes.find((scene) => scene.type === "slide");
     const quiz = course.scenes.find((scene) => scene.type === "quiz");
     expect(slide && renderToStaticMarkup(<SceneRenderer scene={slide} />)).toContain("data-testid=\"slide-renderer\"");
-    expect(quiz && renderToStaticMarkup(<SceneRenderer scene={quiz} />)).toContain("data-testid=\"quiz-renderer\"");
+    const quizHtml = quiz && renderToStaticMarkup(<SceneRenderer scene={quiz} />);
+    expect(quizHtml).toContain("data-testid=\"quiz-renderer\"");
+    expect(quizHtml).toContain("单选题");
+    expect(quizHtml).toContain("多选题");
   });
 
   it("partial_failed 课程只渲染已保存场景并标明原始场景序号", () => {

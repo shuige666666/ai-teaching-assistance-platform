@@ -115,14 +115,26 @@ test("mock 课程从创建、互动、测验到刷新恢复", async ({ page, req
 
     await page.getByRole("button", { name: /打开场景 4/ }).click();
     await expect(page.getByText("QUIZ · SCENE 04")).toBeVisible();
+    await page.getByRole("button", { name: "手动调整题目" }).click();
+    await expect(page.getByRole("heading", { name: "手动调整题目" })).toBeVisible();
+    await page.getByLabel("题干").first().fill("人工修改：哪项最符合课程的核心内容？");
+    await page.getByRole("checkbox", { name: /确认清理本场旧作答记录/ }).check();
+    await page.getByRole("button", { name: "保存题目" }).click();
+    await expect(page.getByTestId("slide-canvas")).toBeVisible();
+    await page.getByRole("button", { name: /打开场景 4/ }).click();
+    await expect(page.getByText("人工修改：哪项最符合课程的核心内容？")).toBeVisible();
     await expect(page.getByRole("radio").first()).toBeEnabled();
     await page.getByRole("radio").first().check();
-    await page.getByRole("button", { name: "提交答案" }).click();
+    await page.getByRole("button", { name: "提交答案" }).first().click();
     await expect(page.getByText("回答正确")).toBeVisible();
+    await page.getByRole("checkbox").nth(0).check();
+    await page.getByRole("checkbox").nth(1).check();
+    await page.getByRole("button", { name: "提交答案" }).click();
+    await expect(page.getByText("回答正确")).toHaveCount(2);
     await expect(page.getByText("本场景完成", { exact: true }).first()).toBeVisible();
 
     await page.reload();
-    await expect(page.getByText(/REV\.11 · MOCK/)).toBeVisible();
+    await expect(page.getByText(/REV\.12 · MOCK/)).toBeVisible();
     await expect(page.getByTestId("slide-canvas")).toBeVisible();
     await expect(page.getByTestId("slide-canvas").locator('[data-text-type="title"]')).toContainText(topic);
     await page.goto("/");

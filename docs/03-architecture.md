@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 状态说明：M1～M9 功能已接入，M9 已完成验收。当前为 Course v4、4～8 场景（默认 5）、outline.v2.3、PPTElement slide、quiz 与可选 interactive（diagram/simulation/game/code）；M10 已完成 ready 场景再生成，最终配对验收仍待实施，编辑/导出仍不实施。历史 M7.0 基线不改写。
+> 状态说明：M1～M9 功能已接入，M9 已完成验收。当前为 Course v5、4～8 场景（默认 5）、outline.v2.3、PPTElement slide、单选/多选 quiz 与可选 interactive；M10 已完成 ready 场景修订、失败互动重生成和 quiz 人工编辑，最终配对验收仍待实施。历史 M7.0 基线不改写。
 
 ## 1. 架构结论
 
@@ -324,6 +324,7 @@ courseId 必须进入 URL。刷新后页面通过 URL + Course API 从 MySQL 恢
 | `POST /api/courses/{courseId}/scenes/{outlineId}/generate` | 生成、校验并保存一个场景 | 是 |
 | `POST /api/courses/{courseId}/scenes/{outlineId}/regenerate`（M10） | 运行失败 interactive 的干净重生成；只带错误背景，不发送旧 HTML | 是 |
 | `POST /api/courses/{courseId}/scenes/{outlineId}/revise`（M10） | 按必填意见修订 ready 场景；只发送当前旧场景，成功才替换，quiz 需确认清理旧作答 | 是 |
+| `PATCH /api/courses/{courseId}/scenes/{outlineId}/quiz`（M10） | 不调用模型，手动保存 1～3 道单选/多选题；替换 Scene 与清理旧作答同事务 | 是 |
 
 Route Handler 不直接拼 SQL，而是调用应用服务。应用服务加载聚合、执行状态转换、调用 GenerationService，并用 expectedRevision 事务保存；客户端收到成功响应时，对应结果已经进入 MySQL。
 

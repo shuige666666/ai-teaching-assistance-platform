@@ -3,7 +3,7 @@ import { z } from "zod";
 export const QuizAttemptInputSchema = z.object({
   sceneId: z.string().min(1),
   questionId: z.string().min(1),
-  selectedOptionId: z.string().min(1),
+  selectedOptionIds: z.array(z.string().min(1)).min(1).max(4),
 }).strict();
 
 export const QuizAttemptSchema = QuizAttemptInputSchema.extend({

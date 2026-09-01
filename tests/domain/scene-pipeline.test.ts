@@ -26,8 +26,8 @@ const validQuiz = {
   content: { questions: [{
     type: "single_choice" as const,
     prompt: "模型应该直接返回哪个答案字段？",
-    options: [{ label: "correctOptionIndex" }, { label: "correctOptionId" }, { label: "任意 HTML" }],
-    correctOptionIndex: 0,
+    options: [{ label: "correctOptionIndexes" }, { label: "correctOptionIds" }, { label: "任意 HTML" }],
+    correctOptionIndexes: [0],
     explanation: "模型只返回索引，答案 ID 由装配器生成。",
   }] },
   narration: "请完成这道单选题。",
@@ -67,7 +67,7 @@ describe("scene generation boundary", () => {
       now: 1,
     });
     if (scene.type !== "quiz") throw new Error("quiz expected");
-    expect(scene.content.questions[0].correctOptionId).toBe(scene.content.questions[0].options[0].id);
+    expect(scene.content.questions[0].correctOptionIds).toEqual([scene.content.questions[0].options[0].id]);
     expect(scene.actions.at(-1)).toMatchObject({ type: "pause", reason: "learner" });
   });
 
@@ -78,8 +78,18 @@ describe("scene generation boundary", () => {
       content: { ...validSlide.content, elements: validSlide.content.elements.map((element) => ({ ...element, id: "model-id" })) },
     }, course.outlines[0]);
     expect(output.type === "slide" && output.content.elements.every((element) => element.id !== "model-id")).toBe(true);
-    expect(() => validateSceneOutput({ ...validQuiz, content: { questions: [{ ...validQuiz.content.questions[0], options: [{ label: "重复" }, { label: "重复" }], correctOptionIndex: 3 }] } }, course.outlines[2])).toThrowError(InvalidSceneError);
+    expect(() => validateSceneOutput({ ...validQuiz, content: { questions: [{ ...validQuiz.content.questions[0], options: [{ label: "重复" }, { label: "重复" }], correctOptionIndexes: [3] }] } }, course.outlines[2])).toThrowError(InvalidSceneError);
     expect(() => validateSceneOutput({ ...validSlide, narration: "请执行 <script>bad()</script>" }, course.outlines[0])).toThrowError(InvalidSceneError);
+  });
+
+  it("multiple_choice 将多个答案下标装配为正确选项 ID", () => {
+    const course = createFixtureCourse("多选契约测试", 3);
+    const outline = course.outlines[2];
+    const output = validateSceneOutput({ ...validQuiz, content: { questions: [{ ...validQuiz.content.questions[0], type: "multiple_choice", correctOptionIndexes: [0, 1] }] } }, outline);
+    const scene = assembleScene({ output, courseId: course.id, outline, metadata: { provider: "mock", model: "test", promptVersion: "test", requestId: "req", durationMs: 1, upstreamCalls: 1, repaired: false, generatedAt: 1 }, now: 1 });
+    if (scene.type !== "quiz") throw new Error("quiz expected");
+    expect(scene.content.questions[0].type).toBe("multiple_choice");
+    expect(scene.content.questions[0].correctOptionIds).toEqual(scene.content.questions[0].options.slice(0, 2).map((option) => option.id));
   });
 
   it("净化 text 富文本并允许 code lines 保存只读 JSX", () => {

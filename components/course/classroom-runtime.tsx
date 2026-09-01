@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { QuizEditDialog } from "@/components/course/quiz-edit-dialog";
 import { SceneRenderer } from "@/components/renderers/scene-renderer";
+import type { EditableQuizQuestion } from "@/lib/domain/quiz-edit";
 import type { Course } from "@/lib/domain/schemas";
 import { isBrowserSpeechAvailable } from "@/lib/playback/speech-adapters";
 import { usePlaybackController } from "@/lib/playback/use-playback-controller";
@@ -26,6 +28,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   const [regenerationInstruction, setRegenerationInstruction] = useState("");
   const [quizDeletionConfirmed, setQuizDeletionConfirmed] = useState(false);
   const [manualRegenerationError, setManualRegenerationError] = useState<string | null>(null);
+  const [quizEditorOpen, setQuizEditorOpen] = useState(false);
   const regenerationRequest = useRef<AbortController | null>(null);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [continuousPlay, setContinuousPlay] = useState(false);
@@ -110,6 +113,22 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
     }
   }
 
+  /** 手动题目编辑不调用模型，服务端生成新 ID 并原子清理旧作答。 */
+  async function saveQuizQuestions(questions: EditableQuizQuestion[]) {
+    if (scene.type !== "quiz") throw new Error("当前场景不是测验");
+    const response = await fetch(`/api/courses/${course.id}/scenes/${scene.outlineId}/quiz`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedRevision: course.revision, confirmQuizAttemptDeletion: true, questions }),
+    });
+    const payload = await response.json() as { data?: { course: Course }; error?: { code?: string; message?: string; requestId?: string } };
+    if (!response.ok || !payload.data?.course) {
+      throw new Error(`${payload.error?.code ?? "QUIZ_EDIT_FAILED"}：${payload.error?.message ?? "题目保存失败"}${payload.error?.requestId ? `（请求 ${payload.error.requestId}）` : ""}`);
+    }
+    setQuizEditorOpen(false);
+    window.location.reload();
+  }
+
   useEffect(() => {
     // 3. 页面加载后再读取浏览器是否支持语音。
     const timeout = window.setTimeout(() => {
@@ -145,12 +164,12 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   }
 
   /** 只提交题目和选择项；正确答案由服务端从当前 Course 读取并计算。 */
-  async function submitQuiz(questionId: string, selectedOptionId: string) {
+  async function submitQuiz(questionId: string, selectedOptionIds: string[]) {
     // 6. 把用户选择的选项发送给服务端判分并保存。
     const response = await fetch(`/api/courses/${course.id}/quiz-attempts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sceneId: scene.id, questionId, selectedOptionId }),
+      body: JSON.stringify({ sceneId: scene.id, questionId, selectedOptionIds }),
     });
     const payload = await response.json() as { attempt?: { correct: boolean }; error?: { message?: string } };
     // 7. 保存成功后，把服务端判分结果交给测验组件。
@@ -228,6 +247,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             setQuizDeletionConfirmed(false);
             setRegenerationOpen(true);
           }}>{regenerating ? <><i className="scene-regenerate-spinner" aria-hidden="true" /><strong>后台{replacementMode === "revise" ? "修订" : "重生成"}中 · {String(Math.floor(regenerationElapsedSeconds / 60)).padStart(2, "0")}:{String(regenerationElapsedSeconds % 60).padStart(2, "0")}</strong></> : <><span>↻</span>修订本场</>}</button>
+          {scene.type === "quiz" ? <button className="scene-quiz-edit-toggle" type="button" disabled={regenerating} onClick={() => setQuizEditorOpen(true)}><span>✎</span>手动调整题目</button> : null}
           {regenerating ? <p className="scene-regenerate-status" role="status">课程仍可浏览；完成后将自动刷新。</p> : null}
           {!regenerating && manualRegenerationError ? <p className="scene-regenerate-status is-error" role="alert">{manualRegenerationError}</p> : null}
           <div className="runtime-note"><span>PLAYBACK POLICY</span><strong>{continuousPlay ? "连续播放已开启" : "手动场景导航"}</strong><p>切换场景会取消旧语音与计时器；测验提交或互动场景完成后，播放器才会结束学习者等待。</p></div>
@@ -252,6 +272,8 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
           </section>
         </div>
       ) : null}
+
+      {quizEditorOpen && scene.type === "quiz" ? <QuizEditDialog scene={scene} onClose={() => setQuizEditorOpen(false)} onSave={saveQuizQuestions} /> : null}
 
       <footer className="classroom-controls">
         <button className="control-button" type="button" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>

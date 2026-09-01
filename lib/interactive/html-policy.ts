@@ -37,3 +37,11 @@ export function postProcessInteractiveHtml(rawHtml: string): string {
   }
   return html;
 }
+
+/** 提取模型最初生成的互动文档，修订时不把平台注入的运行脚本和 CSP 再发给模型。 */
+export function extractInteractiveAuthorHtml(storedHtml: string): string {
+  return storedHtml
+    .replace(/\s*<meta\s+http-equiv=["']Content-Security-Policy["']\s+content="[^"]*">/i, "")
+    .replace(/\s*<script\s+data-interactive-runtime="\d+">[\s\S]*?<\/script>/i, "")
+    .trim();
+}

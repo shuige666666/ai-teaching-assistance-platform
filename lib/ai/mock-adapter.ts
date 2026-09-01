@@ -60,10 +60,16 @@ function createMockScene(prompt: string): MockScene {
         type: "single_choice",
         prompt: `关于“${topic}”与本场关键点，下列哪项最符合课程内容？`,
         options: [{ label: keyPoints[0] ?? "理解核心概念" }, { label: "跳过结构化校验" }, { label: "执行任意模型代码" }],
-        correctOptionIndex: 0,
+        correctOptionIndexes: [0],
         explanation: `本题检查学习者是否掌握“${keyPoints[0] ?? topic}”。`,
+      }, {
+        type: "multiple_choice",
+        prompt: "以下哪些做法有助于形成可靠的学习闭环？",
+        options: [{ label: "围绕目标组织内容" }, { label: "提供反馈与解析" }, { label: "忽略学习者作答" }],
+        correctOptionIndexes: [0, 1],
+        explanation: "目标组织和及时反馈共同构成可靠的学习闭环。",
       }] },
-      narration: `下面通过一道单选题检查你对${topic}的理解。`,
+      narration: `下面通过单选题和多选题检查你对${topic}的理解。`,
       summary: `本场检查了学习者对${topic}关键概念的理解。`,
     };
   }

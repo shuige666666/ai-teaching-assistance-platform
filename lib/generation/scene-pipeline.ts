@@ -4,7 +4,7 @@ import type { Course, GenerationMetadata, Scene, SceneOutline } from "@/lib/doma
 import { writeServerEvent } from "@/lib/observability/server-log";
 import { InvalidOutlineError } from "./outline-schema";
 import { assembleScene, InvalidSceneError, parseSceneResponse, validateSceneOutput } from "./scene-schema";
-import { buildQuizUserPrompt, QUIZ_PROMPT_VERSION, QUIZ_SYSTEM_PROMPT } from "./prompts/scene-quiz.v1";
+import { buildQuizUserPrompt, QUIZ_PROMPT_VERSION, QUIZ_SYSTEM_PROMPT } from "./prompts/scene-quiz.v2";
 import { buildInteractivePrompt } from "./prompts/scene-interactive.v2";
 import { buildSceneRepairPrompt, SCENE_REPAIR_SYSTEM_PROMPT } from "./prompts/scene-repair.v1";
 import { buildSlideUserPrompt, SLIDE_PROMPT_VERSION, SLIDE_SYSTEM_PROMPT } from "./prompts/scene-slide.v2";

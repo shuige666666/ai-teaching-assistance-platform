@@ -1,5 +1,6 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { Pool, PoolConnection } from "mysql2/promise";
+import { upgradeCourseV4ToV5 } from "@/lib/domain/course-upgrade";
 import { CourseSchema, CURRENT_SCHEMA_VERSION, type Course, type CourseSummary } from "@/lib/domain/schemas";
 import { getDatabasePool } from "@/lib/db/pool";
 import {
@@ -38,12 +39,12 @@ function decodeJson<T>(value: unknown): T {
 /** 将数据库行恢复成 Course，并在返回业务层之前重新执行完整 Schema。 */
 function mapCourseRow(row: CourseRow): Course {
   const schemaVersion = Number(row.schema_version);
-  if (schemaVersion < CURRENT_SCHEMA_VERSION) throw new LegacyCourseUnsupportedError();
+  if (schemaVersion < 4) throw new LegacyCourseUnsupportedError();
   if (schemaVersion > CURRENT_SCHEMA_VERSION) throw new FutureCourseSchemaVersionError();
   try {
     // 1. 把数据库中的 JSON 还原成课程对象，并检查字段是否完整。
     const briefDocument = decodeJson<{ brief: Course["brief"]; resolution: Course["briefResolution"] }>(row.brief_json);
-    return CourseSchema.parse({
+    const storedCourse = {
       schemaVersion,
       id: row.id,
       topic: row.topic,
@@ -61,7 +62,9 @@ function mapCourseRow(row: CourseRow): Course {
       lastError: row.last_error_json === null ? undefined : decodeJson(row.last_error_json),
       createdAt: Number(row.created_at),
       updatedAt: Number(row.updated_at),
-    });
+    };
+    // v4 与 v5 只相差 Quiz 正确答案的标量/数组表示，读取时无损升级即可。
+    return CourseSchema.parse(schemaVersion === 4 ? upgradeCourseV4ToV5(storedCourse) : storedCourse);
   } catch (error) {
     throw new StoredCourseInvalidError({ cause: error });
   }
@@ -136,7 +139,7 @@ export class MySQLCourseRepository implements CourseRepository {
   async list(): Promise<CourseSummary[]> {
     let rows: CourseRow[];
     try {
-      [rows] = await this.pool.query<CourseRow[]>("SELECT * FROM courses WHERE schema_version = ? ORDER BY updated_at DESC", [CURRENT_SCHEMA_VERSION]);
+      [rows] = await this.pool.query<CourseRow[]>("SELECT * FROM courses WHERE schema_version IN (?, ?) ORDER BY updated_at DESC", [4, CURRENT_SCHEMA_VERSION]);
     } catch (error) {
       rethrowQueryError(error);
     }

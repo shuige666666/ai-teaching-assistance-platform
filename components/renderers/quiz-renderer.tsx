@@ -5,13 +5,13 @@ import type { QuizContent } from "@/lib/domain/schemas";
 
 type QuizRendererProps = {
   content: QuizContent;
-  onSubmit?: (questionId: string, selectedOptionId: string) => Promise<{ correct: boolean }>;
+  onSubmit?: (questionId: string, selectedOptionIds: string[]) => Promise<{ correct: boolean }>;
   onCompleted?: () => void;
 };
 
-/** 展示固定单选题，并在课堂模式下等待服务端持久化后再公布结果。 */
+/** 展示单选与多选题，并在课堂模式下等待服务端按答案集合判分。 */
 export function QuizRenderer({ content, onSubmit, onCompleted }: QuizRendererProps) {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [results, setResults] = useState<Record<string, { correct: boolean }>>({});
   const [pendingQuestionId, setPendingQuestionId] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -25,13 +25,13 @@ export function QuizRenderer({ content, onSubmit, onCompleted }: QuizRendererPro
   }, [content.questions.length, onCompleted, results]);
 
   /** 未注入 API 时保留纯渲染器的本地判分能力，正式课堂由服务端返回 correct。 */
-  async function submit(questionId: string, selectedOptionId: string, correctOptionId: string) {
+  async function submit(questionId: string, selectedOptionIds: string[], correctOptionIds: string[]) {
     setPendingQuestionId(questionId);
     setErrors((current) => ({ ...current, [questionId]: "" }));
     try {
       const result = onSubmit
-        ? await onSubmit(questionId, selectedOptionId)
-        : { correct: selectedOptionId === correctOptionId };
+        ? await onSubmit(questionId, selectedOptionIds)
+        : { correct: selectedOptionIds.length === correctOptionIds.length && selectedOptionIds.every((id) => correctOptionIds.includes(id)) };
       setResults((current) => ({ ...current, [questionId]: result }));
     } catch (error) {
       setErrors((current) => ({ ...current, [questionId]: error instanceof Error ? error.message : "提交失败，请重试" }));
@@ -43,29 +43,36 @@ export function QuizRenderer({ content, onSubmit, onCompleted }: QuizRendererPro
   return (
     <div className="quiz-stack" data-testid="quiz-renderer">
       {content.questions.map((question, questionIndex) => {
-        const selectedId = answers[question.id];
+        const selectedIds = answers[question.id] ?? [];
         const result = results[question.id];
         const isSubmitted = result !== undefined;
         const isCorrect = result?.correct === true;
         const isPending = pendingQuestionId === question.id;
         return (
           <section className="quiz-card" key={question.id}>
-            <p className="quiz-number">CHECK {String(questionIndex + 1).padStart(2, "0")}</p>
+            <div className="quiz-meta">
+              <p className="quiz-number">CHECK {String(questionIndex + 1).padStart(2, "0")}</p>
+              <span className="quiz-type-label">{question.type === "multiple_choice" ? "多选题" : "单选题"}</span>
+            </div>
             <h3>{question.prompt}</h3>
             <div className="quiz-options">
               {question.options.map((option, optionIndex) => {
-                const checked = selectedId === option.id;
-                const revealCorrect = isSubmitted && option.id === question.correctOptionId;
+                const checked = selectedIds.includes(option.id);
+                const revealCorrect = isSubmitted && question.correctOptionIds.includes(option.id);
                 const revealWrong = isSubmitted && checked && !revealCorrect;
                 return (
                   <label className={`quiz-option${checked ? " is-selected" : ""}${revealCorrect ? " is-correct" : ""}${revealWrong ? " is-wrong" : ""}`} key={option.id}>
                     <input
-                      type="radio"
+                      type={question.type === "multiple_choice" ? "checkbox" : "radio"}
                       name={question.id}
                       value={option.id}
                       checked={checked}
                       disabled={isSubmitted || isPending}
-                      onChange={() => setAnswers((current) => ({ ...current, [question.id]: option.id }))}
+                      onChange={() => setAnswers((current) => {
+                        if (question.type === "single_choice") return { ...current, [question.id]: [option.id] };
+                        const existing = current[question.id] ?? [];
+                        return { ...current, [question.id]: existing.includes(option.id) ? existing.filter((id) => id !== option.id) : [...existing, option.id] };
+                      })}
                     />
                     <span className="option-letter">{String.fromCharCode(65 + optionIndex)}</span>
                     <span>{option.label}</span>
@@ -77,8 +84,8 @@ export function QuizRenderer({ content, onSubmit, onCompleted }: QuizRendererPro
               <button
                 className="button button--dark quiz-submit"
                 type="button"
-                disabled={!selectedId || isPending}
-                onClick={() => selectedId && void submit(question.id, selectedId, question.correctOptionId)}
+                disabled={selectedIds.length === 0 || isPending}
+                onClick={() => selectedIds.length > 0 && void submit(question.id, selectedIds, question.correctOptionIds)}
               >{isPending ? "正在保存…" : "提交答案"}</button>
             ) : (
               <div className={`quiz-result ${isCorrect ? "is-correct" : "is-wrong"}`} role="status">

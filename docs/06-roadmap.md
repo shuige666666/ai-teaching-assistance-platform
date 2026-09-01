@@ -10,7 +10,7 @@
 
 M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读幻灯片、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的可选 PPT 式幻灯片编辑器，M12 是可选的 PPTX + interactive HTML 简化资源包导出；暂存的 MX 才选择一个可度量研究问题。
 
-**当前进度：M1～M9 已完成；M10 ready 场景修订已实现，最终同题配对验收待实施。M7.0 六题与 MHTML 保持冻结，人工评分延后到 M10 配对比较。M8～M10 只承诺桌面视口，编辑器/导出仍为可选 M11/M12。** 实施证据见 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M9 已完成；M10 ready 场景修订、失败互动重生成以及 quiz 单选/多选与人工题目编辑已实现，最终同题配对验收待实施。M7.0 六题与 MHTML 保持冻结。完整 slide 编辑器/导出仍为可选 M11/M12。** 实施证据见 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
@@ -182,7 +182,7 @@ mock 必须确定性生成 3～5 项大纲。使用有效 DeepSeek 配置完成�
 ### 最小测试
 
 - slide、CodeBlock、quiz 合法样例可装配为领域实体；
-- 模型不能指定 ID、持久化状态、correctOptionId 或任意 Action；
+- 模型不能指定 ID、持久化状态、correctOptionIds 或任意 Action，只能提供正确答案下标数组；
 - 第 2 个场景失败时第 1 个结果仍保留；
 - 重试替换同 outlineId 结果而非重复追加；
 - 并发或迟到响应触发 conflict，不能覆盖较新聚合；
@@ -309,7 +309,7 @@ OpenMAIC 固定提交 `59adbef` 提供整条实现参照：[`slide-content/syste
 
 ## 13. M9：多样化 interactive 纵向闭环
 
-已确认并接入：课程 4～8 个场景、默认 5；大纲页显式 off/required。required 时 4 场景 1 个互动、5～6 场景 1～2 个、7～8 场景 1～3 个；至少 2 slide 和 1 quiz、首场 slide、互动不连续。当前 Course v4，不兼容旧 v1～v3；不改历史 M7/M8 验收记录。
+已确认并接入：课程 4～8 个场景、默认 5；大纲页显式 off/required。required 时 4 场景 1 个互动、5～6 场景 1～2 个、7～8 场景 1～3 个；至少 2 slide 和 1 quiz、首场 slide、互动不连续。当前 Course v5 自动读取升级 v4，仍不兼容 v1～v3；不改历史 M7/M8 验收记录。
 
 M9 当前实现 diagram/simulation/game/code：从 OpenMAIC 裁剪分类 Prompt，直接生成完整 HTML，再经轻量后处理、MySQL 保存和 iframe 运行。分类不锁死玩法；允许外部依赖，sandbox 仅 allow-scripts，无 allow-same-origin。code 支持 Python/JavaScript Worker，停止与超时可终止；不做服务端执行、3D 或复杂修复系统。详见 docs/09 第6节。
 
@@ -355,7 +355,7 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、3D/proc
 | 演示依赖网络 | 无 Key 就无法进入课堂 | mock 走同一数据库和生成链路 |
 | 语音拖慢主线 | 调试集中在音色或兼容性 | TextOnly 为默认，BrowserSpeech 可关闭 |
 | 生成脚本越权 | iframe 可访问网络、主页面或存储 | 关闭 interactive 入口，先修复 sandbox/CSP/消息边界 |
-| 用户误以为旧课程仍兼容 | v1/v2/v3 行留在数据库但不再进入 v4 运行链 | 列表过滤旧版本，按 ID 返回明确错误，并要求新建课程 |
+| 用户误以为所有旧课程都兼容 | v1/v2/v3 行留在数据库但不再进入 v5 运行链 | 只自动升级差异可控的 v4；列表过滤更老版本，按 ID 返回明确错误 |
 | 裁剪上游时牵入过多依赖 | 为一个 slide 同时引入媒体、编辑器、动效和存储包 | 只移植四类元素需要的类型、纯函数和 Renderer，记录来源 |
 | 模型坐标不稳定 | 多个真实主题反复出现相同重叠、越界或超长正文 | 先缩小 Prompt/元素字段并调整示例；稳定复现后只补针对性规则 |
 | 用视觉手段掩盖超载 | 依赖小字体、隐藏或画布内滚动才不溢出 | 回退 Prompt 中的可见内容预算，细节移入 narration |
@@ -366,4 +366,4 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、3D/proc
 
 ## 20. 推荐的下一次开发迭代
 
-当前 M7.0 基线保持冻结，M9 多样化互动与 M10 单场再生成已实现，最新实测以 docs/07 为准。新课程为 Course v4、4～8 场景；旧 v1～v3 不迁移。下一阶段为 M10 同题配对验收，不提前并入编辑器、导出或移动端。
+当前 M7.0 基线保持冻结，M9 多样化互动与 M10 单场修订、quiz 人工题目编辑已实现，最新实测以 docs/07 为准。新课程为 Course v5、4～8 场景；v4 按需无损升级，v1～v3 不迁移。下一阶段为 M10 同题配对验收，不提前并入完整 slide 编辑器、导出或移动端。

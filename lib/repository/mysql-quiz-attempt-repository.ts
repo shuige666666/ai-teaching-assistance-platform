@@ -10,7 +10,7 @@ interface QuizAttemptRow extends RowDataPacket {
   course_id: string;
   scene_id: string;
   question_id: string;
-  selected_option_id: string;
+  selected_option_ids_json: string | string[];
   correct: number | boolean;
   submitted_at: string | number;
 }
@@ -21,7 +21,7 @@ function mapRow(row: QuizAttemptRow): QuizAttempt {
     courseId: row.course_id,
     sceneId: row.scene_id,
     questionId: row.question_id,
-    selectedOptionId: row.selected_option_id,
+    selectedOptionIds: typeof row.selected_option_ids_json === "string" ? JSON.parse(row.selected_option_ids_json) : row.selected_option_ids_json,
     correct: Boolean(row.correct),
     submittedAt: Number(row.submitted_at),
   });
@@ -36,9 +36,9 @@ export class MySQLQuizAttemptRepository implements QuizAttemptRepository {
     try {
       await this.pool.execute<ResultSetHeader>(
         `INSERT INTO quiz_attempts (
-          id, course_id, scene_id, question_id, selected_option_id, correct, submitted_at
+          id, course_id, scene_id, question_id, selected_option_ids_json, correct, submitted_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [parsed.id, parsed.courseId, parsed.sceneId, parsed.questionId, parsed.selectedOptionId, parsed.correct, parsed.submittedAt],
+        [parsed.id, parsed.courseId, parsed.sceneId, parsed.questionId, JSON.stringify(parsed.selectedOptionIds), parsed.correct, parsed.submittedAt],
       );
       return structuredClone(parsed);
     } catch (error) {

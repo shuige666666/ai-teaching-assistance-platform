@@ -6,6 +6,7 @@ import { MockAIAdapter } from "@/lib/ai/mock-adapter";
 import { OutlineGenerationService } from "@/lib/application/outline-generation-service";
 import { SceneGenerationService } from "@/lib/application/scene-generation-service";
 import { QuizAttemptService } from "@/lib/application/quiz-attempt-service";
+import { QuizEditingService } from "@/lib/application/quiz-editing-service";
 import { courseRepositoryContract } from "@/tests/domain/course-repository-contract";
 import { DatabaseUnavailableError, LegacyCourseUnsupportedError, StoredCourseInvalidError } from "@/lib/repository/course-repository";
 import { MySQLCourseRepository } from "@/lib/repository/mysql-course-repository";
@@ -61,7 +62,7 @@ describe("MySQLCourseRepository integration", () => {
     const recovered = await new MySQLCourseRepository(pool).get(draft.id);
     expect(course).toMatchObject({ status: "ready", revision: 10 });
     expect(recovered?.scenes.map((scene) => scene.type)).toEqual(["slide", "slide", "slide", "quiz"]);
-    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2.1", "scene-slide.v2.1", "scene-slide.v2.1", "scene-quiz.v1"]);
+    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2.1", "scene-slide.v2.1", "scene-slide.v2.1", "scene-quiz.v2"]);
   });
 
   it("互动 HTML、fallback 和生成元数据可从 MySQL 完整恢复", async () => {
@@ -86,6 +87,37 @@ describe("MySQLCourseRepository integration", () => {
     expect(refreshed.outlines).toEqual(course.outlines);
   });
 
+  it("读取时自动升级 v4 单选题，并在下次保存时将课程落成 v5", async () => {
+    const repository = new MySQLCourseRepository(pool);
+    const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`v4 自动升级 ${crypto.randomUUID()}`, 4)));
+    cleanupIds.push(created.id);
+    const legacyScenes = created.scenes.map((scene) => {
+      if (scene.type !== "quiz") return scene;
+      return {
+        ...scene,
+        content: {
+          ...scene.content,
+          questions: scene.content.questions.map((question) => {
+            const { correctOptionIds, ...rest } = question;
+            return { ...rest, type: "single_choice", correctOptionId: correctOptionIds[0] };
+          }),
+        },
+      };
+    });
+    await pool.execute("UPDATE courses SET schema_version = 4, scenes_json = ? WHERE id = ?", [JSON.stringify(legacyScenes), created.id]);
+
+    const upgraded = await repository.get(created.id);
+    expect(upgraded?.schemaVersion).toBe(5);
+    expect((await repository.list()).some((course) => course.id === created.id)).toBe(true);
+    const quiz = upgraded?.scenes.find((scene) => scene.type === "quiz");
+    expect(quiz?.type === "quiz" && quiz.content.questions.every((question) => question.correctOptionIds.length === 1)).toBe(true);
+
+    if (!upgraded) throw new Error("upgraded course missing");
+    await repository.save(upgraded, upgraded.revision);
+    const [rows] = await pool.execute<Array<RowDataPacket & { schema_version: number }>>("SELECT schema_version FROM courses WHERE id = ?", [created.id]);
+    expect(Number(rows[0].schema_version)).toBe(5);
+  });
+
   it("quiz 再生成与旧作答清理在同一 MySQL 提交中完成", async () => {
     const repository = new MySQLCourseRepository(pool);
     const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`测验修订 ${crypto.randomUUID()}`, 4)));
@@ -94,8 +126,8 @@ describe("MySQLCourseRepository integration", () => {
     if (!quiz || quiz.type !== "quiz") throw new Error("fixture quiz missing");
     const question = quiz.content.questions[0];
     await pool.execute(
-      "INSERT INTO quiz_attempts (id, course_id, scene_id, question_id, selected_option_id, correct, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [crypto.randomUUID(), created.id, quiz.id, question.id, question.correctOptionId, true, Date.now()],
+      "INSERT INTO quiz_attempts (id, course_id, scene_id, question_id, selected_option_ids_json, correct, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [crypto.randomUUID(), created.id, quiz.id, question.id, JSON.stringify(question.correctOptionIds), true, Date.now()],
     );
     const regenerated = await new SceneGenerationService(repository, new MockAIAdapter()).revise(
       created.id, quiz.outlineId, created.revision, "mysql-quiz-regenerate", { instruction: "增加一个情境判断题", confirmQuizAttemptDeletion: true },
@@ -108,6 +140,29 @@ describe("MySQLCourseRepository integration", () => {
     expect(replacement?.id).not.toBe(quiz.id);
     expect(Number(rows[0].count)).toBe(0);
     expect((await new MySQLCourseRepository(pool).get(created.id))).toEqual(regenerated);
+  });
+
+  it("人工编辑 quiz 与旧作答清理在同一 MySQL 提交中完成", async () => {
+    const repository = new MySQLCourseRepository(pool);
+    const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`测验手动编辑 ${crypto.randomUUID()}`, 4)));
+    cleanupIds.push(created.id);
+    const quiz = created.scenes.find((scene) => scene.type === "quiz");
+    if (!quiz || quiz.type !== "quiz") throw new Error("fixture quiz missing");
+    const question = quiz.content.questions[0];
+    await pool.execute(
+      "INSERT INTO quiz_attempts (id, course_id, scene_id, question_id, selected_option_ids_json, correct, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [crypto.randomUUID(), created.id, quiz.id, question.id, JSON.stringify(question.correctOptionIds), true, Date.now()],
+    );
+    const edited = await new QuizEditingService(repository).edit(created.id, quiz.outlineId, {
+      expectedRevision: created.revision,
+      confirmQuizAttemptDeletion: true,
+      questions: [{ type: "multiple_choice", prompt: "哪些属于事务特性？", options: ["原子性", "一致性", "随机性"], correctOptionIndexes: [0, 1], explanation: "原子性与一致性属于 ACID。" }],
+    });
+    const replacement = edited.scenes.find((scene) => scene.outlineId === quiz.outlineId);
+    const [rows] = await pool.execute<Array<RowDataPacket & { count: number }>>("SELECT COUNT(*) AS count FROM quiz_attempts WHERE course_id = ? AND scene_id = ?", [created.id, quiz.id]);
+    expect(replacement?.id).not.toBe(quiz.id);
+    expect(replacement?.type === "quiz" && replacement.content.questions[0]).toMatchObject({ type: "multiple_choice", correctOptionIds: expect.any(Array) });
+    expect(Number(rows[0].count)).toBe(0);
   });
 
   it.each([6, 8])("%s 场景课程可实际落库并恢复不同类型的互动", async (count) => {
@@ -130,8 +185,8 @@ describe("MySQLCourseRepository integration", () => {
     if (!quizScene || quizScene.type !== "quiz") throw new Error("fixture quiz missing");
     const question = quizScene.content.questions[0];
     await pool.execute(
-      "INSERT INTO quiz_attempts (id, course_id, scene_id, question_id, selected_option_id, correct, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [crypto.randomUUID(), created.id, quizScene.id, question.id, question.correctOptionId, true, Date.now()],
+      "INSERT INTO quiz_attempts (id, course_id, scene_id, question_id, selected_option_ids_json, correct, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [crypto.randomUUID(), created.id, quizScene.id, question.id, JSON.stringify(question.correctOptionIds), true, Date.now()],
     );
     await repository.delete(created.id);
     const [rows] = await pool.execute<Array<RowDataPacket & { count: number }>>("SELECT COUNT(*) AS count FROM quiz_attempts WHERE course_id = ?", [created.id]);
@@ -148,7 +203,7 @@ describe("MySQLCourseRepository integration", () => {
     const attempt = await new QuizAttemptService(courseRepository, new MySQLQuizAttemptRepository(pool)).submit(course.id, {
       sceneId: scene.id,
       questionId: question.id,
-      selectedOptionId: question.correctOptionId,
+      selectedOptionIds: question.correctOptionIds,
     });
     const recovered = await new MySQLQuizAttemptRepository(pool).listByCourse(course.id);
     expect(attempt.correct).toBe(true);

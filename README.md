@@ -13,17 +13,17 @@
 
 ## 当前状态
 
-2026-08-31 互动扩展：支持关系探索、过程模拟、互动挑战和 Python/JavaScript 编程实验；分类不锁死玩法。大纲页可改互动类型与设计意图。资源策略改为允许 CDN/联网、保留无同源权限 iframe；不要在互动页输入敏感数据。课堂展示使用最大可用 16:9 视口，Prompt 提供三种可改写布局骨架以及 SVG/Canvas/reset 示例；独立 HTML 下载仍保持自身自适应。请运行 `pnpm db:migrate` 应用 003，修正此前 MySQL 仍限制 3～5 场景的问题。详见 09 第 6 节。
+2026-08-31 互动扩展：支持关系探索、过程模拟、互动挑战和 Python/JavaScript 编程实验；分类不锁死玩法。大纲页可改互动类型与设计意图。资源策略改为允许 CDN/联网、保留无同源权限 iframe；不要在互动页输入敏感数据。课堂展示使用最大可用 16:9 视口，Prompt 提供三种可改写布局骨架以及 SVG/Canvas/reset 示例；独立 HTML 下载仍保持自身自适应。请运行 `pnpm db:migrate` 应用 003 场景数量修复与 004 Quiz 多选作答迁移。详见 09 第 6 节。
 
 互动稳定性补充：新生成使用 `scene-<type>.v2.3`，Canvas 尺寸与绘制分离，补齐数值输入、游戏失败与重置示例。ResizeObserver 循环与未处理异常都会停止 iframe 并降级，新桥接保留行列和初始化错误重放。降级区可由用户点击“重新生成本场互动”，成功才替换这一场，失败保留原内容；“重新加载原脚本”不调用模型。课程 `ready` 只代表生成保存完成，不代表全部玩法已验收。
 
-项目的 **M1～M9 功能代码已进入正式调用链**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建带可追溯 CourseBrief 的 v4 草稿，经 `outline.v2.3` 在同一次调用中解析明确要求并生成 4～8 项大纲，再按 outline 顺序逐项生成 PPT 式 slide/quiz/interactive 场景、进入课堂自动播放并从 MySQL 恢复课程。
+项目的 **M1～M9 功能代码已进入正式调用链**。当前交付边界是本机运行、MySQL 持久化、mock 自动回归和 DeepSeek 真实生成；默认 `AI_MODE=mock` 时，无模型 Key、无模型网络也能从首页创建带可追溯 CourseBrief 的 v5 草稿，经 `outline.v2.3` 在同一次调用中解析明确要求并生成 4～8 项大纲，再按 outline 顺序逐项生成 PPT 式 slide/quiz/interactive 场景、进入课堂自动播放并从 MySQL 恢复课程。
 
-大纲和场景阶段共用 `MockAIAdapter` 与 OpenAI-compatible 远端适配器，大纲/slide/quiz 走 JSON，interactive 走原始 HTML + scene-meta；统一执行领域校验、至多一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 可在讲解前直接作答；自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。DeepSeek 已完成一门 5 场景真实课程的大纲、场景、修复与失败后重试验证。代码中保留百炼兼容配置，但百炼联调和异机部署均属于后续可选扩展，不再作为第一阶段完成条件。
+大纲和场景阶段共用 `MockAIAdapter` 与 OpenAI-compatible 远端适配器，大纲/slide/quiz 走 JSON，interactive 走原始 HTML + scene-meta；统一执行领域校验、至多一次模型修复和上游调用预算。课堂使用显式 playback reducer 消费 speech/pause；TextOnly 是默认适配器，浏览器朗读是可关闭增强。quiz 支持单选和多选，多选按答案集合完全一致判分；课堂可不调用模型直接手动调整题目，保存时原子清理本场旧作答。自动播放到 learner pause 时仍会进入 `awaitingLearner`，答案由服务端依据 MySQL Course 判分并写入独立 `quiz_attempts`。
 
 M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部完成。
 
-**M7.0、M7.1、M8 与 M9 已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v4；CourseBrief 与 `outline.v2.3` 保持 M7.1 语义，slide 只允许 `content.canvas` 下的 `text/shape/line/code`，不再保留旧 block Renderer。v1/v2/v3 数据行原样留在 MySQL，但不出现在列表，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。互动模式默认 `off`，大纲页可开启 `required`：4 场景 1 个、5～6 场景 1～2 个、7～8 场景 1～3 个互动；M8～M10 只承诺桌面端，M11 编辑器和 M12 导出均为可选扩展。
+**M7.0、M7.1、M8 与 M9 已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v5 和 `scene-quiz.v2`；v4 课程在读取时把单个正确答案无损转换为数组，并在下次保存时自然升级为 v5。v1～v3 数据行仍保留但隐藏，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。CourseBrief、PPT 式 slide 和互动数量规则保持不变；请运行 `pnpm db:migrate` 应用 004 作答数组迁移。
 
 ## v0.3 MVP 已实现什么
 
@@ -77,7 +77,7 @@ components/
   interactive/                   # [M9 已实现] sandbox iframe 宿主与消息桥
   editor/                        # [M11 可选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
-  domain/                        # [M9 已实现] Course v4、CourseBrief、Slide/PPTElement 与 fixture
+  domain/                        # [M10 已实现] Course v5、单选/多选 Quiz、CourseBrief、Slide/PPTElement 与 fixture
   repository/                    # [M7.1 已实现] v2 InMemory / MySQL 仓储、旧行隔离与错误映射
   db/                            # [M2 已实现] MySQL 配置、连接池和健康检查
   application/                   # [M7.1 已实现] Brief、大纲/场景生成用例与服务端测验判分

@@ -17,7 +17,7 @@ export class QuizAttemptService {
     private readonly now: () => number = Date.now,
   ) {}
 
-  /** 从 MySQL 课程事实中定位题目并判分，客户端只负责提交选择项。 */
+/** 从 MySQL 课程事实中定位题目，并按答案集合完全一致进行判分。 */
   async submit(courseId: string, input: QuizAttemptInput): Promise<QuizAttempt> {
     const parsedInput = QuizAttemptInputSchema.parse(input);
     const course = await this.courses.get(courseId);
@@ -26,15 +26,19 @@ export class QuizAttemptService {
     if (!scene || scene.type !== "quiz") throw new QuizAttemptRequestError("QUIZ_NOT_FOUND");
     const question = scene.content.questions.find((item) => item.id === parsedInput.questionId);
     if (!question) throw new QuizAttemptRequestError("QUESTION_NOT_FOUND");
-    if (!question.options.some((option) => option.id === parsedInput.selectedOptionId)) {
+    const selectedIds = parsedInput.selectedOptionIds;
+    if (new Set(selectedIds).size !== selectedIds.length || selectedIds.some((id) => !question.options.some((option) => option.id === id))) {
       throw new QuizAttemptRequestError("OPTION_NOT_FOUND");
     }
+
+    const expectedIds = new Set(question.correctOptionIds);
+    const correct = selectedIds.length === expectedIds.size && selectedIds.every((id) => expectedIds.has(id));
 
     return this.attempts.create(QuizAttemptSchema.parse({
       id: randomUUID(),
       courseId,
       ...parsedInput,
-      correct: parsedInput.selectedOptionId === question.correctOptionId,
+      correct,
       submittedAt: this.now(),
     }));
   }

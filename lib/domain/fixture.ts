@@ -128,20 +128,27 @@ function createSlideScene(course: Course, outline: SceneOutline, now: number): S
 }
 
 function createQuizScene(course: Course, outline: SceneOutline, now: number): Scene {
-  const correctId = randomUUID();
+  const correctId = randomUUID(), firstMultiCorrectId = randomUUID(), secondMultiCorrectId = randomUUID();
   return {
     id: randomUUID(), courseId: course.id, outlineId: outline.id, type: "quiz", title: outline.title,
-    summary: `用单选题检查学习者是否理解“${course.topic}”的结构化学习方法。`, order: outline.order,
+    summary: `用单选题和多选题检查学习者是否理解“${course.topic}”的结构化学习方法。`, order: outline.order,
     content: { type: "quiz", questions: [{
       id: randomUUID(), type: "single_choice", prompt: `关于“${course.topic}”课程内容的生成与展示，下列哪项最符合本系统的设计？`,
       options: [
         { id: correctId, label: "模型返回结构化数据，程序校验后用固定组件渲染" },
         { id: randomUUID(), label: "模型直接生成并执行任意 React 源码" },
         { id: randomUUID(), label: "只要接口调用成功，就跳过内容校验" },
-      ], correctOptionId: correctId, explanation: "结构化契约将不稳定的模型输出与确定性的课堂渲染分离，是本项目复刻的核心机制。",
+      ], correctOptionIds: [correctId], explanation: "结构化契约将不稳定的模型输出与确定性的课堂渲染分离，是本项目复刻的核心机制。",
+    }, {
+      id: randomUUID(), type: "multiple_choice", prompt: "以下哪些做法能够提升课程生成结果的可靠性？",
+      options: [
+        { id: firstMultiCorrectId, label: "校验模型输出的数据结构" },
+        { id: secondMultiCorrectId, label: "保存前检查领域约束" },
+        { id: randomUUID(), label: "接口成功后跳过内容验证" },
+      ], correctOptionIds: [firstMultiCorrectId, secondMultiCorrectId], explanation: "结构校验和领域约束共同阻止无效内容进入课堂。",
     }] },
     actions: [
-      { id: randomUUID(), type: "speech", text: "请完成这道单选题，提交后再查看解析。" },
+      { id: randomUUID(), type: "speech", text: "请完成单选题和多选题，提交后再查看解析。" },
       { id: randomUUID(), type: "pause", reason: "learner" },
     ],
     generation: mockMetadata(now), createdAt: now, updatedAt: now,

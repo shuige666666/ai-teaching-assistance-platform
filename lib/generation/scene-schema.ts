@@ -12,10 +12,10 @@ import {
 } from "@/lib/slides/normalize-slide";
 
 const QuizQuestionModelSchema = z.object({
-  type: z.literal("single_choice"),
+  type: z.enum(["single_choice", "multiple_choice"]),
   prompt: z.string().trim().min(1).max(300),
   options: z.array(z.object({ label: z.string().trim().min(1).max(180) }).strict()).min(2).max(4),
-  correctOptionIndex: z.number().int().nonnegative(),
+  correctOptionIndexes: z.array(z.number().int().nonnegative()).min(1).max(4),
   explanation: z.string().trim().min(1).max(500),
 }).strict();
 const QuizSceneModelSchema = z.object({
@@ -143,7 +143,11 @@ export function validateSceneOutput(value: unknown, outline: SceneOutline): Scen
   output.content.questions.forEach((question, questionIndex) => {
     const optionKeys = question.options.map((option) => normalizedText(option.label));
     if (new Set(optionKeys).size !== optionKeys.length) issues.push({ path: `content.questions.${questionIndex}.options`, message: "同一道题的选项不能重复" });
-    if (question.correctOptionIndex >= question.options.length) issues.push({ path: `content.questions.${questionIndex}.correctOptionIndex`, message: "正确答案索引超出选项范围" });
+    const answerPath = `content.questions.${questionIndex}.correctOptionIndexes`;
+    if (new Set(question.correctOptionIndexes).size !== question.correctOptionIndexes.length) issues.push({ path: answerPath, message: "正确答案索引不能重复" });
+    if (question.correctOptionIndexes.some((index) => index >= question.options.length)) issues.push({ path: answerPath, message: "正确答案索引超出选项范围" });
+    if (question.type === "single_choice" && question.correctOptionIndexes.length !== 1) issues.push({ path: answerPath, message: "单选题必须且只能有一个正确答案" });
+    if (question.type === "multiple_choice" && question.correctOptionIndexes.length < 2) issues.push({ path: answerPath, message: "多选题至少需要两个正确答案" });
   });
   if (issues.length > 0) throw new InvalidSceneError(issues);
   return output;
@@ -182,11 +186,11 @@ export function assembleScene(input: {
     content: {
       type: "quiz",
       questions: output.content.questions.map((question) => {
-        // 3. 给每个选项生成 ID，再根据下标找到正确选项。
+        // 3. 给每个选项生成 ID，再将模型答案下标转换为领域 ID 数组。
         const options = question.options.map((option) => ({ id: randomUUID(), label: option.label }));
         return {
-          id: randomUUID(), type: "single_choice", prompt: question.prompt, options,
-          correctOptionId: options[question.correctOptionIndex].id, explanation: question.explanation,
+          id: randomUUID(), type: question.type, prompt: question.prompt, options,
+          correctOptionIds: question.correctOptionIndexes.map((index) => options[index].id), explanation: question.explanation,
         };
       }),
     },

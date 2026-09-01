@@ -694,16 +694,16 @@ create/save 在写入前调用 CourseSchema.parse；get 在读取并组装后再
 
 - 增加可选字段且旧读者允许时，可保持 schemaVersion；
 - 删除字段、改变 Course 顶层语义或存储布局时必须升级 Course schemaVersion；新增 slide/interactive 判别分支仍必须保持旧分支可读，互动消息协议可独立使用 `runtimeContractVersion`；
-- 每次版本升级必须明确选择“迁移”或“保留旧行并拒绝读取”；当前 v1/v2/v3 采用后者，不伪造新内容；
+- 每次版本升级必须明确选择“迁移”或“保留旧行并拒绝读取”；当前 v4 采用读取期无损升级，v1/v2/v3 采用保留旧行并拒绝读取；
 - 新 Scene 类型只有在 Schema、Renderer、生成器和测试同时存在时才能加入；
 - 新 Action 类型只有在 Schema、Executor、取消语义和测试同时存在时才能加入；
 - 不允许用 `any` 绕开外部输入校验，也不允许用类型断言代替运行时验证。
 
-## 16. v0.4/M7～M10 契约：Course schemaVersion 4
+## 16. M9 阶段历史契约：Course schemaVersion 4
 
 ### 16.1 版本兼容策略
 
-M7.1 以 v2 引入 CourseBrief；M8 以 v3 删除 block slide、改用 `content.canvas`。M9 新增 interactive，并将场景数从 3～5 改为 4～8，因此当前版本为 v4。按用户确认不兼容旧课程：Repository 不删除或改写旧行，也不把 v1～v3 交给当前 Schema。读取顺序为：
+M7.1 以 v2 引入 CourseBrief；M8 以 v3 删除 block slide、改用 `content.canvas`。M9 新增 interactive，并将场景数从 3～5 改为 4～8，因此该阶段版本为 v4。当时按用户确认不兼容旧课程：Repository 不删除或改写旧行，也不把 v1～v3 交给 v4 Schema。该阶段读取顺序为：
 
 ```text
 MySQL row
@@ -713,7 +713,7 @@ MySQL row
   → 应用服务
 ```
 
-`brief_json` 继续存储 `{ brief, resolution }`。新建 v4 Course 写入 provisional brief；`outline.v2.3` 成功后同事务保存 resolved brief 和来源。`list()` 只查询 v4，旧 ID 明确拒绝；旧行不丢失。无需新增 SQL 表或列，互动 HTML/fallback 复用 Scene 内容 JSON。
+`brief_json` 继续存储 `{ brief, resolution }`。新建 v4 Course 写入 provisional brief；`outline.v2.3` 成功后同事务保存 resolved brief 和来源。当时 `list()` 只查询 v4，旧 ID 明确拒绝；旧行不丢失。无需新增 SQL 表或列，互动 HTML/fallback 复用 Scene 内容 JSON。当前 v5 兼容策略见第 17 节。
 
 M9 数量规则：默认 5 场景，可选 4～8。大纲页 `off/required` 为用户明确选择，模型不能从描述中覆盖。required 在 4/5～6/7～8 场景下分别允许 1/1～2/1～3 个互动；至少 2 个 slide、1 个 quiz，首场 slide，互动不相邻。互动的 `widgetType` 为 diagram/simulation/game/code；大纲可含 widgetOutline.designIdea、language(python/javascript)，内容含 html、fallback 和 runtimeContractVersion=1；Action 为 speech 后追加 learner pause，宿主完成事件解除等待。
 
@@ -1014,4 +1014,14 @@ OpenMAIC 固定提交的 [`interactive.ts`](https://github.com/THU-MAIC/OpenMAIC
 
 ### 16.8 分阶段启用门
 
-当前 Course v4 同时包含 slide、quiz 和 interactive 的生成、保存与渲染分支，v1～v3 仅保留明确拒绝，不做迁移。新 Scene 类型必须随生成器、隔离边界、Renderer、协议、fallback、fixture 和回归一起启用；只改联合类型而让下游无法处理，会破坏可运行性。M10 再生成仍未实现。
+Course v4 同时包含 slide、quiz 和 interactive 的生成、保存与渲染分支，v1～v3 仅保留明确拒绝，不做迁移。该阶段记录保留为历史；当前契约见下一节。
+
+## 17. Course v5：单选、多选与人工题目编辑
+
+Course v5 将 QuizQuestion 统一为 `single_choice | multiple_choice`，正确答案统一保存为 `correctOptionIds: string[]`。单选数组长度必须为 1，多选至少为 2；ID 不得重复且必须引用本题选项。模型 DTO 使用不含实体 ID 的 `correctOptionIndexes: number[]`，由装配器转换为正式 ID。
+
+QuizAttempt 同样统一为 `selectedOptionIds: string[]`。服务端先验证所有选择都属于本题，再以集合完全相等判分；顺序不影响结果，漏选、多选或选择错误项均为错误。数据库迁移 004 新增 `selected_option_ids_json`，历史单选作答转换为单元素数组。
+
+人工编辑接口只接受 1～3 道无 ID 题目、2～4 个选项、答案下标和解析，不接受客户端提供 question/option/correct ID。服务端重新生成 Scene、Question 和 Option ID，使用 expectedRevision 保存，并在同一 MySQL 事务中清理旧 sceneId 作答。该路径不调用模型，保留原场景的生成来源元数据，`updatedAt` 与新 Scene ID 表示人工替换发生。
+
+Course 截止线升级为 schemaVersion 5。由于 v4 与 v5 的课程内容差异仅为单选题的 `correctOptionId` 标量改成 `correctOptionIds` 数组，Repository 在读取 v4 时执行这一项无损转换，并以 v5 对象交给业务层；列表同时展示 v4/v5，课程下次发生正常保存时写回 v5。该策略不批量改库，也不修改 Scene、Question 或 Option ID。v1～v3 仍不迁移、不删除，由列表过滤并在按 ID 读取时明确返回旧契约不支持。

@@ -36,9 +36,11 @@ ResizeObserver 循环重新作为运行错误降级，包括历史 HTML 桥接�
 
 服务端沿用 operation id、expectedRevision 和过期租约：生成时保留旧 ready 场景，提交前复查所有权；失败恢复状态，冲突不覆盖其他写入。新增单元测试覆盖目标替换、失败保留、取消、并发冲突及提交失败恢复；MySQL 测试核对重新读取后的持久化结果。生成保存成功仍不等于生成脚本没有运行或教学问题。
 
-quiz 修订必须由用户勾选“确认清理本场旧作答记录”；最终替换 Scene 与按旧 sceneId 删除 QuizAttempt 使用同一个 MySQL 事务。2026-09-01 的独立 mock production 浏览器验收中，slide 携带意见后 REV.10→12，quiz 未确认时提交禁用，确认后 REV.12→14；课程保持 ready，数据库旧作答计数为 0。临时课程验收后精确删除。本轮验证通过：124 项单元、16 项 MySQL、production build、Chromium E2E 1/1。
+quiz 修订和人工编辑都要求用户确认清理旧作答，最终替换 Scene 与按旧 sceneId 删除 QuizAttempt 使用同一个 MySQL 事务。2026-09-01 的 mock production 浏览器验收覆盖 AI 修订，以及人工修改题干、保存刷新、单选和多选完全匹配判分。加入 v4 自动升级回归后，本轮 `pnpm verify:full` 通过：129 项单元、18 项 MySQL、production build、Chromium E2E 1/1。
 
 重新生成开始后不遮罩课堂：右侧“修订本场”按钮区域显示简短旋转动画和真实经过时间，课程仍可浏览；成功后自动刷新当前课程，从 MySQL 读取最终版本。该进度不伪造百分比，也不把动画阶段当作服务端实时状态；互动降级快捷再生成与课堂主动修订复用同一轻量反馈。
+
+Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 single_choice 或 multiple_choice，答案分别为 1 项或至少 2 项索引数组；服务端装配为 `correctOptionIds`。课堂提交 `selectedOptionIds`，多选仅在答案集合完全一致时正确。课堂调度台为 quiz 增加“手动调整题目”，可编辑 1～3 题、2～4 个选项、题型、正确答案和解析；该路径不调用模型，服务端重建全部题目/选项 ID，并与旧作答清理在同一 MySQL 事务提交。v4 课程读取时自动转换单选答案并在后续保存时落成 v5，v1～v3 仍不兼容。
 
 本轮 `pnpm verify:full` 通过：122 项单元、15 项 MySQL、production build、Chromium E2E 1/1。Playwright CLI 验证原清洁机器人遇到布局循环后卸载 iframe；临时 mock 课程验证失败提示、重复点击禁用、单场替换、大纲/其他场景保持不变及刷新恢复 ready。临时课程已按 ID、主题、revision 与场景数量核对后删除（API 204，复查 404）。随后按用户要求对课程 `d67c6d7f-6dd5-4381-adbb-a4972f6b825a` 的第 02 互动执行一次真实 DeepSeek 再生成：REV.10 → REV.12，场景 ID 已替换，promptVersion 为 `scene-diagram.v2.3`，1 次上游调用、0 repair；新 HTML 约 23.4 KiB，课堂 iframe 实测 819×460，文档与视口同高，天气/数学两条路径均可完成。其余 3 个场景和 4 条大纲未改写。
 
@@ -56,7 +58,7 @@ quiz 修订必须由用户勾选“确认清理本场旧作答记录”；最终
 
 允许外部资源/连接，iframe 仍只有 allow-scripts，无 allow-same-origin。CSP 禁止对象/子 frame/表单等；网络开放意味着不能承诺防外传，页面显示敏感数据提醒。代码使用可终止 Worker，Python 加载固定 Pyodide，初始化60秒、默认执行5秒，错误答案与代码异常留在页内。平台30秒初始化超时或未处理错误（含 ResizeObserver 循环）时卸载 iframe 并显示 fallback。可重新生成本场互动、重载同一 HTML 或跳过。无关库消息忽略，课堂协议仍检查来源/结构。
 
-新增迁移003修复数据库仍限制3～5场景的遗漏：存量约束扩为3～8以保留历史行，新课程领域约束4～8。迁移已应用，无数据删除。v4已保存HTML不回写，v1～v3仍不兼容。
+新增迁移003修复数据库仍限制3～5场景的遗漏：存量约束扩为3～8以保留历史行，新课程领域约束4～8。迁移004新增 Quiz 作答数组并迁移已有单选记录；课程 JSON 不做批量回写，v4 在读取时自动适配，v1～v3 仍明确拒绝。
 
 校准目录为 `eval/runs/m9-diversity-v0.4/2026-08-31T02-40-51.257Z/`。两门6场景课程覆盖四类型，已保存12/12；原JSON包装导致的模拟/游戏解析失败、一次description字段别名失败保留。改为原始HTML后模拟26,578ms、游戏37,977ms均一次调用0 repair。新Python clamp课程 `c61b1c84-370a-402f-8cce-552a12f87301` 四场景和大纲全部一次成功，code 约27秒。较早的工具路由code存在CDN编辑器高度覆盖按钮问题，未手工改写该页；新版Prompt补充编辑器尺寸与工具栏规则。
 
@@ -68,7 +70,7 @@ quiz 修订必须由用户勾选“确认清理本场旧作答记录”；最终
 
 ### M9 diagram 基础版历史（已被上述范围扩展取代）
 
-课程范围已改为 4～8 场景、默认 5。大纲页由用户选择 off/required，默认关闭，模型不能自动开启；required 在 4/5～6/7～8 场景下分别允许 1/1～2/1～3 个 interactive，至少 2 个 slide 和 1 个 quiz，首场 slide、互动不相邻。当前 Course v4 不兼容 v1～v3，旧行不删除、不迁移，只隐藏并明确拒绝。
+课程范围已改为 4～8 场景、默认 5。大纲页由用户选择 off/required，默认关闭，模型不能自动开启；required 在 4/5～6/7～8 场景下分别允许 1/1～2/1～3 个 interactive，至少 2 个 slide 和 1 个 quiz，首场 slide、互动不相邻。当前 Course v5 自动读取升级 v4；v1～v3 旧行不删除、不迁移，只隐藏并明确拒绝。
 
 `outline.v2.2 → scene-diagram.v1.3 → HTML 后处理 → Scene JSON/MySQL → InteractiveRenderer` 已进入正式链。Prompt 裁剪自 OpenMAIC diagram-content，版权与路径在 THIRD_PARTY_NOTICES.md。首版收敛为点击节点看详情、完成探索和重置；不引入编辑器、导出、第二种 widget 或复杂自动修复。HTML 预算 12,000 tokens、注入后不超过 100 KiB；iframe 只有 allow-scripts，CSP 禁止外部网络，宿主检查 source 和严格 v1 消息。5 秒未 ready、脚本错误、非法消息显示纯文本 fallback，可以跳过，其他场景不受影响。
 
@@ -111,7 +113,7 @@ quiz 修订必须由用户勾选“确认清理本场旧作答记录”；最终
 - OpenAI-compatible 请求使用 `/chat/completions` 和 JSON mode，认证、限流、超时、网络与上游响应错误具有稳定分类；
 - 解析只接受纯 JSON、单个 JSON 围栏或首个平衡对象，随后执行严格 Zod 和课程级语义门；
 - 传输错误最多重试两次，格式/结构/语义错误最多调用一次 repair，总上游调用硬上限为 4；
-- 模型不生成实体 ID，装配器补齐 outline、Scene、Block、Question、Option 和 Action ID；quiz 模型只返回 `correctOptionIndex`；
+- 模型不生成实体 ID，装配器补齐 outline、Scene、Question、Option 和 Action ID；quiz 模型只返回 `correctOptionIndexes`；
 - `outlineGeneration` 保存 Provider、实际响应模型、Prompt 版本、requestId、耗时、upstreamCalls、repair 标记和可用 token usage；
 - 每个 Scene 也保存独立 `GenerationMetadata`，slide 与 quiz 使用各自的版本化 Prompt；
 - 大纲和每个场景均使用两个短事务包围模型调用，迟到响应必须同时匹配 operation id 和 revision；
@@ -188,7 +190,7 @@ M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表�
 
 - 创建请求只有 topic 和 3～5 场景数；即使用户把受众、难度和学习结果写进 topic，当前系统也只把它当作一段不透明文本，没有逐字段归一、默认补全、来源记录或冲突处理，后续调用无法证明使用的是同一份教学要求；
 - outline.v1 只要求“概念、机制到应用”，SceneOutline 没有场景角色、常见误区、案例/练习意图或互动计划；
-- slide 只有 paragraph、bullet_list、callout、code，quiz 只有 single_choice；
+- 当前 slide 使用 PPTElement 画布，quiz 支持 single_choice 与 multiple_choice；
 - scene-slide.v1 主要约束 JSON 字段和宽松长度上限，paragraph 最多 500 字符、列表单项最多 180 字符、callout 最多 400 字符，没有“屏幕摘要与讲解稿分工”或整页密度预算；
 - SlideRenderer 将全部 Block 放入单列文档流，正文继续使用 21～30px 的展示型衬线字体；长段落因此获得接近标题的视觉重量，结构合法但容易呈现为纵向讲义；
 - 当前 JSON 没有 card/process/comparison 等内容关系，也没有可持久化的绝对坐标画布；即使只修改 Prompt，Renderer 也无法稳定生成类似幻灯片的并列、流程或对比布局；

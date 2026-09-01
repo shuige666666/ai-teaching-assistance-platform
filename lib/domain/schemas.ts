@@ -2,7 +2,7 @@ import { z } from "zod";
 import { CanvasSlideContentSchema } from "./slide-schemas";
 import { WidgetTypeSchema } from "@/lib/interactive/widget-types";
 
-export const CURRENT_SCHEMA_VERSION = 4 as const;
+export const CURRENT_SCHEMA_VERSION = 5 as const;
 
 export const CourseBriefSchema = z.object({
   audience: z.string().trim().min(1).max(120),
@@ -93,27 +93,33 @@ export const SceneOutlineSchema = z.object({
 
 export const SlideContentSchema = CanvasSlideContentSchema;
 
-const QuizOptionSchema = z.object({ id: z.string().min(1), label: z.string().trim().min(1).max(180) });
-const SingleChoiceQuestionSchema = z
+export const QuizOptionSchema = z.object({ id: z.string().min(1), label: z.string().trim().min(1).max(180) }).strict();
+export const QuizQuestionSchema = z
   .object({
     id: z.string().min(1),
-    type: z.literal("single_choice"),
+    type: z.enum(["single_choice", "multiple_choice"]),
     prompt: z.string().trim().min(1).max(300),
     options: z.array(QuizOptionSchema).min(2).max(4),
-    correctOptionId: z.string().min(1),
+    correctOptionIds: z.array(z.string().min(1)).min(1).max(4),
     explanation: z.string().trim().min(1).max(500),
-  })
+  }).strict()
   .superRefine((question, context) => {
     const optionIds = question.options.map((option) => option.id);
     if (new Set(optionIds).size !== optionIds.length)
       context.addIssue({ code: "custom", message: "测验选项 ID 必须唯一" });
-    if (!optionIds.includes(question.correctOptionId))
+    if (new Set(question.correctOptionIds).size !== question.correctOptionIds.length)
+      context.addIssue({ code: "custom", message: "正确答案 ID 不能重复" });
+    if (question.correctOptionIds.some((id) => !optionIds.includes(id)))
       context.addIssue({ code: "custom", message: "正确答案必须引用现有选项" });
+    if (question.type === "single_choice" && question.correctOptionIds.length !== 1)
+      context.addIssue({ code: "custom", message: "单选题必须且只能有一个正确答案" });
+    if (question.type === "multiple_choice" && question.correctOptionIds.length < 2)
+      context.addIssue({ code: "custom", message: "多选题至少需要两个正确答案" });
   });
 export const QuizContentSchema = z.object({
   type: z.literal("quiz"),
-  questions: z.array(SingleChoiceQuestionSchema).min(1).max(3),
-});
+  questions: z.array(QuizQuestionSchema).min(1).max(3),
+}).strict();
 
 export const InteractiveFallbackSchema = z.object({
   title: z.string().trim().min(1).max(100),
