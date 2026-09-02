@@ -15,6 +15,8 @@
     "eval:validate": "node eval/scripts/collect-course-quality-baseline.mjs --validate-only",
     "eval:smoke": "node eval/scripts/collect-course-quality-baseline.mjs --smoke-mock",
     "eval:baseline": "node eval/scripts/collect-course-quality-baseline.mjs",
+    "eval:v04": "node eval/scripts/collect-course-quality-baseline.mjs --v04-slide-quiz",
+    "eval:pair": "node eval/scripts/pair-course-quality.mjs",
     "eval:archive": "node eval/scripts/archive-existing-course-quality-run.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "verify": "pnpm lint && pnpm test && pnpm build",

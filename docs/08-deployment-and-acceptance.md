@@ -1,6 +1,6 @@
 # 08. 部署、恢复与验收手册
 
-> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M10/v0.4 的增量验收，其中 M7.1、M8、M9 已完成。当前版本没有账户与权限系统，不允许直接暴露到公网。
+> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M10/v0.4 的增量验收，其中 M7.1、M8、M9 与 M10 当前范围已完成。当前版本没有账户与权限系统，不允许直接暴露到公网。
 
 ## 1. 最小生产启动
 
@@ -45,7 +45,7 @@ pnpm verify                            # lint + unit/API contract + build
 pnpm verify:full                       # 再加 MySQL integration + production E2E
 ```
 
-`verify:full` 要求 MySQL 已启动且 `.env.local` 有效。E2E 使用唯一主题创建测试课程，覆盖创建、大纲、三个场景、PPT 画布四类元素与 16:9、播放/暂停/继续、quiz、刷新恢复和配置健康检查，并在 `finally` 中删除课程。Playwright 启动的 production server 显式覆盖为 `AI_MODE=mock` 且不复用既有端口服务，因此即使 `.env.local` 当前配置为 remote，也不会由自动验收触发付费模型调用。`output/playwright/` 的失败 trace/截图只用于临时排障，不是视觉验收档案；正式视觉证据统一使用 `eval/runs/` 下的 MHTML。
+`verify:full` 要求 MySQL 已启动且 `.env.local` 有效。E2E 使用唯一主题创建测试课程，覆盖创建、大纲、三个场景、PPT 画布四类元素与 16:9、播放/暂停/继续、quiz、刷新恢复和配置健康检查，并在 `finally` 中删除课程。Playwright 启动的 production server 显式覆盖为 `AI_MODE=mock` 且不复用既有端口服务，因此即使 `.env.local` 当前配置为 remote，也不会由自动验收触发付费模型调用。`output/playwright/` 的失败 trace/截图只用于临时排障；MHTML 仅作为 `1280×720` 固定视口的静态视觉留档，不用于证明离线文件的响应式缩放，实时缩放能力以课堂页面为准。
 
 GitHub Actions 使用临时 MySQL 和 `AI_MODE=mock` 执行相同质量门，不保存真实 Key，也不调用付费 Provider。
 
@@ -133,17 +133,17 @@ pnpm dev:inspect  # 在上述能力之外开启 Node Inspector
 
 M6/M6.5 已按本机、MySQL、mock 与 DeepSeek 的 v0.3 边界完成。百炼真实生成和另一台机器部署不属于当前退出门，后续只有在双 Provider 对比或异机交付确有需要时才补充相应证据。
 
-## 8. M7～M10/v0.4 计划验收
+## 8. M7～M10/v0.4 验收记录与当前口径
 
 M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程碑先通过自己的退出门，M10 再汇总 AC-Q01～AC-Q11 并宣布 v0.4 完成；M6 证据必须继续有效。详细范围见 [01-scope.md](01-scope.md)，开发顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
 
-截至 2026-08-28，M7.0 六题输入已冻结，mock smoke 和 6 主题 DeepSeek Prompt v1 自动基线均已完成并保留失败样本。28 个已保存场景已经从既有 MySQL 课程归档为 `1280×720` MHTML，没有重新调用模型。M8～M10 只承诺桌面视口；人工评分延后到 M10，在同题 v0.4 课程生成后进行配对验收。
+截至 2026-08-28，M7.0 六题输入已冻结，mock smoke 和 6 主题 DeepSeek Prompt v1 自动基线均已完成并保留失败样本。28 个已保存场景已经从既有 MySQL 课程归档为 `1280×720` MHTML，没有重新调用模型。M8～M10 只承诺桌面视口；M10 通过新版 slide 的单人需求验收完成，不再安排同题配对评分。
 
 ### 8.1 M8 DeepSeek 与 MHTML 验收记录
 
 2026-08-30 使用 `deepseek-v4-flash` 对 HTTP 缓存、TCP 拥塞控制和二分查找三个主题生成 v3 课程。三个首场 slide 均 `upstreamCalls=1`、`repaired=false`，分别保存 9、12、15 个元素，场景耗时 8,001～10,822ms；额外生成的二分查找第二场也一次通过。校准确认 DeepSeek V4 默认 high thinking 会消耗结构化输出预算，因此仅首轮 `stage=scene` 请求关闭 thinking，outline/repair 不变。
 
-视觉事实位于 `eval/runs/m8-slide-v0.4/2026-08-30T09-23-19-191Z/`。`report.json` 保存课程 ID、schemaVersion、场景标题、元素数量/类型、生成元数据和 MHTML 哈希；`scenes/` 保存 4 份 `1280×720` MHTML。运行目录按评测约定被 Git 忽略，验收者应直接用 Chromium/Edge 打开 MHTML，重点检查画布内标题、主次、关系、文字裁切和代码转义，不以外部网页标题代替 PPT 标题。
+视觉事实位于 `eval/runs/m8-slide-v0.4/2026-08-30T09-23-19-191Z/`。`report.json` 保存课程 ID、schemaVersion、场景标题、元素数量/类型、生成元数据和 MHTML 哈希；`scenes/` 保存 4 份 `1280×720` MHTML。运行目录按评测约定被 Git 忽略，验收者应在 `1280×720`、100% 缩放下用 Chromium/Edge 打开 MHTML，重点检查画布内标题、主次、关系、文字裁切和代码转义。MHTML 是静态快照，窗口缩放时不重新执行课堂中的 ResizeObserver；响应式表现应在实时课堂页面检查。
 
 ### 8.2 自动化质量门增量
 
@@ -153,7 +153,7 @@ M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程�
 | --- | --- |
 | Domain | Course v5、v4 单选答案读取升级与 v1～v3 旧行隔离、CourseBrief、单选/多选答案数组、GeneratedSlideSceneDTO、唯一 canvas Slide、四类 PPTElement 和互动数量规则 |
 | Slide/Renderer | 未支持元素过滤、必要默认值、非有限坐标/非正尺寸、text 白名单净化、code 文本转义、`text/shape/line/code` 渲染、16:9 缩放和未知元素 fallback |
-| Slide visual | 3 个 DeepSeek 代表主题在 `1280×720` 的逐场景 MHTML 与人工检查，确认主次、可读性、关系表达和主要内容未被裁掉；不建立 PNG 档案或自动美学评分 |
+| Slide visual | 3 个 DeepSeek 代表主题在 `1280×720` 的逐场景 MHTML 与单人需求检查，确认新版样式满足课堂展示要求、主要内容未被裁掉；不建立 A/B 评分、PNG 档案或自动美学评分 |
 | Interactive boundary | 完整 HTML、允许外部依赖的 CSP、`sandbox="allow-scripts"`、消息来源/Schema 和 fallback |
 | MySQL | `brief_json` 的 Brief + Resolution 恢复、Brief/大纲同 revision 原子保存、v1 隐藏与明确拒绝、互动内容恢复、再生成原位替换和 conflict |
 | API | topic 原文保存、完整/部分/无 Prompt 字段解析、设置优先与冲突提示、outline.v2.1 正常调用计数、Brief 修改使大纲失效、Prompt v2 上下文、slide 解析/规范化失败、interactive 失败分类、ready 场景再生成 |
@@ -191,14 +191,11 @@ M9 退出前使用固定 Provider、模型和 Prompt 版本生成至少一门 `i
 
 ### 8.4 课程质量验收
 
-M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变，MHTML 作为 v0.3 静态场景证据。M10 使用同一 DeepSeek 模型、温度、场景数量和主题生成 v0.4，隐藏版本后成对评分。报告至少包含：
+M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变，作为 v0.3 历史基线；旧版 MHTML 不改写。M10 的当前验收重点是新版 slide 是否符合已确认的课堂页面需求，采用项目负责人单人检查，不要求同题 v0.3/v0.4 配对、人工量表或总体偏好统计。
 
-- 事实正确性、目标匹配、结构连贯、解释/案例价值、可见内容可读性、视觉层级与版式适配、quiz 对齐；
-- 互动页的教学必要性、控件可理解性、重置和完成反馈；
-- 课程完成率、结构解析成功率、修复次数、请求耗时、token、人工发现的主要版式问题和关键事实错误；
-- 每个失败样本的保留/排除规则，不能只展示成功课程。
+验收只确认可直接观察的产品要求：固定桌面视口下画布比例正常、标题和正文层次清楚、布局关系可读、主要内容未被裁切。事实正确性、解释与案例价值、教学效果和统计意义上的版本优越性不在本轮结论内。课程生成状态、耗时、token 和失败场景仍可作为机器事实留档，但不转化为人工质量分数。
 
-建议初始退出阈值为目标匹配、教学组织、案例/练习价值、可见内容可读性、视觉层级与版式适配五项平均提升至少 0.5/5，事实正确性不下降，`1280×720` 桌面视口的主要内容没有被裁掉，至少 70% 的课程对更偏好 v0.4。桌面端 v2 阈值必须在看到 v0.4 结果前冻结；这份小样本报告用于产品退出，不直接宣称统计显著或论文结论。
+`eval:pair`、`course-quality-rubric.v2.json` 和 `scores.template.json` 属于已实现的可选历史评测工具，不是当前 M10 退出条件；如后续不需要论文对照实验，可在清理其脚本引用后从主线移除。MHTML 的响应式缩放也不属于离线归档验收，窗口缩放应在实时课堂页面中检查。
 
 ### 8.5 M7～M10 证据矩阵模板
 
@@ -213,7 +210,7 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 | AC-Q07 iframe 协议 | M9 | Playwright + network/console 记录 | 已通过 |
 | AC-Q08 fallback 与失败隔离 | M9 | 故障注入 + E2E | 已通过 |
 | AC-Q09 ready 场景再生成 | M10 | application + MySQL conflict + production browser smoke | 已通过 |
-| AC-Q10 桌面端成对质量提升 | M10 | 冻结的桌面 v2 量表报告 | 未实现 |
+| AC-Q10 新版 slide 样式需求验收 | M10 | 单人需求检查 + `1280×720` 固定视口视觉证据 | 已通过 |
 | AC-Q11 M6 全量回归 | M7～M10 | `pnpm verify:full` | 每个里程碑退出时复跑 |
 
-M7、M8、M9 可以在各自相关行具备证据后单独更新为完成；只有表中所有“未实现”都被真实证据替换后，才能把 [07-development-status.md](07-development-status.md) 更新为“M10 完成、v0.4 完成”。M11 编辑器和 M12 简化资源包是 v0.4 之后的可选扩展，不得混入本表伪装为当前验收项；若启动，必须另建需求、测试和退出证据。
+M7、M8、M9 和 M10 可以在各自相关行具备证据后单独更新为完成；当前表中 M10 的新版 slide 需求验收已经通过，v0.4 当前范围可以标记完成。M7.0 旧基线继续作为历史留档，配对脚本和人工量表不属于运行质量门。M11 编辑器和 M12 简化资源包是 v0.4 之后的可选扩展，不得混入本表伪装为当前验收项；若启动，必须另建需求、测试和退出证据。

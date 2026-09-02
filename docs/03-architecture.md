@@ -2,7 +2,7 @@
 
 > 文档版本：0.4
 > 前置文档：[01-scope.md](01-scope.md)、[02-requirements.md](02-requirements.md)  
-> 状态说明：M1～M9 功能已接入，M9 已完成验收。当前为 Course v5、4～8 场景（默认 5）、outline.v2.3、PPTElement slide、单选/多选 quiz 与可选 interactive；M10 已完成 ready 场景修订、失败互动重生成和 quiz 人工编辑，最终配对验收仍待实施。历史 M7.0 基线不改写。
+> 状态说明：M1～M10 当前范围已接入并完成验收。当前为 Course v5、4～8 场景（默认 5）、outline.v2.3、PPTElement slide、单选/多选 quiz 与可选 interactive；M10 已完成 ready 场景修订、失败互动重生成、quiz 人工编辑和新版 slide 单人需求验收，不以配对质量评分作为架构退出门。历史 M7.0 基线不改写。
 
 ## 1. 架构结论
 
@@ -171,7 +171,7 @@ M8 的产品形态只有一种：固定比例、一次展示一个场景的 PPT 
 
 模型按照裁剪后的 OpenMAIC `slide-content` Prompt 直接返回背景和带 `left/top/width/height` 的元素。服务端不重新排版，只负责 JSON/Schema 校验、过滤未支持元素、补齐默认值、净化 text 富文本、丢弃损坏元素并分配 id，再参考 OpenMAIC `scene-builder` 装配为 Slide。`content.canvas` 是当前 v4 的唯一 slide 表达，v1/v2/v3 课程由版本门整体隔离。这里的 canvas 是 Slide 的逻辑坐标容器，不是 HTML `<canvas>` 或另一套页面格式。
 
-桌面课堂用只读 SlideCanvas 等比缩放 16:9 页面；`1280×720` 及更大桌面视口中主要内容无需幻灯片内部滚动即可查看。首版通过 3 个真实主题 MHTML 和人工检查调整 Prompt，不建设通用自动排版、碰撞求解或逐元素质量报告。移动端、平板和窄屏不进入 M8～M10 架构承诺。
+桌面课堂用只读 SlideCanvas 等比缩放 16:9 页面；`1280×720` 及更大桌面视口中主要内容无需幻灯片内部滚动即可查看。首版通过 3 个真实主题 MHTML 和单人需求检查调整 Prompt，不建设通用自动排版、碰撞求解或逐元素质量报告。MHTML 只作为固定视口静态留档，响应式缩放以实时课堂页面为准；移动端、平板和窄屏不进入 M8～M10 架构承诺。
 
 参考链必须成套查看：生成侧的 [`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md)、[`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts)、[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts) 和 [`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts)，以及 DSL/渲染侧的 [`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts)、[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts)、[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 与 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx)。移植时保留 MIT 许可，裁掉媒体、复杂公式、动效、编辑器依赖，并为上游富文本渲染增加本项目的小型白名单净化。详细边界见 [09-v0.4 方案第 5 节](09-v0.4-quality-and-interaction-plan.md)。
 

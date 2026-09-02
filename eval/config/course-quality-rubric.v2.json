@@ -1,0 +1,33 @@
+{
+  "version": "course-quality-rubric.v2",
+  "scope": "slide_quiz_visual",
+  "sceneTypes": ["slide", "quiz"],
+  "scale": {
+    "min": 1,
+    "max": 5,
+    "anchors": {
+      "1": "明显不可用",
+      "3": "基本可用",
+      "5": "清晰完整"
+    }
+  },
+  "dimensions": [
+    {
+      "id": "readability",
+      "label": "可读性",
+      "description": "观察字号、对比度、文字密度和内容是否容易快速阅读。"
+    },
+    {
+      "id": "layoutHierarchy",
+      "label": "布局与视觉层次",
+      "description": "观察标题、正文、重点、对齐、留白和阅读顺序是否清楚。"
+    },
+    {
+      "id": "renderingCompleteness",
+      "label": "渲染完整性",
+      "description": "观察是否出现裁切、重叠、空白、乱码、公式或代码显示异常。"
+    }
+  ],
+  "overallPreference": ["baseline", "tie", "candidate"],
+  "note": "本量表只用于单评估者的 v0.3/v0.4 slide/quiz 配对视觉复核，不评价事实正确性、教学深度或互动功能。"
+}

@@ -23,7 +23,7 @@
 
 M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空 content 时的分类、受限重试、脱敏日志和用户恢复反馈。真实 DeepSeek smoke 中，一个场景的 repair 连续两次返回空 content，系统在第 4 次上游调用成功恢复，最终完成 3/3 ready 课程。M6.5 验收后的缺陷回归又明确了两条边界：JSX/HTML 可以存在于 `code.code` 中作为转义后的只读教学源码，但普通文本和外链仍被拒绝；课程至少有一个成功场景时即可进入带提示的部分预览，`ready` 仍只表示全部完成。
 
-**M7.0、M7.1、M8 与 M9 已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v5 和 `scene-quiz.v2`；v4 课程在读取时把单个正确答案无损转换为数组，并在下次保存时自然升级为 v5。v1～v3 数据行仍保留但隐藏，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。CourseBrief、PPT 式 slide 和互动数量规则保持不变；请运行 `pnpm db:migrate` 应用 004 作答数组迁移。
+**M7.0、M7.1、M8、M9 与 M10 当前范围已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v5 和 `scene-quiz.v2`；v4 课程在读取时把单个正确答案无损转换为数组，并在下次保存时自然升级为 v5。v1～v3 数据行仍保留但隐藏，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。新版 PPT 式 slide 已按已确认的课堂页面需求完成单人验收，v0.3 仅作为历史参考，不再要求 A/B 配对评分；MHTML 只用于固定视口留档。CourseBrief、PPT 式 slide 和互动数量规则保持不变；请运行 `pnpm db:migrate` 应用 004 作答数组迁移。
 
 ## v0.3 MVP 已实现什么
 
@@ -84,7 +84,7 @@ lib/
   ai/                            # [M3/M6.5 已实现] mock、OpenAI-compatible 适配器与响应诊断
   generation/                    # [M7.1 已实现] outline.v2、解析、服务端复算、修复、预算与受限重试
   playback/                      # [M5 已实现] 播放 reducer、Action executor 与语音适配器
-  quality/                       # [M7/M10 计划] 固定主题、人工量表与离线汇总
+  quality/                       # [M7 历史/可选] 固定主题与离线汇总工具
   slides/                        # [M8 已实现] Slide/PPTElement、规范化与富文本净化
   interactive/                   # [M9 已实现] HTML 校验、CSP patch、运行协议与布局 Prompt 骨架
   export/                        # [M12 可选] Slide/PPTElement → PPTX 与简单 ZIP 打包
@@ -95,7 +95,7 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
-标记为 M1～M9 的能力已经进入正式调用链；M10 已完成 ready slide/interactive/quiz 的单场景修订，以及运行失败 interactive 的干净重生成，配对质量验收仍待实施。M11/M12 只有在再次确认可选范围后才创建。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M10 的当前能力已经进入正式调用链；M10 已完成 ready slide/interactive/quiz 的单场景修订、运行失败 interactive 的干净重生成和新版 slide 单人需求验收，不再要求配对质量验收。MHTML 只作为固定 `1280×720` 视口的静态留档，实时课堂页面负责响应式缩放。M11/M12 只有在再次确认可选范围后才创建。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 ## 技术栈
 
@@ -177,10 +177,10 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 8. **M7（已完成）**：M7.0 已保留六题基线、生成事实和逐场景 MHTML；M7.1 已完成 CourseBrief、Course v2 和 outline v2.1；
 9. **M8（已完成）**：裁剪 OpenMAIC 的 `slide-content Prompt → 带坐标 PPTElement → normalize → Slide → SlideCanvas` 纵向链，升级 Course v3，并用 3 个真实主题和 4 份 MHTML 完成桌面校准；
 10. **M9（已完成）**：裁剪 OpenMAIC 四类互动 Prompt，实现多样化生成、外部依赖加载、隔离运行和 fallback；
-11. **M10（修订能力已实现）**：`/revise` 根据必填意见和当前旧场景修订 ready slide/interactive/quiz；`/regenerate` 对运行失败 interactive 做不携带旧 HTML 的干净重生成；失败保留原内容，quiz 修订时事务化清理旧作答；v0.3/v0.4 成对质量验收仍待实施；
+11. **M10（当前范围已完成）**：`/revise` 根据必填意见和当前旧场景修订 ready slide/interactive/quiz；`/regenerate` 对运行失败 interactive 做不携带旧 HTML 的干净重生成；失败保留原内容，quiz 修订时事务化清理旧作答；新版 slide 已由开发者依据已确认需求完成单人验收，v0.3 仅作历史留档，不再进行 v0.3/v0.4 成对质量验收；
 12. **M11（可选）**：在 M8 的同一 `Slide/PPTElement` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不建立第二套页面格式，也不阻塞 v0.4；
 13. **M12（可选）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；
-14. **MX（暂时搁置）（未选题）**：待 M10 产品质量闭环完成后选择一个可度量的毕业论文研究问题。
+14. **MX（暂时搁置）（未选题）**：如后续确有需要，再从已完成的 M7～M10 数据中选择一个可度量的毕业论文研究问题，另行设计实验范围。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。
 
