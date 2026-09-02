@@ -53,13 +53,21 @@ describe("M9 interactive boundary", () => {
     const course = createCourseDraft("Agent 开发", 4, { interactionMode: "required" });
     const outline: SceneOutline = { id: "interactive-1", type: "interactive", widgetType, widgetOutline: { designIdea: "选择工具改变结果并获得反馈", language: "python" }, role: "practice", title: "操作实验", teachingObjective: "理解运行过程", keyPoints: ["观察", "验证"], order: 3 };
     const prompt = buildInteractivePrompt(course, outline);
-    expect(prompt.version).toBe(`scene-${widgetType}.v2.3`);
+    expect(prompt.version).toBe(widgetType === "code" ? "scene-code.v2.4" : `scene-${widgetType}.v2.3`);
     expect(prompt.user).toContain(outline.widgetOutline!.designIdea);
     expect(prompt.system).toContain(`本次 widgetType 必须为 ${widgetType}`);
     expect(prompt.system).toContain("min-height:0");
     expect(prompt.system).toContain("16:9 单屏可见");
     expect(prompt.system).toContain("禁止用 body/html 的“min-height:100vh”");
     expect(prompt.system).toContain("InteractiveRuntime.onReset");
+    if (widgetType === "code") {
+      expect(prompt.system).toContain("2～3 条");
+      expect(prompt.system).toContain("默认隐藏");
+      expect(prompt.system).toContain("solution-panel");
+      expect(prompt.system).toContain("查看答案不能调用 InteractiveRuntime.complete()");
+      expect(prompt.system).toContain("答案必须可复制");
+      expect(prompt.system).toContain("copy-solution");
+    }
     const dto = { type: "interactive", content: { type: "interactive", widgetType, runtimeContractVersion: 1, html: widgetType === "diagram" ? rawHtml : createMockWidget(widgetType, "操作实验"), fallback }, narration: "观察操作反馈", summary: "理解运行过程" };
     expect(validateSceneOutput(dto, outline).type).toBe("interactive");
     expect(() => validateSceneOutput({ ...dto, content: { ...dto.content, widgetType: widgetType === "game" ? "code" : "game" } }, outline)).toThrow();
@@ -95,6 +103,12 @@ describe("M9 interactive boundary", () => {
     expect(getInteractiveLayoutTemplate("simulation")).toContain("widget-main--bottom");
     expect(getInteractiveLayoutTemplate("game")).toContain("widget-main--bottom");
     expect(getInteractiveLayoutTemplate("code")).toContain("widget-main--editor");
+    expect(getInteractiveLayoutTemplate("code")).toContain('id="code-panel"');
+    expect(getInteractiveLayoutTemplate("code")).toContain('id="hint-panel"');
+    expect(getInteractiveLayoutTemplate("code")).toContain('id="solution-panel"');
+    expect(getInteractiveLayoutTemplate("code")).toContain('id="copy-solution"');
+    expect(getInteractiveLayoutTemplate("code")).not.toContain("max-height:180px");
+    expect(getInteractiveLayoutTemplate("code")).not.toContain("max-height:120px");
     expect(getInteractiveImplementationExamples("diagram")).toContain("fitSvgToContent");
     expect(getInteractiveImplementationExamples("simulation")).toContain("ResizeObserver");
     expect(getInteractiveImplementationExamples("code")).toContain("InteractiveRuntime.onReset");

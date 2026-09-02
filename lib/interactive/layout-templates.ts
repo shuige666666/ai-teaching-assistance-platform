@@ -44,7 +44,7 @@ const EDITOR_OUTPUT_LAYOUT = String.raw`<!-- 编辑器 + 输出：适合代码�
 <main class="widget-shell">
   <header class="widget-header"><p class="eyebrow">CODE WORKBENCH</p><h1>本场景标题</h1><p class="goal">修改 TODO，运行并观察真实输出。</p></header>
   <div class="widget-main widget-main--editor">
-    <section class="editor-pane"><div class="pane-toolbar">源码 <button id="run" type="button">运行</button><button id="stop" type="button">停止</button></div><div class="editor-host"><textarea id="editor" spellcheck="false"></textarea></div></section>
+    <section class="editor-pane"><div class="pane-toolbar">源码 <button id="run" type="button">运行</button><button id="stop" type="button">停止</button></div><!-- CODE_HELP_MARKUP --></section>
     <section class="output-pane"><div class="pane-toolbar">输出与测试</div><pre id="output" aria-live="polite"></pre><button id="reset" type="button">重置</button></section>
   </div>
 </main>
@@ -52,7 +52,7 @@ const EDITOR_OUTPUT_LAYOUT = String.raw`<!-- 编辑器 + 输出：适合代码�
   html,body{width:100%;height:100%;min-height:100%;margin:0;overflow-x:hidden;overflow-y:auto}
   *{box-sizing:border-box}.widget-shell{min-height:100%;display:flex;flex-direction:column;padding:20px;background:#f7f5ef;color:#20231f}
   .widget-header{flex:0 0 auto}.widget-header h1{margin:4px 0;font-size:clamp(22px,3vw,36px)}.goal{margin:0 0 14px;color:#5b625a}
-  .widget-main--editor{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,38%);gap:14px}.editor-pane,.output-pane{display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid #c6c9c2;background:#fff;padding:12px}.pane-toolbar{display:flex;flex:0 0 auto;align-items:center;gap:8px;margin-bottom:8px}.pane-toolbar button{margin-left:auto}.pane-toolbar button+button{margin-left:0}.editor-host{flex:1;min-height:0;overflow:hidden}.editor-host textarea{width:100%;height:100%;min-height:180px;resize:none;border:0;outline:0;font:14px/1.5 ui-monospace,monospace}.output-pane pre{flex:1;min-height:0;overflow:auto;margin:0;white-space:pre-wrap}.output-pane>#reset{flex:0 0 auto;margin-top:10px}
+  .widget-main--editor{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,38%);gap:14px}.editor-pane,.output-pane{display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid #c6c9c2;background:#fff;padding:12px}.pane-toolbar{display:flex;flex:0 0 auto;align-items:center;gap:8px;margin-bottom:8px}.pane-toolbar button{margin-left:auto}.pane-toolbar button+button{margin-left:0}.code-workspace{flex:1;min-height:0;display:flex;flex-direction:column}.workspace-tabs{display:flex;flex:0 0 auto;flex-wrap:wrap;gap:8px;margin-bottom:8px}.workspace-tabs button{margin:0;border:1px solid #c6c9c2;background:#f7f5ef;color:#20231f;padding:7px 11px;cursor:pointer}.workspace-tabs button[aria-selected="true"]{border-color:#2f6652;background:#2f6652;color:#fff}.workspace-panel{flex:1;min-height:0;overflow:auto}.workspace-panel[hidden]{display:none}.code-panel{display:flex;flex-direction:column;overflow:hidden}.editor-host{flex:1;min-height:0;overflow:hidden}.editor-host textarea{width:100%;height:100%;min-height:180px;resize:none;border:0;outline:0;font:14px/1.5 ui-monospace,monospace}.help-panel{padding:18px;background:#fbfcf8;color:#3f4a42;line-height:1.65}.help-panel .help-title{font-size:18px;font-weight:700}.help-text{margin-top:12px;white-space:pre-wrap}.solution-panel{display:flex;flex-direction:column;padding:18px;background:#fbfcf8;color:#3f4a42}.solution-toolbar{display:flex;flex:0 0 auto;align-items:center;gap:10px;margin-bottom:10px}.solution-toolbar button{margin-left:auto}.solution-panel pre{flex:1;min-height:0;overflow:auto;margin:0;padding:14px;background:#f0f2ed;border:1px solid #d9ded4;border-radius:6px;white-space:pre-wrap;font:13px/1.55 ui-monospace,monospace}.solution-panel p{flex:0 0 auto;margin:10px 0 0;line-height:1.5}.output-pane pre{flex:1;min-height:0;overflow:auto;margin:0;white-space:pre-wrap}.output-pane>#reset{flex:0 0 auto;margin-top:10px}
   @media(max-width:700px){.widget-shell{padding:14px}.widget-main--editor{grid-template-columns:1fr;grid-template-rows:minmax(220px,1fr) minmax(140px,.55fr)}.editor-pane,.output-pane{min-height:0}}
 </style>`;
 
@@ -170,9 +170,34 @@ const LAYOUT_BY_WIDGET: Record<WidgetType, string> = {
   code: EDITOR_OUTPUT_LAYOUT,
 };
 
+const CODE_HELP_MARKUP = String.raw`<div id="code-workspace" class="code-workspace" aria-label="代码输入与辅助内容">
+  <div class="workspace-tabs" role="tablist" aria-label="代码工作区">
+    <button id="code-view" type="button" role="tab" aria-selected="true" aria-controls="code-panel">代码</button>
+    <button id="hint" type="button" role="tab" aria-selected="false" aria-controls="hint-panel">提示</button>
+    <button id="solution-toggle" type="button" role="tab" aria-selected="false" aria-controls="solution-panel">参考答案</button>
+  </div>
+  <section id="code-panel" class="workspace-panel code-panel" role="tabpanel" aria-label="代码编辑">
+    <div class="editor-host"><textarea id="editor" spellcheck="false"></textarea></div>
+  </section>
+  <section id="hint-panel" class="workspace-panel help-panel" role="tabpanel" aria-label="渐进提示" hidden>
+    <div class="help-title">提示</div>
+    <div id="hint-text" class="help-text" aria-live="polite">点击“提示”查看下一条。</div>
+  </section>
+  <section id="solution-panel" class="workspace-panel solution-panel" role="tabpanel" aria-label="参考答案" hidden>
+    <div class="solution-toolbar"><strong>参考答案</strong><button id="copy-solution" type="button">复制答案</button></div>
+    <pre id="solution"></pre>
+    <p id="solution-explanation"></p>
+    <p id="copy-status" role="status" aria-live="polite"></p>
+  </section>
+</div>`;
+
 /** 按类型提供可改写的布局起点；分类影响提示词，不会锁死最终玩法。 */
 export function getInteractiveLayoutTemplate(widgetType: WidgetType): string {
-  return LAYOUT_BY_WIDGET[widgetType];
+  const layout = LAYOUT_BY_WIDGET[widgetType];
+  if (widgetType !== "code") return layout;
+  // 代码场景把代码、提示和答案放入左侧同一工作区，具体内容仍由模型结合题目生成。
+  return layout
+    .replace('<!-- CODE_HELP_MARKUP -->', CODE_HELP_MARKUP);
 }
 
 /** 只注入当前类型需要的实现提醒，控制 Prompt 体积并保持示例可读。 */
