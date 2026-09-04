@@ -43,7 +43,7 @@ function mergeUsage(results: GenerateTextResult[]) {
   return results.some((result) => result.usage) ? { inputTokens, outputTokens } : undefined;
 }
 
-/** 执行大纲调用、受限传输重试、解析、语义门和最多一次模型修复。 */
+/** 生成并校验课程大纲，必要时请求一次模型修复，并返回可持久化的结果。 */
 export async function generateOutline(
   adapter: AIAdapter,
   input: {
@@ -62,9 +62,14 @@ export async function generateOutline(
   // 1. 用课程主题和场景数量拼出发给模型的提示词。
   const userPrompt = buildOutlineUserPrompt(input);
 
-  /** 校验模型大纲后，由服务端根据检测字段独占计算最终 Brief。 */
+  /**
+   * 校验并规范化模型大纲，并由服务端根据 detectedBrief 生成最终 CourseBrief。
+   * 返回通过校验的大纲结果和课程要求解析结果。
+   */
   function validateResponse(value: unknown) {
+    // 先检查模型输出的结构和课程级约束，再整理顺序与文本内容。
     const output = validateAndNormalizeOutline(value, input.sceneCount, input.provisionalBrief.interactionMode);
+    // 再按显式设置、模型检测结果和默认值的优先级确定最终课程要求。
     const resolved = resolveCourseBrief({
       topic: input.topic,
       provisionalBrief: input.provisionalBrief,
@@ -76,12 +81,13 @@ export async function generateOutline(
     return { output, resolved };
   }
 
+  /** 在单次请求预算内调用模型，并重试可自动重试的上游错误。 */
   async function callAI(call: Omit<GenerateTextInput, "requestId" | "signal" | "maxOutputTokens">): Promise<GenerateTextResult> {
     let lastError: AIAdapterError | undefined;
     for (let attempt = 0; attempt < 3 && upstreamCalls < maxCalls; attempt += 1) {
       upstreamCalls += 1;
       try {
-        // 2. 调用当前配置的模型，并拿到它返回的文本。
+        // 调用当前配置的模型，并记录成功结果供后续生成元数据使用。
         const result = await adapter.generateText({ ...call, requestId: input.requestId, signal: input.signal, maxOutputTokens: OUTLINE_MAX_OUTPUT_TOKENS });
         successfulResults.push(result);
         logUpstreamSuccess(result, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls });
@@ -96,7 +102,7 @@ export async function generateOutline(
         }
         const delayMs = retryDelayMs(input.requestId, attempt);
         logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: true, retryDelayMs: delayMs });
-        // 3. 网络、限流或偶发响应错误可以等待后重试。
+        // 网络、限流或偶发响应错误可以等待后重试。
         try {
           await waitForRetry(delayMs, input.signal);
         } catch (abortError) {
@@ -109,14 +115,15 @@ export async function generateOutline(
     throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次模型调用已达到预算上限", true, upstreamCalls, undefined, { cause: lastError });
   }
 
-  // 4. 第一次调用模型，得到大纲文本。
+  // 2. 第一次调用模型，得到大纲文本。
   const first = await callAI({ stage: "outline", systemPrompt: OUTLINE_SYSTEM_PROMPT, userPrompt });
   let validated;
   let repaired = false;
   try {
+    // 3. 解析模型文本，并校验大纲结构、数量和课程级约束。
     validated = validateResponse(parseModelJson(first.text));
   } catch (error) {
-    // 5. 把文本解析成 JSON，并检查大纲数量、测验数量、标题等是否正确。
+    // 4. 首次结果不合格时，记录校验问题并准备请求完整修复结果。
     const invalid = error instanceof InvalidOutlineError ? error : new InvalidOutlineError([{ path: "", message: "无法验证模型输出" }], { cause: error });
     const willRepair = upstreamCalls < maxCalls;
     writeServerEvent(willRepair ? "info" : "error", "outline.validation.failed", {
@@ -131,10 +138,11 @@ export async function generateOutline(
     if (!willRepair) {
       throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "模型输出无效且已没有修复预算", true, upstreamCalls, invalid.issues, { validationKind: invalid.validationKind });
     }
-    // 6. 第一次结果不合格时，把错误原因交给模型，请它修正一次。
+    // 5. 把首次结果和具体校验问题交给模型，请它修正一次。
     const repair = await callAI({ stage: "repair", systemPrompt: REPAIR_SYSTEM_PROMPT, userPrompt: buildRepairUserPrompt(userPrompt, first.text, invalid.issues) });
     repaired = true;
     try {
+      // 6. 修复结果仍需经过与首次结果相同的解析和校验流程。
       validated = validateResponse(parseModelJson(repair.text));
     } catch (repairError) {
       const finalError = repairError instanceof InvalidOutlineError ? repairError : invalid;
@@ -160,7 +168,7 @@ export async function generateOutline(
     courseTitle: validated.output.courseTitle,
     brief: validated.resolved.brief,
     briefResolution: validated.resolved.resolution,
-    // 8. 给每一项大纲生成系统 ID，供后续生成场景时引用。
+    // 8. 为每一项通过校验的大纲生成系统 ID，供后续生成场景时引用。
     outlines: assembleSceneOutlines(validated.output),
     metadata: {
       provider: successful.provider,

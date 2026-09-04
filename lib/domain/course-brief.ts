@@ -88,7 +88,7 @@ function explicitValues(brief: CourseBrief, resolution: CourseBriefResolution): 
     .map((field) => [field, brief[field]])) as CourseBriefOverrides;
 }
 
-/** 按显式设置、Prompt 检测、默认值的固定优先级复算最终 Brief。 */
+/** 根据显式设置、模型检测结果和默认值生成最终 CourseBrief，并记录各字段来源。 */
 export function resolveCourseBrief(input: {
   topic: string;
   provisionalBrief: CourseBrief;
@@ -98,12 +98,14 @@ export function resolveCourseBrief(input: {
   resolvedAt: number;
 }) {
   const defaults = createDefaultCourseBrief(input.topic);
+  // 只读取允许的 detectedBrief 字段；interactionMode 仍由用户显式设置决定。
   const detected = DetectedCourseBriefSchema.parse(input.detectedBrief);
   const explicit = explicitValues(input.provisionalBrief, input.provisionalResolution);
   const sources = {} as Record<CourseBriefField, BriefValueSource>;
   const values = {} as Record<CourseBriefField, CourseBrief[CourseBriefField]>;
   const warnings: BriefResolutionWarning[] = [];
 
+  // 逐字段按“显式设置 > 模型检测 > 默认值”确定最终课程要求。
   for (const field of COURSE_BRIEF_FIELDS) {
     if (Object.hasOwn(explicit, field)) {
       values[field] = explicit[field] as never;
@@ -123,6 +125,7 @@ export function resolveCourseBrief(input: {
   values.interactionMode = explicit.interactionMode ?? "off";
   sources.interactionMode = Object.hasOwn(explicit, "interactionMode") ? "explicit_setting" : "default";
 
+  // 合并服务端发现的冲突和模型报告的信息性警告，并去除重复项。
   const informationalWarnings = (input.modelWarnings ?? []).filter((warning) =>
     warning.code === "PROMPT_AMBIGUOUS" || warning.code === "SCOPE_TOO_BROAD");
   const uniqueWarnings = [...new Map([...warnings, ...informationalWarnings].map((warning) => [

@@ -47,12 +47,16 @@ export class InvalidOutlineError extends Error {
 
 function normalizedKey(value: string): string { return value.trim().toLocaleLowerCase("zh-CN").replace(/\s+/g, " "); }
 
-/** 执行 outline.v2 结构与课程级语义校验，只做排序、去空白和去重等确定性修正。 */
+/**
+ * 校验并规范化模型返回的大纲，确保结构和课程级规则满足生成契约。
+ * 同时整理大纲顺序、文本空白和重复关键点。
+ */
 export function validateAndNormalizeOutline(
   value: unknown,
   requestedSceneCount: number,
   interactionMode: "off" | "auto" | "required" = "off",
 ): OutlineModelOutput {
+  // 先校验模型输出的字段、类型和单项取值范围。
   const parsed = OutlineModelOutputSchema.safeParse(value);
   if (!parsed.success) {
     throw new InvalidOutlineError(
@@ -60,6 +64,7 @@ export function validateAndNormalizeOutline(
       { validationKind: "schema", cause: parsed.error },
     );
   }
+  // 统一顺序和文本格式，让后续课程级检查使用确定的结果。
   const normalized: OutlineModelOutput = {
     ...parsed.data,
     courseTitle: parsed.data.courseTitle.trim(),
@@ -74,6 +79,7 @@ export function validateAndNormalizeOutline(
       order: index + 1,
     })),
   };
+  // 检查场景数量、类型分布、顺序和课程级互动约束。
   const issues: OutlineIssue[] = [];
   if (normalized.outlines.length !== requestedSceneCount) issues.push({ path: "outlines", message: `大纲数量必须恰好为 ${requestedSceneCount}` });
   const quizCount = normalized.outlines.filter((item) => item.type === "quiz").length;
@@ -91,6 +97,7 @@ export function validateAndNormalizeOutline(
   if (new Set(titleKeys).size !== titleKeys.length) issues.push({ path: "outlines.title", message: "大纲标题不能重复" });
   const objectives = normalized.outlines.map((item) => normalizedKey(item.teachingObjective));
   if (objectives.length > 1 && new Set(objectives).size === 1) issues.push({ path: "outlines.teachingObjective", message: "各场景教学目标不能全部相同" });
+  // 检查每个场景的角色、关键点和互动配置。
   normalized.outlines.forEach((item, index) => {
     if (item.keyPoints.length < 2) issues.push({ path: `outlines.${index}.keyPoints`, message: "关键点去重后至少保留 2 项" });
     if (item.type === "quiz" && !["assessment", "practice"].includes(item.role)) issues.push({ path: `outlines.${index}.role`, message: "quiz 必须使用 assessment 或 practice 角色" });
@@ -103,13 +110,14 @@ export function validateAndNormalizeOutline(
   return normalized;
 }
 
-/** 为已通过模型边界的大纲补齐领域 ID，模型不能控制实体标识。 */
+/** 为已通过模型边界校验的大纲补齐领域 ID，模型不能控制实体标识。 */
 export function assembleSceneOutlines(output: OutlineModelOutput): SceneOutline[] {
   return output.outlines.map((outline) => SceneOutlineSchema.parse({ ...outline, id: randomUUID() }));
 }
 
 /** 复用模型语义门校验人工编辑，同时保留已有 ID、角色、类型与结构顺序。 */
 export function validateEditedOutline(courseTitle: string, outlines: SceneOutline[], requestedSceneCount: number, interactionMode: "off" | "auto" | "required") {
+  // 人工编辑也复用模型生成阶段的规则，避免两套大纲约束出现差异。
   const normalized = validateAndNormalizeOutline({
     courseTitle,
     outlines: outlines.map(({ id, ...outline }) => {

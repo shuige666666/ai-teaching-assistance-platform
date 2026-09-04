@@ -21,10 +21,12 @@ function extractBalancedObject(text: string): string | null {
   return null;
 }
 
-/** 优先精确解析；失败后只接受单个 JSON 代码围栏或首个平衡对象。 */
+/** 将模型文本解析为对象；纯 JSON 失败时，受限提取一个可解析的 JSON 对象。 */
 export function parseModelJson(text: string): unknown {
   const trimmed = text.trim();
+  // 优先处理符合输出契约的纯 JSON。
   try { return JSON.parse(trimmed); } catch { /* 继续执行受限提取。 */ }
+  // 模型附带说明时，只提取一个代码围栏或首个完整平衡对象。
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
   const candidate = fenced ?? extractBalancedObject(trimmed);
   if (!candidate) throw new InvalidOutlineError([{ path: "", message: "模型输出不是 JSON 对象" }], { validationKind: "json" });
