@@ -24,7 +24,7 @@
 ## 【统一视觉基线】
 
 - 推荐字体：Microsoft YaHei。
-- 推荐色板：#5b9bd5、#ed7d31、#a5a5a5、#ffc000、#4472c4；正文默认 #333333。
+- 推荐色板：#BF545D（少量强调或警示）、#143F59（正文和深色面）、#498BA6（主强调）、#5CE3F2（高亮）、#14D9C5（成功或互动）；背景可使用 #FFFFFF、#F3FAFB、#EAF6F8、#E4FAF7 等浅色，正文默认 #143F59。
 - 背景可为 solid，或包含 2～8 个色标的 linear/radial gradient。不要使用图片背景。
 - 允许克制地使用浅色卡片、强调线和圆形节点；颜色必须服务于信息关系。
 
@@ -38,9 +38,9 @@
   "width": 880,
   "height": 76,
   "rotate": 0,
-  "content": "<p style="font-size:32px;font-weight:bold;color:#333333">标题</p>",
+  "content": "<p style="font-size:32px;font-weight:bold;color:#143F59">标题</p>",
   "defaultFontName": "Microsoft YaHei",
-  "defaultColor": "#333333",
+  "defaultColor": "#143F59",
   "textType": "title",
   "lineHeight": 1.2,
   "vAlign": "middle"
@@ -62,12 +62,12 @@
   "rotate": 0,
   "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
   "viewBox": [1, 1],
-  "fill": "#eaf1f8",
+  "fill": "#EAF6F8",
   "fixedRatio": false,
   "outline": {
     "style": "solid",
     "width": 1,
-    "color": "#c7d8e8"
+    "color": "#B7D0D7"
   }
 }
 ```
@@ -85,7 +85,7 @@
   "start": [0, 0],
   "end": [180, 0],
   "style": "solid",
-  "color": "#4472c4",
+  "color": "#498BA6",
   "points": ["", "arrow"]
 }
 ```
@@ -125,7 +125,7 @@
   "content": {
     "background": {
       "type": "solid",
-      "color": "#ffffff"
+      "color": "#FFFFFF"
     },
     "elements": []
   },

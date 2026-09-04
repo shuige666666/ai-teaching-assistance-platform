@@ -22,10 +22,10 @@ const SAFE_SVG_PATH = /^[MmLlHhVvCcSsQqTtAaZz0-9eE+.,\s-]+$/;
 
 export const DEFAULT_SLIDE_THEME = {
   backgroundColor: "#ffffff",
-  themeColors: ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"],
-  fontColor: "#333333",
+  themeColors: ["#BF545D", "#143F59", "#498BA6", "#5CE3F2", "#14D9C5"],
+  fontColor: "#143F59",
   fontName: "Microsoft YaHei",
-  outline: { color: "#d14424", width: 2, style: "solid" as const },
+  outline: { color: "#BF545D", width: 2, style: "solid" as const },
 };
 
 const GeneratedBaseElementSchema = z.object({

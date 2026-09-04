@@ -5,8 +5,8 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  border: 1px solid #b7b0a3;
-  background: #f5f1e8;
+  border: 1px solid var(--line);
+  background: var(--paper);
 }
 
 .viewportFrame {
@@ -27,8 +27,8 @@
   max-height: 100%;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border: 1px solid #b7b0a3;
-  background: #fff;
+  border: 1px solid var(--line);
+  background: var(--white);
 }
 
 .frame {
@@ -37,14 +37,14 @@
   height: 100%;
   min-height: 0;
   border: 0;
-  background: #fff;
+  background: var(--white);
   opacity: 0;
   transition: opacity 180ms ease;
 }
 
 .frameReady { opacity: 1; }
 
-.regenerationNote { display: block; margin-top: 12px; color: #625d53; line-height: 1.6; }
+.regenerationNote { display: block; margin-top: 12px; color: var(--muted); line-height: 1.6; }
 .fallback button:disabled { opacity: .5; cursor: wait; }
 
 .toolbar {
@@ -53,31 +53,31 @@
   align-items: center;
   gap: 8px;
   padding: 5px 10px;
-  border: 1px solid rgba(36, 38, 33, .24);
-  background: rgba(247, 243, 234, .94);
-  box-shadow: 0 7px 24px rgba(36, 38, 33, .12);
+  border: 1px solid rgba(20, 63, 89, .24);
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 7px 24px rgba(20, 63, 89, .12);
   backdrop-filter: blur(8px);
 }
 
-.toolbar small { flex: 1; color: #6c695f; font-size: 11px; }
+.toolbar small { flex: 1; color: var(--muted); font-size: 11px; }
 
 .toolbar span {
   padding: 0 7px;
-  color: #55584f;
+  color: var(--muted);
   font: 10px/1.2 "SFMono-Regular", Consolas, monospace;
   letter-spacing: .1em;
 }
 
 .toolbar button, .fallback button {
-  border: 1px solid #242621;
-  background: #242621;
+  border: 1px solid var(--ink);
+  background: var(--ink);
   color: #fff;
   padding: 8px 13px;
   font: 12px/1 "Microsoft YaHei", sans-serif;
   cursor: pointer;
 }
 
-.toolbar button:hover, .fallback button:hover { background: #a33b25; border-color: #a33b25; }
+.toolbar button:hover, .fallback button:hover { background: var(--accent); border-color: var(--accent); }
 
 .fallback {
   position: absolute;
@@ -90,15 +90,15 @@
   align-items: center;
   padding: 58px 66px;
   background:
-    linear-gradient(rgba(96, 92, 81, .08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(96, 92, 81, .08) 1px, transparent 1px),
-    #f5f1e8;
+    linear-gradient(rgba(73, 139, 166, .08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(73, 139, 166, .08) 1px, transparent 1px),
+    var(--paper);
   background-size: 36px 36px;
 }
 
 .fallbackMark {
   display: block;
-  color: #a33b25;
+  color: var(--brand);
   font: 11px/1.2 "SFMono-Regular", Consolas, monospace;
   letter-spacing: .18em;
   text-transform: uppercase;
@@ -106,18 +106,18 @@
 
 .fallback h2 {
   margin: 18px 0 12px;
-  color: #242621;
+  color: var(--ink);
   font: 700 clamp(28px, 3vw, 46px)/1.08 Georgia, "Noto Serif SC", serif;
 }
 
-.fallback p { margin: 0; color: #5e6259; font-size: 16px; line-height: 1.8; }
+.fallback p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.8; }
 
 .fallback ol {
   margin: 0;
   padding: 0;
   list-style: none;
   counter-reset: steps;
-  border-top: 1px solid #9b9589;
+  border-top: 1px solid var(--line);
 }
 
 .fallback li {
@@ -126,14 +126,14 @@
   grid-template-columns: 52px 1fr;
   gap: 12px;
   padding: 15px 4px;
-  border-bottom: 1px solid #c9c2b6;
-  color: #30332e;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
   line-height: 1.5;
 }
 
-.fallback li::before { content: "0" counter(steps); color: #a33b25; font: 13px/1.5 "SFMono-Regular", Consolas, monospace; }
+.fallback li::before { content: "0" counter(steps); color: var(--brand); font: 13px/1.5 "SFMono-Regular", Consolas, monospace; }
 .fallbackActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-.fallbackActions button:last-child { background: transparent; color: #242621; }
+.fallbackActions button:last-child { background: transparent; color: var(--ink); }
 
 @media (max-width: 980px) {
   .fallback { grid-template-columns: 1fr; gap: 22px; padding: 42px; }
