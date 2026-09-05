@@ -296,11 +296,11 @@ MVP 只有一个逻辑参与者：本地用户。
 
 | 编号 | 需求 |
 |---|---|
-| FR-X101 | M11 编辑器必须直接读取并更新 M8 的 `Slide/PPTElement`，复用同一只读 SlideCanvas 作为绘制层，不创建另一份编辑器专用页面格式。 |
-| FR-X102 | M11 第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和基于 expectedRevision 的 MySQL 保存；冲突或保存失败必须保留原版本。 |
-| FR-X103 | M12 导出包固定为一个 ZIP：根目录一个课程 PPTX，`interactive/` 下按 `Scene.order` 保存自包含 HTML；不额外生成 manifest、README 或 assets 目录。 |
+| FR-X101 | M12 编辑器必须直接读取并更新 M8 的 `Slide/PPTElement`，复用同一只读 SlideCanvas 作为绘制层，不创建另一份编辑器专用页面格式。 |
+| FR-X102 | M12 第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和基于 expectedRevision 的 MySQL 保存；冲突或保存失败必须保留原版本。 |
+| FR-X103 | M11 导出包固定为一个 ZIP：根目录一个课程 PPTX，`interactive/` 下按 `Scene.order` 保存自包含 HTML；不额外生成 manifest、README 或 assets 目录。 |
 | FR-X104 | PPTX 只写入 slide 场景并保持其相对顺序；互动 HTML 文件名必须包含补零后的原始场景序号和安全化标题，例如 `03_流程互动.html`。 |
-| FR-X105 | M12 再确认外部依赖的导出策略；当前互动页允许 CDN，不承诺单个 HTML 离线执行。 |
+| FR-X105 | M11 再确认外部依赖的导出策略；当前互动页允许 CDN，不承诺单个 HTML 离线执行。 |
 | FR-X106 | M11/M12 不属于 M7～M10/v0.4 退出门；只有 M10/v0.4 已完成且用户再次确认范围后，才进入实现和独立验收。 |
 
 ## 5. 非功能需求
@@ -448,8 +448,8 @@ MVP 只有一个逻辑参与者：本地用户。
 | PPT 式只读幻灯片画布 | FR-Q201～211 | M8 |
 | 受控互动场景 | FR-I101～110、NFR-SEC-08～10 | M9 |
 | 单场景再生成与质量验收 | FR-Q301～307 | M10 |
-| PPT 式幻灯片编辑器 | FR-X101～102、106 | M11（可选） |
-| PPTX + interactive HTML 简化资源包 | FR-X103～106 | M12（可选） |
+| PPTX + interactive HTML 简化资源包 | FR-X103～106 | M11（可选） |
+| PPT 式幻灯片编辑器 | FR-X101～102、106 | M12（可选） |
 | 单一可度量研究问题 | 从 M7～M10 数据中另行立项 | MX |
 
 当需求编号或范围发生变化时，必须同步更新 [01-scope.md](01-scope.md)、[03-architecture.md](03-architecture.md)、[06-roadmap.md](06-roadmap.md) 和 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。

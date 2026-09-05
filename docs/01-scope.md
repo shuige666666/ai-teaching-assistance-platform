@@ -1,7 +1,7 @@
 # 01. 项目范围与版本边界
 
 > 文档版本：0.4
-> 状态：v0.3/M1～M6.5、v0.4/M7.0、M7.1、M8、M9 与 M10 当前范围已完成；M10 包含新版 slide 的单人需求验收，不要求配对质量评分；M11 编辑器和 M12 导出可选
+> 状态：v0.3/M1～M6.5、v0.4/M7.0、M7.1、M8、M9 与 M10 当前范围已完成；M10 包含新版 slide 的单人需求验收，不要求配对质量评分；M11 导出和 M12 编辑器可选
 > 适用阶段：毕业设计复刻项目的工程质量增强阶段
 
 ## 1. 核心结论
@@ -39,7 +39,7 @@ OpenMAIC 当前是平台级项目，包含课程生成、四类场景、动作�
 | 多 Provider 与按阶段路由 | MVP 只验收 mock 与 DeepSeek；百炼兼容档保留为后续可选扩展 |
 | IndexedDB 与 HTTP/PostgreSQL 双后端 | 使用服务端 MySQL 作为唯一课程事实来源 |
 | LangGraph 多智能体讨论 | 不进入 MVP，作为后续候选扩展 |
-| PPTX、HTML、视频导出 | 不进入 MVP；只含 PPTX 与互动 HTML 的简化资源包暂存为可选 M12 |
+| PPTX、HTML、视频导出 | 不进入 MVP；只含 PPTX 与互动 HTML 的简化资源包暂存为可选 M11 |
 
 参考源码定位（均指 OpenMAIC 参考仓库）：
 
@@ -148,15 +148,15 @@ M8～M10 只承诺最新版 Chrome/Edge 下 `1280×720` 及更大桌面视口。
 - 支持 ready 场景按用户简短意见单独再生成，失败时保留原场景；
 - 保留固定评价集的生成事实和模型元数据，并用固定视口视觉证据完成新版 slide 的需求验收；不要求人工量表或 v0.3/v0.4 成对比较。
 
-M7～M10 明确不加入 LangGraph、多智能体、多模态、RAG、媒体生成、3D/procedural-skill widget、服务端任意代码执行。M8 复用 OpenMAIC 的做法让模型直接输出有限 PPTElement 的坐标和样式，但不允许模型控制实体 id、状态、revision、Action、React 或可执行 slide HTML；服务端不再增加通用自动排版和几何评分系统。编辑器仅作为可选 M11，不阻塞 v0.4。编程实验支持浏览器 Worker 中的 Python/JavaScript，支持停止和运行超时，不建设通用代码评测平台。
+M7～M10 明确不加入 LangGraph、多智能体、多模态、RAG、媒体生成、3D/procedural-skill widget、服务端任意代码执行。M8 复用 OpenMAIC 的做法让模型直接输出有限 PPTElement 的坐标和样式，但不允许模型控制实体 id、状态、revision、Action、React 或可执行 slide HTML；服务端不再增加通用自动排版和几何评分系统。编辑器仅作为可选 M12，不阻塞 v0.4。编程实验支持浏览器 Worker 中的 Python/JavaScript，支持停止和运行超时，不建设通用代码评测平台。
 
 2026-08-27 冻结的 M7.0 六题输入已经完成 v0.3 生成。2026-08-28 将视觉留档收束为每个已保存场景一份 `1280×720` MHTML；旧双视口截图、DOM 密度观察和空评分表已退出当前方案，但原课程、失败样本、生成元数据和错误记录不变。M8～M10 产品退出只覆盖桌面端；新版 slide 采用固定视口下的单人需求验收，MHTML 不作为响应式页面导出物。
 
 ### 4.4 M11/M12 可选扩展边界
 
-M11 是 PPT 式幻灯片编辑器，不是另一种课程展示形态。它必须复用 M8 的只读 SlideCanvas 和 `Slide/PPTElement`，只在其上增加选择、拖拽、缩放、文字编辑、撤销重做和 MySQL revision 保存。M11 不得建立独立的编辑器文档格式，也不得让编辑器状态替代 CourseRepository 中的课程事实。
+M12 是 PPT 式幻灯片编辑器，不是另一种课程展示形态。它必须复用 M8 的只读 SlideCanvas 和 `Slide/PPTElement`，只在其上增加选择、拖拽、缩放、文字编辑、撤销重做和 MySQL revision 保存。M12 不得建立独立的编辑器文档格式，也不得让编辑器状态替代 CourseRepository 中的课程事实。
 
-M12 是简化资源包导出，不进入 v0.4 完成标准。其唯一目标结构为：
+M11 是简化资源包导出，不进入 v0.4 完成标准。其唯一目标结构为：
 
 ```text
 课程名称.zip
@@ -166,7 +166,7 @@ M12 是简化资源包导出，不进入 v0.4 完成标准。其唯一目标结�
    └─ 07_知识结构图.html
 ```
 
-PPT 式 slide 按课程顺序写入 PPTX；interactive 场景按原始 `Scene.order` 命名为自包含 HTML。第一版资源包不额外生成 manifest、README 或 assets 目录，外部资源离线打包在 M12 单独设计，当前保存 HTML 不承诺完全离线。M11 和 M12 都只能在 M10/v0.4 完成后按需启动，均不作为毕业论文延展的前置条件。
+PPT 式 slide 按课程顺序写入 PPTX；interactive 场景按原始 `Scene.order` 命名为自包含 HTML。第一版资源包不额外生成 manifest、README 或 assets 目录，外部资源离线打包在 M11 单独设计，当前保存 HTML 不承诺完全离线。M11 和 M12 都只能在 M10/v0.4 完成后按需启动，均不作为毕业论文延展的前置条件。
 
 ## 5. MVP 完成标准
 

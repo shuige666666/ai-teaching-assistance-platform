@@ -35,7 +35,7 @@ MVP 面向“教师或学生输入一个主题，生成并运行一门微型课�
 - 大纲与场景分阶段生成，模型输出经过 Schema 和语义校验；
 - 固定渲染器展示 slide/quiz 和只读代码块，确定性播放引擎执行 speech/pause。
 
-v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 把新生成的 slide 统一升级为只读、桌面端的 OpenMAIC 式 `Slide/PPTElement` 幻灯片，在 M9 加入 diagram/simulation/game/code 多样化互动页；不再并行建设类 Markdown/纵向讲义视图。基于同一 Slide 数据的编辑器留到可选 M11，只含 PPTX 与 `interactive/*.html` 的简化 ZIP 导出留到可选 M12，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
+v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 把新生成的 slide 统一升级为只读、桌面端的 OpenMAIC 式 `Slide/PPTElement` 幻灯片，在 M9 加入 diagram/simulation/game/code 多样化互动页；不再并行建设类 Markdown/纵向讲义视图。只含 PPTX 与 `interactive/*.html` 的简化 ZIP 导出留到可选 M11，基于同一 Slide 数据的编辑器留到可选 M12，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
 
 ## 为什么不一比一照搬 OpenMAIC
 
@@ -57,6 +57,7 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 | [08. 部署、恢复与验收手册](docs/08-deployment-and-acceptance.md) | 如何生产启动、备份恢复、排障并复现 AC-01～AC-12 |
 | [09. v0.4 课程质量、幻灯片与互动开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | M7～M10 的 CourseBrief、PPT 式只读幻灯片、互动沙箱、再生成，以及 M11/M12 和 OpenMAIC 参考路径 |
 | [10. M6.5 远端响应韧性与可观测性开发方案](docs/10-m6.5-remote-response-resilience-plan.md) | DeepSeek 响应分类、受限重试、安全日志和验收证据 |
+| [11. M11 资源包导出与 M12 幻灯片编辑器开发方案](docs/11-slide-export-editor-plan.md) | 导出优先的两阶段可选扩展：PPTX + HTML 资源包映射表、保真度决策与编辑器概要设计 |
 
 01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，09 是 M7～M10 的可执行开发方案，10 是插入 M6 与 M7 之间的 M6.5 工程加固方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
 
@@ -77,7 +78,7 @@ components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
   slides/                        # [M8 已实现，v2.2 扩展] 只读 SlideCanvas 与 text/shape/line/code/chart/table Renderer
   interactive/                   # [M9 已实现] sandbox iframe 宿主与消息桥
-  editor/                        # [M11 可选] 在 SlideCanvas 上叠加 PPT 式编辑交互
+  editor/                        # [M12 可选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
   domain/                        # [M10 已实现] Course v5、单选/多选 Quiz、CourseBrief、Slide/PPTElement 与 fixture
   repository/                    # [M7.1 已实现] v2 InMemory / MySQL 仓储、旧行隔离与错误映射
@@ -89,7 +90,7 @@ lib/
   quality/                       # [M7 历史/可选] 固定主题与离线汇总工具
   slides/                        # [M8 已实现，v2.2 扩展] Slide/PPTElement、规范化、富文本净化、主题预设与形状解析
   interactive/                   # [M9 已实现] HTML 校验、CSP patch、运行协议与布局 Prompt 骨架
-  export/                        # [M12 可选] Slide/PPTElement → PPTX 与简单 ZIP 打包
+  export/                        # [M11 可选] Slide/PPTElement → PPTX 与简单 ZIP 打包
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
 scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
 e2e/                             # [M6 已实现] production mock 完整浏览器回归
@@ -180,8 +181,8 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 9. **M8（已完成）**：裁剪 OpenMAIC 的 `slide-content Prompt → 带坐标 PPTElement → normalize → Slide → SlideCanvas` 纵向链，升级 Course v3，并用 3 个真实主题和 4 份 MHTML 完成桌面校准；
 10. **M9（已完成）**：裁剪 OpenMAIC 四类互动 Prompt，实现多样化生成、外部依赖加载、隔离运行和 fallback；
 11. **M10（当前范围已完成）**：`/revise` 根据必填意见和当前旧场景修订 ready slide/interactive/quiz；`/regenerate` 对运行失败 interactive 做不携带旧 HTML 的干净重生成；失败保留原内容，quiz 修订时事务化清理旧作答；新版 slide 已由开发者依据已确认需求完成单人验收，v0.3 仅作历史留档，不再进行 v0.3/v0.4 成对质量验收；
-12. **M11（可选）**：在 M8 的同一 `Slide/PPTElement` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不建立第二套页面格式，也不阻塞 v0.4；
-13. **M12（可选）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；
+12. **M11（可选）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP（方案见 [11-slide-export-editor-plan.md](docs/11-slide-export-editor-plan.md)）；
+13. **M12（可选）**：在 M8 的同一 `Slide/PPTElement` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不建立第二套页面格式，也不阻塞 v0.4；
 14. **MX（暂时搁置）（未选题）**：如后续确有需要，再从已完成的 M7～M10 数据中选择一个可度量的毕业论文研究问题，另行设计实验范围。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。

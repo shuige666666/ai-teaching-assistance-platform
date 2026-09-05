@@ -8,9 +8,9 @@
 
 复刻不按 OpenMAIC 的目录逐项照搬，而按纵向闭环推进：**固定课程可浏览 → MySQL 可恢复 → 真实大纲 → 真实场景 → 播放与测验 → 完整验收**。数据库现在是基础能力，因此必须在真实模型接入前完成，不能等课程已经生成后再补持久化。
 
-M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读幻灯片、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的可选 PPT 式幻灯片编辑器，M12 是可选的 PPTX + interactive HTML 简化资源包导出；暂存的 MX 才选择一个可度量研究问题。
+M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读幻灯片、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的可选 PPTX + interactive HTML 简化资源包导出，M12 是可选的 PPT 式幻灯片编辑器；暂存的 MX 才选择一个可度量研究问题。
 
-**当前进度：M1～M10 当前范围已完成；M10 的 ready 场景修订、失败互动重生成、quiz 单选/多选、人工题目编辑和新版 slide 单人需求验收均已完成。M7.0 六题与旧版 MHTML 保持冻结并作为历史留档，不再要求同题 A/B 评分。完整 slide 编辑器/导出仍为可选 M11/M12。** 实施证据见 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M10 当前范围已完成；M10 的 ready 场景修订、失败互动重生成、quiz 单选/多选、人工题目编辑和新版 slide 单人需求验收均已完成。M7.0 六题与旧版 MHTML 保持冻结并作为历史留档，不再要求同题 A/B 评分。完整 slide 导出/编辑器仍为可选 M11/M12。** 实施证据见 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
@@ -44,8 +44,8 @@ M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。
 | M8 PPT 式只读幻灯片（已完成） | 裁剪 OpenMAIC 的直接坐标元素链，保存、恢复并只读播放 | 纵向 Block 堆叠 | 分类型/fixture、Prompt/生成、渲染/实测已完成 |
 | M9 diagram 互动闭环（已完成） | 一个可操作、可重置、可完成且可安全失败的互动页 | 全静态场景 | 一个纵向闭环 |
 | M10 课程修订与 v0.4 验收（已完成） | ready 三类场景修订、新版 slide 单人需求验收 | 不自动重生成整课、不做 A/B 评分 | 单场事务闭环 + 固定视口视觉验收 |
-| M11 PPT 式幻灯片编辑器（可选） | 在同一 `Slide/PPTElement` 上选择、拖拽、缩放、文字编辑、撤销重做和保存 | M8 只读幻灯片 | 不阻塞 v0.4/MX |
-| M12 简化资源包导出（可选） | 一个 ZIP 内含课程 PPTX 与 `interactive/*.html` | M8 slide + M9 interactive | 不阻塞 v0.4/MX |
+| M11 简化资源包导出（可选） | 一个 ZIP 内含课程 PPTX 与 `interactive/*.html` | M8 slide + M9 interactive | 不阻塞 v0.4/MX |
+| M12 PPT 式幻灯片编辑器（可选） | 在同一 `Slide/PPTElement` 上选择、拖拽、缩放、文字编辑、撤销重做和保存 | M8 只读幻灯片 | 不阻塞 v0.4/MX |
 | MX 毕业论文延展（暂存） | 基于 M7～M10 数据完成一个可度量研究问题 | 无 | 视选题而定 |
 
 建议投入是专注开发日。延期时先减少视觉装饰和扩展能力，不压缩 Schema、事务、错误恢复和测试。
@@ -323,17 +323,17 @@ M9 当前实现 diagram/simulation/game/code：从 OpenMAIC 裁剪分类 Prompt�
 
 **M10 退出门**：AC-Q01～AC-Q11 全部有证据；M6 `pnpm verify:full` 继续通过；新版 slide 已通过固定视口下的单人需求验收。达到此门后宣布 v0.4 当前范围完成，不把该验收写成事实正确性、教学质量或统计意义上的版本优越性结论。
 
-## 15. M11：PPT 式幻灯片编辑器（可选）
+## 15. M11：PPTX + interactive HTML 简化资源包导出（可选）
 
-M11 只在 M10/v0.4 已完成、M8 的 `Slide/PPTElement` 已稳定且用户再次确认范围后开始。第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和 MySQL 保存；第二批再考虑复制粘贴、对齐吸附和图层。它复用 M8 的只读 Renderer，在同一 PPT 式页面上叠加编辑交互，不建立第二套页面格式，不反向改变 M8 生成契约，也不作为 MX 的前置条件。
+M11 只在 M10/v0.4 已完成、M8 slide 与 M9 interactive 均稳定且用户再次确认范围后开始。导出结果固定为一个 ZIP：根目录只放一个课程 PPTX，`interactive/` 目录只放按原始场景顺序命名的自包含 HTML，例如 `03_流程互动.html`。第一版不生成 manifest、README 或 assets 目录；外部依赖的离线策略到 M11 再确认，本轮不承诺完全离线。PPTX 只写入 slide 场景并保持相对顺序，互动页面不尝试嵌入 PPTX。v2.2 起元素集已扩展为 text/shape/line/code/chart/table 六类，导出映射必须覆盖全部六类——chart 映射为 PPTX 原生图表、table 映射为 PPTX 表格——具体映射表与保真度决策见 [11-slide-export-editor-plan.md](11-slide-export-editor-plan.md)。
+
+可参考 OpenMAIC 的 [`lib/export/use-export-pptx.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/lib/export/use-export-pptx.ts) 中 PPTElement 到 PPTX 的映射、资源包组装、标题安全化和 `interactive/` 分包方式，以及其内置 [`packages/pptxgenjs`](https://github.com/THU-MAIC/OpenMAIC/tree/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/pptxgenjs)。固定提交按“第几个互动页”编号，本项目明确改为原始 `Scene.order`，不能原样复制该编号逻辑。本项目不复用 `.maic.zip` manifest、导入协议、视频导出或完整媒体管线。
+
+## 16. M12：PPT 式幻灯片编辑器（可选）
+
+M12 只在 M10/v0.4 已完成、M8 的 `Slide/PPTElement` 已稳定且用户再次确认范围后开始。第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和 MySQL 保存；第二批再考虑复制粘贴、对齐吸附和图层。它复用 M8 的只读 Renderer，在同一 PPT 式页面上叠加编辑交互，不建立第二套页面格式，不反向改变 M8 生成契约，也不作为 MX 的前置条件。
 
 可参考 OpenMAIC Editor 的三层边界：[`README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/README.md)、[`core/index.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/core/index.ts)、[`EditableSlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/react/EditableSlideCanvas.tsx) 和 [`EditableSlideCanvasWithUI.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/ui/EditableSlideCanvasWithUI.tsx)。本项目用 MySQL revision/事务保存替代 OpenMAIC 的宿主状态与本地持久化方式。
-
-## 16. M12：PPTX + interactive HTML 简化资源包（可选）
-
-M12 只在 M10/v0.4 已完成、M8 slide 与 M9 interactive 均稳定且用户再次确认范围后开始。导出结果固定为一个 ZIP：根目录只放一个课程 PPTX，`interactive/` 目录只放按原始场景顺序命名的自包含 HTML，例如 `03_流程互动.html`。第一版不生成 manifest、README 或 assets 目录；外部依赖的离线策略到 M12 再确认，本轮不承诺完全离线。PPTX 只写入 slide 场景并保持相对顺序，互动页面不尝试嵌入 PPTX。
-
-可参考 OpenMAIC 的 [`lib/export/use-export-pptx.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/lib/export/use-export-pptx.ts) 中 PPTElement 到 PPTX 的映射、资源包组装、标题安全化和 `interactive/` 分包方式，以及其内置 [`packages/pptxgenjs`](https://github.com/THU-MAIC/OpenMAIC/tree/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/pptxgenjs)。固定提交按“第几个互动页”编号，本项目明确改为原始 `Scene.order`，不能原样复制该编号逻辑。本项目只复用 `text/shape/line/code` 子集和简单 ZIP 结构，不复制 `.maic.zip` manifest、导入协议、视频导出或完整媒体管线。
 
 ## 17. 共同硬边界
 
@@ -366,4 +366,4 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、3D/proc
 
 ## 20. 推荐的下一次开发迭代
 
-当前 M7.0 基线保持冻结，M9 多样化互动与 M10 单场修订、quiz 人工题目编辑、新版 slide 单人需求验收均已完成，最新实测以 docs/07 为准。新课程为 Course v5、4～8 场景；v4 按需无损升级，v1～v3 不迁移。下一步只按实际需求选择可选的 M11 编辑器、M12 导出或 MX 论文延展，不继续建设当前范围之外的 A/B 评分体系。
+当前 M7.0 基线保持冻结，M9 多样化互动与 M10 单场修订、quiz 人工题目编辑、新版 slide 单人需求验收均已完成，最新实测以 docs/07 为准。新课程为 Course v5、4～8 场景；v4 按需无损升级，v1～v3 不迁移。下一步只按实际需求选择可选的 M11 导出、M12 编辑器或 MX 论文延展，不继续建设当前范围之外的 A/B 评分体系。

@@ -189,7 +189,7 @@ CourseBrief、Prompt v2、Slide/PPTElement 和 diagram HTML 都是现有两阶�
 
 ### AD-X01：可选编辑器和导出继续复用 `Slide/PPTElement`
 
-M11 的编辑器可以把 M8 的只读 SlideCanvas 作为绘制层，在其上叠加命中区域、选择框、拖拽和缩放交互；编辑操作最终通过 CourseRepository 保存。M12 的 PPTX 导出器也读取相同 `Slide/PPTElement`；互动场景不嵌入 PPTX，以 HTML 放入 ZIP（外部依赖离线策略到M12确认） 的 `interactive/` 目录。两项扩展都不得反向要求 M8 预先实现编辑状态、导出字段或第二份页面数据。
+M11 的 PPTX 导出器也读取相同 `Slide/PPTElement`；互动场景不嵌入 PPTX，以 HTML 放入 ZIP（外部依赖离线策略到M11确认）的 `interactive/` 目录。M12 的编辑器可以把 M8 的只读 SlideCanvas 作为绘制层，在其上叠加命中区域、选择框、拖拽和缩放交互；编辑操作最终通过 CourseRepository 保存。两项扩展都不得反向要求 M8 预先实现编辑状态、导出字段或第二份页面数据。
 
 ## 4. 组件视图
 
@@ -473,7 +473,7 @@ Next.js Server
 
 ## 13. 已选 v0.4 扩展与更远期边界
 
-M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、多样化互动和单场景再生成，按接口扩展而不重写主链。M11 的 PPT 式幻灯片编辑器与 M12 的简化资源包导出是两个独立可选产品里程碑，不阻塞 v0.4 或 MX。以下能力仍属于 MX 或更远期候选：
+M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、多样化互动和单场景再生成，按接口扩展而不重写主链。M11 的简化资源包导出与 M12 的 PPT 式幻灯片编辑器是两个独立可选产品里程碑，不阻塞 v0.4 或 MX。以下能力仍属于 MX 或更远期候选：
 
 - 文档输入：在 outline 请求前增加 DocumentExtractor；
 - 生成优化：替换 GenerationPolicy，不改变已持久化身份和恢复语义；
@@ -485,4 +485,4 @@ M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、多样化�
 - 异步任务：把客户端循环迁移到持久化 Job/Queue；
 - 多模态与 RAG：仅在材料输入或来源增强成为明确研究问题时加入。
 
-任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。M7～M12 的完整依赖、顺序和止损规则见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。M7～M10 的完整依赖、顺序和止损规则见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)；M11/M12 的范围与开发方案见 [11-slide-export-editor-plan.md](11-slide-export-editor-plan.md)。
