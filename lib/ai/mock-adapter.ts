@@ -28,7 +28,7 @@ function readPromptJson<T>(prompt: string, label: string): T | undefined {
 
 function createMockScene(prompt: string): MockScene {
   const topic = readPromptJson<string>(prompt, "课程描述 JSON") ?? readPromptValue(prompt, "教学主题") ?? "示例主题";
-  const outline = readPromptJson<Pick<SceneOutline, "type" | "title" | "keyPoints" | "widgetType">>(prompt, "当前 SceneOutline JSON");
+  const outline = readPromptJson<Pick<SceneOutline, "type" | "role" | "title" | "keyPoints" | "widgetType"> & { order?: number }>(prompt, "当前 SceneOutline JSON");
   const title = outline?.title ?? readPromptValue(prompt, "场景标题") ?? "示例场景";
   const type = outline?.type ?? (readPromptValue(prompt, "场景类型") === "quiz" ? "quiz" : "slide");
   const keyPoints = outline?.keyPoints ?? (readPromptValue(prompt, "关键点") ?? "核心概念；实际应用").split("；").filter(Boolean);
@@ -73,21 +73,82 @@ function createMockScene(prompt: string): MockScene {
       summary: `本场检查了学习者对${topic}关键概念的理解。`,
     };
   }
+  // mock slide 覆盖全部渲染器：hook 场在右列叠加图表与表格，mechanism 场展示连线与代码块，
+  // 其余角色展示图表；卡片使用 pathFormula 圆角矩形和线性渐变，经同一规范化边界后进入课堂。
+  // 颜色消费 User Prompt 注入的本场主题 JSON，与真实模型一样只使用当前课程的主题色。
+  const theme = readPromptJson<{ fontColor?: string; themeColors?: string[]; accent?: string; cards?: Array<{ bg: string; text: string }> }>(prompt, "本场主题 JSON");
+  const fontColor = theme?.fontColor ?? "#143f59";
+  const accent = theme?.accent ?? "#bf545d";
+  const soft = theme?.themeColors?.[2] ?? "#498ba6";
+  const cardBg = theme?.cards?.[0]?.bg ?? "#e4faf7";
+  const labelColor = theme?.cards?.[0]?.text ?? "#bf545d";
+  const labelColor2 = theme?.cards?.[1]?.text ?? "#498ba6";
+  const labelColor3 = theme?.cards?.[2]?.text ?? "#14d9c5";
+  const isMechanism = outline?.role === "mechanism";
+  const isHook = outline?.role === "hook";
+  const rightVisual = isHook
+    ? [
+        {
+          type: "chart", left: 516, top: 178, width: 420, height: 180, chartType: "column",
+          data: {
+            labels: ["概念理解", "机制拆解", "实践应用"],
+            series: [{ name: "掌握度", values: [60, 75, 90] }],
+          },
+          themeColors: theme?.themeColors ?? ["#498ba6", "#bf545d", "#14d9c5"],
+        },
+        {
+          type: "table", left: 516, top: 370, width: 420, height: 132, header: true, colWidths: [1, 2],
+          rows: [
+            ["对比维度", "核心要点"],
+            ["核心概念", keyPoints[0] ?? "理解关键定义"],
+            ["实践边界", keyPoints[2] ?? "明确适用范围"],
+          ],
+        },
+      ]
+    : [
+        { type: "line", left: 486, top: 306, width: 3, start: [0, 0], end: [28, 0], style: "solid", color: soft, points: ["", "arrow"] },
+        isMechanism
+          ? { type: "code", left: 516, top: 190, width: 420, height: 240, language: "typescript", fileName: "lesson.ts", showLineNumbers: true, fontSize: 14, lines: ["const input = modelOutput;", "const slide = schema.parse(input);", "return render(slide);"] }
+          : {
+              type: "chart", left: 516, top: 190, width: 420, height: 240, chartType: "column",
+              data: {
+                labels: ["概念理解", "机制拆解", "实践应用"],
+                series: [{ name: "掌握度", values: [60, 75, 90] }],
+              },
+              themeColors: theme?.themeColors ?? ["#498ba6", "#bf545d", "#14d9c5"],
+            },
+      ];
+  const hookElements = isHook
+    ? [
+        {
+          type: "shape", left: 64, top: 178, width: 420, height: 324, pathFormula: "roundRect",
+          gradient: { type: "linear", rotate: 90, colors: [{ pos: 0, color: "#ffffff" }, { pos: 100, color: cardBg }] },
+          outline: { style: "solid", width: 1, color: "#b7d0d7" },
+        },
+        { type: "text", left: 88, top: 200, width: 372, height: 280, content: `<p style="font-size:20px;font-weight:bold;color:${labelColor}">01 · 问题</p><p style="font-size:18px;color:${fontColor}">${keyPoints[0] ?? "核心概念"}</p><p style="font-size:18px;font-weight:bold;color:${labelColor2}">02 · 机制</p><p style="font-size:18px;color:${fontColor}">${keyPoints[1] ?? "关键机制"}</p><p style="font-size:18px;font-weight:bold;color:${labelColor3}">03 · 应用</p><p style="font-size:18px;color:${fontColor}">${keyPoints[2] ?? "实践边界"}</p>`, textType: "content", lineHeight: 1.6 },
+      ]
+    : [
+        {
+          type: "shape", left: 64, top: 190, width: 420, height: 240, pathFormula: "roundRect",
+          gradient: { type: "linear", rotate: 90, colors: [{ pos: 0, color: "#ffffff" }, { pos: 100, color: cardBg }] },
+          outline: { style: "solid", width: 1, color: "#b7d0d7" },
+        },
+        { type: "text", left: 88, top: 212, width: 372, height: 200, content: `<p style="font-size:18px;font-weight:bold;color:${labelColor}">01 · 问题</p><p style="font-size:18px;color:${fontColor}">${keyPoints[0] ?? "核心概念"}</p><p style="font-size:16px;color:${soft}">结合机制理解应用边界。</p>`, textType: "content", lineHeight: 1.5 },
+      ];
+  const hookNotes = isHook ? [] : [
+    { type: "text", left: 82, top: 462, width: 850, height: 50, content: `<p style="font-size:18px;color:${fontColor}"><strong>结论：</strong>${keyPoints[2] ?? "把概念、机制与实践边界连接起来"}</p>`, textType: "notes", vAlign: "middle" },
+  ];
   return {
     type,
     content: {
       background: { type: "gradient", gradient: { type: "linear", rotate: 135, colors: [{ pos: 0, color: "#f3fafb" }, { pos: 100, color: "#eaf6f8" }] } },
       elements: [
-        { type: "shape", left: 56, top: 46, width: 10, height: 70, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1], fill: "#bf545d" },
-        { type: "text", left: 82, top: 48, width: 850, height: 70, content: `<p style="font-size:34px;font-weight:bold;color:#143f59">${title}</p>`, textType: "title", vAlign: "middle" },
-        { type: "text", left: 82, top: 118, width: 790, height: 48, content: `<p style="font-size:17px;color:#498ba6">${topic} · 从问题到可执行理解</p>`, textType: "subtitle" },
-        { type: "shape", left: 64, top: 188, width: 274, height: 230, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1], fill: "#ffffff", outline: { style: "solid", width: 1, color: "#b7d0d7" } },
-        { type: "shape", left: 363, top: 188, width: 274, height: 230, path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1], fill: "#e4faf7", outline: { style: "solid", width: 1, color: "#b7d0d7" } },
-        { type: "text", left: 84, top: 210, width: 230, height: 170, content: `<p style="font-size:18px;font-weight:bold;color:#bf545d">01 · 问题</p><p style="font-size:18px;color:#143f59">${keyPoints[0] ?? "核心概念"}</p>`, textType: "content", lineHeight: 1.5 },
-        { type: "text", left: 383, top: 210, width: 230, height: 170, content: `<p style="font-size:18px;font-weight:bold;color:#498ba6">02 · 机制</p><p style="font-size:18px;color:#143f59">${keyPoints[1] ?? "关键机制"}</p>`, textType: "content", lineHeight: 1.5 },
-        { type: "line", left: 330, top: 300, width: 3, start: [0, 0], end: [42, 0], style: "solid", color: "#498ba6", points: ["", "arrow"] },
-        { type: "code", left: 662, top: 188, width: 278, height: 230, language: "typescript", fileName: "lesson.ts", showLineNumbers: true, fontSize: 14, lines: ["const input = modelOutput;", "const slide = schema.parse(input);", "return render(slide);"] },
-        { type: "text", left: 82, top: 456, width: 850, height: 50, content: `<p style="font-size:18px;color:#143f59"><strong>结论：</strong>${keyPoints[2] ?? "把概念、机制与实践边界连接起来"}</p>`, textType: "notes", vAlign: "middle" },
+        { type: "shape", left: 56, top: 48, width: 10, height: 70, pathFormula: "rect", fill: accent },
+        { type: "text", left: 82, top: 48, width: 850, height: 70, content: `<p style="font-size:34px;font-weight:bold;color:${fontColor}">${title}</p>`, textType: "title", vAlign: "middle" },
+        { type: "text", left: 82, top: 122, width: 760, height: 44, content: `<p style="font-size:17px;color:${soft}">${topic} · 从问题到可执行理解</p>`, textType: "subtitle" },
+        ...hookElements,
+        ...rightVisual,
+        ...hookNotes,
       ],
     },
     narration: `现在进入${title}。请先建立问题背景，再理解关键机制，最后联系实际应用。`,

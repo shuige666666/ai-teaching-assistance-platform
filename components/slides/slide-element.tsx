@@ -3,9 +3,11 @@ import type {
   PPTElement,
   PPTLineElement,
   PPTShapeElement,
+  PPTTableElement,
   PPTTextElement,
   SlideTheme,
 } from "@/lib/domain/slide-schemas";
+import { SlideChart } from "./slide-chart";
 import styles from "./slide-canvas.module.css";
 
 function TextElement({ element }: { element: PPTTextElement }) {
@@ -32,6 +34,11 @@ function TextElement({ element }: { element: PPTTextElement }) {
 }
 
 function ShapeElement({ element }: { element: PPTShapeElement }) {
+  const gradientId = `shape-gradient-${element.id}`;
+  const fill = element.gradient ? `url(#${gradientId})` : element.fill;
+  const gradientStops = element.gradient
+    ? [...element.gradient.colors].sort((a, b) => a.pos - b.pos)
+    : [];
   return (
     <div
       className={styles.box}
@@ -42,9 +49,26 @@ function ShapeElement({ element }: { element: PPTShapeElement }) {
       }}
     >
       <svg className={styles.shape} viewBox={`0 0 ${element.viewBox[0]} ${element.viewBox[1]}`} preserveAspectRatio={element.fixedRatio ? "xMidYMid meet" : "none"} aria-hidden="true">
+        {element.gradient && (
+          <defs>
+            {element.gradient.type === "linear" ? (
+              <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0" gradientTransform={`rotate(${element.gradient.rotate} 0.5 0.5)`}>
+                {gradientStops.map((stop, index) => (
+                  <stop key={`${stop.pos}-${index}`} offset={`${stop.pos}%`} stopColor={stop.color} />
+                ))}
+              </linearGradient>
+            ) : (
+              <radialGradient id={gradientId}>
+                {gradientStops.map((stop, index) => (
+                  <stop key={`${stop.pos}-${index}`} offset={`${stop.pos}%`} stopColor={stop.color} />
+                ))}
+              </radialGradient>
+            )}
+          </defs>
+        )}
         <path
           d={element.path}
-          fill={element.fill}
+          fill={fill}
           stroke={element.outline?.color ?? "none"}
           strokeWidth={element.outline?.width ?? 0}
           strokeDasharray={element.outline?.style === "dashed" ? "8 6" : element.outline?.style === "dotted" ? "2 5" : undefined}
@@ -126,6 +150,46 @@ function CodeElement({ element }: { element: PPTCodeElement }) {
   );
 }
 
+function TableElement({ element }: { element: PPTTableElement }) {
+  const totalWidth = element.colWidths.reduce((sum, width) => sum + width, 0) || 1;
+  const [headRow, ...dataRows] = element.rows;
+  return (
+    <div
+      className={styles.box}
+      data-element-type="table"
+      style={{
+        left: element.left, top: element.top, width: element.width, height: element.height,
+        transform: `rotate(${element.rotate}deg)`,
+        borderColor: element.outline?.color,
+        borderStyle: element.outline && element.outline.width > 0 ? "solid" : undefined,
+        borderWidth: element.outline?.width,
+      }}
+    >
+      <table className={styles.table}>
+        <colgroup>
+          {element.colWidths.map((width, index) => (
+            <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />
+          ))}
+        </colgroup>
+        {element.header && (
+          <thead>
+            <tr>
+              {headRow.map((cell, index) => <th key={index}>{cell}</th>)}
+            </tr>
+          </thead>
+        )}
+        <tbody>
+          {(element.header ? dataRows : element.rows).map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function SlideElement({ element, index, theme }: { element: PPTElement; index: number; theme: SlideTheme }) {
   let content;
   switch (element.type) {
@@ -133,6 +197,8 @@ export function SlideElement({ element, index, theme }: { element: PPTElement; i
     case "shape": content = <ShapeElement element={element} />; break;
     case "line": content = <LineElement element={element} />; break;
     case "code": content = <CodeElement element={element} />; break;
+    case "chart": content = <SlideChart element={element} />; break;
+    case "table": content = <TableElement element={element} />; break;
     default:
       content = <div className={styles.fallback}>该幻灯片元素暂时无法显示</div>;
   }

@@ -28,6 +28,25 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 ## 2. 已实现内容
 
+### slide 视觉升级 v2.2：图表、表格、主题与量化排版（2026-09-05）
+
+对照 OpenMAIC 固定提交的 slide Prompt 做差距分析后，确认页面单调来自四层叠加：Prompt 缺量化排版规则与整页示例、元素只有四类、全局单一色板、生成参数保守。本次升级在不改变 Course v5 结构和 quiz/interactive 链路的前提下完成：
+
+- **Prompt v2.2**：移植 OpenMAIC 的文字宽度容量公式、字号×行数高度查表（强制查表）、对齐公式与“对称元素数值完全相同”、间距标准、三种装饰线配方（标题下划线/章节分割线/文字侧竖条）、输出前 12 项自检清单和一个完整整页 few-shot 示例；按 `SceneOutline.role`（hook/concept/mechanism/worked_example/practice/summary）给出六种版式骨架分支与两栏/三栏精确参数。User Prompt 注入本场主题 JSON，并删除“JSON 应明显短于输出上限”的过度压缩引导。
+- **元素扩展**：`slide-schemas` 新增 `chart`（bar/column/line/pie，模型只输出 labels/series 数据，ECharts SVG 渲染、动画关闭、初始化失败降级为文字摘要）与 `table`（colWidths 比例 + 纯文本 rows，首行表头）两类元素；shape 支持 `gradient` 渐变填充和 `pathFormula` 预设（rect/roundRect/circle/triangle/diamond/rightArrow，规范化阶段在服务端解析为具体 path，渲染器仍只认 path）。
+- **主题预设**：`lib/slides/theme-presets.ts` 定义三套主题（学术蓝青/经典蓝橙/淡彩清新）。经典蓝橙逐字取自 OpenMAIC 固定提交的 `lib/edit/slide-defaults.ts` 默认主题，淡彩清新取自其 slide Prompt 卡片示例的淡彩底色与配套深字；按 courseId FNV-1a 哈希确定性选择，同一课程所有场景共用一套。mock 适配器的 slide fixture 同样解析 User Prompt 中的本场主题 JSON 并使用主题色，保证 mock 回归覆盖各主题的真实渲染。默认主题与历史版本一致，存量课程场景不受影响。
+- **规范化**：`normalize-slide.ts` 接收 chart/table 并做数据收口（labels 非空、values 强转数字且与 labels 等长、pie 只保留第一组系列、表格单元格净化并补齐列宽），pathFormula 解析与主题注入在服务端完成；既有安全边界（≤40 元素、坐标裁剪、富文本净化、无标题兜底）不变。
+
+验证：`pnpm lint`、`pnpm test`（150，含新增 16 个图表/表格/主题/形状预设用例）、`pnpm test:db`（18）、`pnpm build`、`pnpm test:e2e`（mock 回归覆盖 chart/table/渐变圆角卡片/代码块渲染）全部通过；mock 服务真实浏览器截图确认 ECharts 图表、表格与渐变卡片位置和样式正确（`scripts/slide-visual-check.mjs`，输出 `output/slide-visual-check/`）。DeepSeek 真实生成首轮结果与后续迭代见下节；`ready` 仍只代表生成保存完成。
+
+### 大纲级可视化规划 v2.3/v2.4（2026-09-05，真实 smoke 迭代）
+
+`scripts/deepseek-slide-smoke.mjs` 首轮真实 DeepSeek 生成（《四种后端语言性能与生态对比》，5 场全部一次通过、0 修复、单场约 8s）证实：主题配色、装饰线配方、角色版式骨架均被模型遵循，但 4 张 slide 全部只有 shape+text——chart/table/渐变/line/code 零使用，worked_example 的演示位被文字卡片代替。对照 OpenMAIC 源码定位到机制差异：上游在**大纲阶段**（requirements-to-outlines 的 Special Element Design Guidelines）就用触发式指令让大纲模型把 `[Chart]`/`[Table]` 标记（含图表类型、维度、数据范围）写进 slide 页 keyPoints，keyPoints 原样透传给场景阶段执行；其 slide prompt 的 chart/table 章节反而只是纯 schema 参考。本项目 v2.2 只改了场景 prompt，大纲要点里没有任何可视化信号，与上游机制不符。
+
+本轮按上游机制完成两级改造：`outline.v2.4` 在大纲 prompt 中加入标记约定（内容含可比较数字/趋势→[Chart]，≥3 行×2 列属性对比→[Table]，每页最多 1 个、仅限 slide 页）；`scene-slide.v2.3` 增加标记执行规则、图表类型选择指导（趋势 line/类别对比 column/占比 pie/长类别 bar）、worked_example 演示位必须 code/chart、mechanism 必须 line 连线的硬性要求，并新增含 chart 演示位的 worked_example 整页 few-shot。keyPoints 单条上限 160 字符足以承载标记，schema 无需变更，透传链路（keyPoints 原样进入场景 user prompt）沿用既有实现。
+
+第二轮真实 smoke（《四种后端语言》同主题重跑）确认机制生效：concept 页出现 5 行 × 4 列真实 table，worked_example 页出现 column chart + 渐变卡片，全部一次通过、0 修复（证据已按 eval 惯例归档为 MHTML：`eval/runs/slide-v2.2-first-smoke/`、`slide-v2.3-marker-smoke/`、`slide-v2.3-tcp-line-issue/`、`slide-v2.4-tcp-smoke/`，两门课程保留在库中可对照）。随后用户自建课程（《TCP 拥塞控制》）暴露 v2.3 连线硬要求的执行工艺缺陷：mechanism 页语义正确地画了流程连线，但模型用"20px 短线 + 80×3 色条"拼接连接线，箭镞落在连接线中段指向色条而非节点边缘，且线（y=200）与色条（y=195）错位 5px（几何证据见 `eval/runs/slide-quality-audit/2026-09-05/`，审计脚本 `scripts/layout-audit.mjs`，批量连线审计 `scripts/line-craft-batch.mjs`，课程归档工具 `scripts/archive-course-to-eval.mjs`）。`scene-slide.v2.4` 据此修订：连线要求改为按内容关系条件触发（流程/因果→必须连线；并列/分类→分组卡片、不应画线），并加入连线工艺规范（从上一节点边缘到下一节点边缘、两端留 4～8px、单根长度 ≥40px、一条连接只用一根 line、禁止 shape 色条拼接、同排连线 y 对齐）。
+
 ### M10 ready 单场景再生成与新版 slide 验收（修订能力 2026-09-01；需求验收 2026-09-02）
 
 课堂调度台已向 ready slide/interactive/quiz 提供“修订本场”，要求填写 500 字以内意见并调用独立 `/revise`；降级页调用 `/regenerate` 干净重生成失败互动。只有修订会把当前旧场景作为不可信参考发送给模型，interactive 会先剥离平台 Runtime/CSP；降级重生成只发送错误背景。两条路径都按原大纲、Brief 与当前类型 Prompt 生成完整候选，成功提交才替换本场；失败保留旧场景及其他内容。不重做大纲、不重生成整课、不自动反复调用模型，也不实现编辑器。

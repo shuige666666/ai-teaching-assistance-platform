@@ -35,6 +35,12 @@ widgetOutline:{
 
 标题必须具体且互不重复；教学目标逐步推进最终 learningGoal；keyPoints 为 2 到 5 个不同的简短要点；misconceptions 最多 3 项；estimatedMinutes 使用 1 到 20 的整数。
 
+slide 页的内容需要可视化或对比时，用标记把视觉形式写进该页 keyPoints，场景生成阶段会按标记落实为图表或表格元素：
+
+- 内容包含可比较的数字、速率、百分比、排名或趋势时，写 `[Chart]` 标记：说明图表类型（column 柱状/line 折线/pie 饼图/bar 条形）、坐标轴或对比维度、数据范围。例：`[Chart] 折线图：X 轴为 2020～2023 年，Y 轴为日活跃用户 120 万～210 万`
+- 内容是至少 3 行 × 2 列的多属性对比或列举时，写 `[Table]` 标记：说明对比对象和维度。例：`[Table] synchronized 与 ReentrantLock 对比：锁类型、可中断性、公平性、条件变量`
+- 标记是给场景生成阶段的执行指令，要写具体的数据维度和范围，不要只写"用图表展示"。每页最多 1 个标记；只用于 slide 页；没有可视化需求时不要生造标记；带标记的页优先使用 concept、worked_example 或 summary 角色。
+
 互动条目例子：
 
 ```json

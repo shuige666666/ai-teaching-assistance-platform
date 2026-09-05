@@ -2,7 +2,12 @@ import type { CourseBrief, CourseBriefResolution } from "@/lib/domain/schemas";
 import { createDefaultCourseBrief, readExplicitBriefOverrides } from "@/lib/domain/course-brief";
 import { loadPromptTemplate } from "./loader";
 
-export const OUTLINE_PROMPT_VERSION = "outline.v2.3";
+/**
+ * v2.4 移植 OpenMAIC requirements-to-outlines 模板（固定提交 59adbef0，MIT）的
+ * "Special Element Design Guidelines"：大纲阶段用 [Chart]/[Table] 标记把可视化
+ * 需求规划进 slide 页 keyPoints，随 keyPoints 透传给场景生成阶段执行。
+ */
+export const OUTLINE_PROMPT_VERSION = "outline.v2.4";
 
 export const OUTLINE_SYSTEM_PROMPT = loadPromptTemplate("outline-generation-system");
 

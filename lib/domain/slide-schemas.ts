@@ -26,15 +26,17 @@ const GradientColorSchema = z.object({
   color: SlideColorSchema,
 }).strict();
 
+export const SlideGradientSchema = z.object({
+  type: z.enum(["linear", "radial"]),
+  rotate: z.number().finite().min(-360).max(360),
+  colors: z.array(GradientColorSchema).min(2).max(8),
+}).strict();
+
 export const SlideBackgroundSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("solid"), color: SlideColorSchema }).strict(),
   z.object({
     type: z.literal("gradient"),
-    gradient: z.object({
-      type: z.enum(["linear", "radial"]),
-      rotate: z.number().finite().min(-360).max(360),
-      colors: z.array(GradientColorSchema).min(2).max(8),
-    }).strict(),
+    gradient: SlideGradientSchema,
   }).strict(),
 ]);
 
@@ -64,6 +66,7 @@ export const PPTShapeElementSchema = PPTBaseElementSchema.extend({
   path: z.string().trim().min(1).max(4_000),
   viewBox: z.tuple([z.number().finite().positive(), z.number().finite().positive()]),
   fill: SlideColorSchema,
+  gradient: SlideGradientSchema.optional(),
   fixedRatio: z.boolean(),
   outline: SlideElementOutlineSchema.optional(),
 }).strict();
@@ -96,11 +99,36 @@ export const PPTCodeElementSchema = PPTBaseElementSchema.extend({
   fontSize: z.number().finite().min(10).max(32),
 }).strict();
 
+const ChartSeriesSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  values: z.array(z.number().finite()).min(1).max(8),
+}).strict();
+
+export const PPTChartElementSchema = PPTBaseElementSchema.extend({
+  type: z.literal("chart"),
+  chartType: z.enum(["bar", "column", "line", "pie"]),
+  data: z.object({
+    labels: z.array(z.string().trim().min(1).max(30)).min(2).max(8),
+    series: z.array(ChartSeriesSchema).min(1).max(3),
+  }).strict(),
+  themeColors: z.array(SlideColorSchema).min(1).max(12).optional(),
+}).strict();
+
+export const PPTTableElementSchema = PPTBaseElementSchema.extend({
+  type: z.literal("table"),
+  colWidths: z.array(z.number().finite().positive()).min(1).max(6),
+  rows: z.array(z.array(z.string().max(60)).min(1)).min(2).max(7),
+  header: z.boolean(),
+  outline: SlideElementOutlineSchema.optional(),
+}).strict();
+
 export const PPTElementSchema = z.discriminatedUnion("type", [
   PPTTextElementSchema,
   PPTShapeElementSchema,
   PPTLineElementSchema,
   PPTCodeElementSchema,
+  PPTChartElementSchema,
+  PPTTableElementSchema,
 ]);
 
 export const SlideSchema = z.object({
@@ -125,6 +153,8 @@ export type PPTTextElement = z.infer<typeof PPTTextElementSchema>;
 export type PPTShapeElement = z.infer<typeof PPTShapeElementSchema>;
 export type PPTLineElement = z.infer<typeof PPTLineElementSchema>;
 export type PPTCodeElement = z.infer<typeof PPTCodeElementSchema>;
+export type PPTChartElement = z.infer<typeof PPTChartElementSchema>;
+export type PPTTableElement = z.infer<typeof PPTTableElementSchema>;
 export type PPTElement = z.infer<typeof PPTElementSchema>;
 export type Slide = z.infer<typeof SlideSchema>;
 export type CanvasSlideContent = z.infer<typeof CanvasSlideContentSchema>;

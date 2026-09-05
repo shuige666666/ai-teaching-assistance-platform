@@ -198,7 +198,7 @@ v0.4 的“完成”以 M10 退出为准，同时要求产品链路、画布实�
 | AC-Q01 | CourseBrief 按“显式设置 > Prompt > 默认值”解析，字段来源、警告和大纲可从 MySQL 同 revision 恢复 | Schema + API + MySQL 集成 |
 | AC-Q02 | v4 课程读取时自动转换 Quiz 正确答案并可在下次保存时落成 v5；v1～v3 仍保留但隐藏，按 ID 访问明确拒绝 | 升级 fixture + MySQL 集成 |
 | AC-Q03 | outline.v2 在同一次正常调用中解析描述并生成大纲；场景 Prompt 实际使用已保存的受众、目标、时长、风格和课程记忆 | Prompt golden + 调用计数 + 生成测试 |
-| AC-Q04 | 新 `content.canvas` 只包含允许的 `text/shape/line/code`，经轻量规范化和 text 净化后可从 MySQL 恢复，并在 `1280×720` 及更大桌面视口由只读 SlideCanvas 渲染；坏元素不会造成白屏 | Schema + normalize + 组件测试 + 3 个真实主题 MHTML + 桌面 E2E |
+| AC-Q04 | 新 `content.canvas` 只包含允许的 `text/shape/line/code/chart/table`（v2.2 起含图表与表格），经轻量规范化和 text 净化后可从 MySQL 恢复，并在 `1280×720` 及更大桌面视口由只读 SlideCanvas 渲染；坏元素不会造成白屏 | Schema + normalize + 组件测试 + 3 个真实主题 MHTML + 桌面 E2E |
 | AC-Q05 | `interactionMode=required` 按4/5～6/7～8场景分别安排1/1～2/1～3个互动 | Schema + API 集成 |
 | AC-Q06 | 互动 HTML 经过大小、自包含、外部依赖和最小协议检查后才能持久化 | validator 测试 |
 | AC-Q07 | iframe 无 `allow-same-origin`，允许受 CSP 约束的 HTTPS 外部依赖并提示敏感数据风险，正确处理 ready/reset/completed/error | 安全测试 + Playwright |

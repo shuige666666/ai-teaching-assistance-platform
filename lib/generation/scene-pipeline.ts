@@ -115,7 +115,7 @@ export async function generateScene(
   let output;
   let repaired = false;
   try {
-    output = validateSceneOutput(parseSceneResponse(first.text, input.outline), input.outline);
+    output = validateSceneOutput(parseSceneResponse(first.text, input.outline), input.outline, input.course.id);
   } catch (error) {
     // 保留公共 JSON 解析器的固定诊断，不把解析失败压缩成无信息的场景错误。
     const invalid = error instanceof InvalidSceneError ? error : new InvalidSceneError(
@@ -135,7 +135,7 @@ export async function generateScene(
     const repair = await callAI({ stage: "repair", systemPrompt: input.outline.type === "interactive" ? `${systemPrompt}\n请修正报错，重新返回一份完整 HTML，保留原教学意图。` : SCENE_REPAIR_SYSTEM_PROMPT, userPrompt: buildSceneRepairPrompt(userPrompt, first.text, invalid.issues) });
     repaired = true;
     try {
-      output = validateSceneOutput(parseSceneResponse(repair.text, input.outline), input.outline);
+      output = validateSceneOutput(parseSceneResponse(repair.text, input.outline), input.outline, input.course.id);
     } catch (repairError) {
       const finalError = repairError instanceof InvalidSceneError ? repairError : invalid;
       writeServerEvent("error", "scene.repair.failed", {

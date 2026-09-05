@@ -62,7 +62,7 @@ describe("MySQLCourseRepository integration", () => {
     const recovered = await new MySQLCourseRepository(pool).get(draft.id);
     expect(course).toMatchObject({ status: "ready", revision: 10 });
     expect(recovered?.scenes.map((scene) => scene.type)).toEqual(["slide", "slide", "slide", "quiz"]);
-    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2.1", "scene-slide.v2.1", "scene-slide.v2.1", "scene-quiz.v2"]);
+    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2.4", "scene-slide.v2.4", "scene-slide.v2.4", "scene-quiz.v2"]);
   });
 
   it("互动 HTML、fallback 和生成元数据可从 MySQL 完整恢复", async () => {

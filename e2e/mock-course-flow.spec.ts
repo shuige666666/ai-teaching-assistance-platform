@@ -67,7 +67,8 @@ test("mock 课程从创建、互动、测验到刷新恢复", async ({ page, req
     const slideCanvas = page.getByTestId("slide-canvas");
     await expect(slideCanvas).toBeVisible();
     await expect(slideCanvas.locator('[data-text-type="title"]')).toContainText(topic);
-    for (const elementType of ["text", "shape", "line", "code"]) {
+    // hook 场覆盖 text/shape(圆角+渐变)/table/chart 渲染。
+    for (const elementType of ["text", "shape", "table", "chart"]) {
       await expect(slideCanvas.locator(`[data-element-type="${elementType}"]`).first()).toBeVisible();
     }
     const slideBox = await slideCanvas.boundingBox();
@@ -81,6 +82,13 @@ test("mock 课程从创建、互动、测验到刷新恢复", async ({ page, req
     await expect(resume).toBeVisible();
     await resume.click();
     await expect(pause).toBeVisible();
+
+    // mechanism 场覆盖连线与代码块渲染。
+    await page.getByRole("button", { name: /打开场景 2/ }).click();
+    await expect(slideCanvas.locator('[data-text-type="title"]')).toContainText("拆解核心机制");
+    for (const elementType of ["line", "code"]) {
+      await expect(slideCanvas.locator(`[data-element-type="${elementType}"]`).first()).toBeVisible();
+    }
 
     await page.getByRole("button", { name: /打开场景 3/ }).click();
     const interactiveHost = page.getByTestId("interactive-host");

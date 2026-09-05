@@ -13,6 +13,24 @@ CourseBrief、SceneOutline、本项目的四类元素契约、MySQL 生成元数
 Slide/PPTElement、规范化和只读渲染的职责划分参考了同一提交中的 DSL、生成器与
 Renderer，但由本项目按毕业设计范围重新实现。
 
+`scene-slide.v2.2`（2026-09-05 视觉升级）进一步从同一提交的 `slide-content/system.md`
+移植了量化排版规则（文字宽度容量估算、字号×行数高度查表、对齐公式、间距标准、
+对称元素数值一致）、三种装饰线配方（标题下划线、章节分割线、文字侧竖条）、
+输出前自检清单与一个整页 few-shot 示例的结构；chart/table 数据元素、主题预设体系、
+shape 渐变与 pathFormula 形状预设、按场景角色的版式分支为本项目自研扩展，
+非上游内容的复制。
+
+主题预设中的颜色来源：`经典蓝橙` 的 themeColors、fontColor 与 outline 逐字取自
+同一提交的 `lib/edit/slide-defaults.ts` DEFAULT_THEME；`淡彩清新` 的卡片底色与
+配套深色文字（#dbeafe/#dcfce7/#fef3c7/#e8f4fd 配 #1e40af/#166534/#92400e/#333333）
+取自同一提交 `slide-content/system.md` 中的卡片示例。`学术蓝青` 为本项目原有色板。
+
+`outline.v2.4` 的 [Chart]/[Table] 可视化标记约定（大纲阶段把图表/表格需求写入
+slide 页 keyPoints，经 keyPoints 透传给场景阶段执行）移植自同一提交
+`packages/@openmaic/generation/templates/requirements-to-outlines/system.md` 的
+"Special Element Design Guidelines"（93-122 行）；标记示例按本项目四种图表类型
+（bar/column/line/pie）改写。
+
 OpenMAIC is licensed under the MIT License:
 M9 的 `scene-interactive.v2` 裁剪自上述提交的
 `packages/@openmaic/generation/templates/` 下 `diagram-content`、`simulation-content`、

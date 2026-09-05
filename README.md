@@ -13,6 +13,8 @@
 
 ## 当前状态
 
+2026-09-05 slide 视觉升级：slide Prompt 升级为 `scene-slide.v2.4`、大纲 Prompt 升级为 `outline.v2.4`，移植 OpenMAIC 的量化排版规则（文字宽度容量、字号×行数高度查表、对齐公式、间距标准）、三种装饰线配方、整页 few-shot 示例和输出前自检清单，并按大纲角色（hook/concept/mechanism/worked_example/practice/summary）提供版式骨架分支。元素在 `text/shape/line/code` 基础上新增 `chart`（bar/column/line/pie，模型只输出数据，ECharts SVG 渲染）与 `table`（纯文本行 + 列宽比例）；shape 支持渐变填充和 pathFormula 圆角/箭头等形状预设（服务端解析）。三套主题色板按 courseId 确定性选择（学术蓝青为项目原有色板，经典蓝橙与淡彩清新取自 OpenMAIC 默认主题与 Prompt 示例配色），同一课程共用一套视觉。可视化采用 OpenMAIC 同款两级机制：大纲阶段把 [Chart]/[Table] 标记写入 slide 页 keyPoints，场景阶段按标记生成真实元素（真实 smoke 首轮发现仅靠 slide prompt 指令模型不会主动用图表，故移植大纲级规划）；mechanism 页连线按内容关系条件触发并附工艺规范（边到边、长度 ≥40px、禁止色条拼接）。历史课程与旧场景完全兼容；不需要数据库迁移。验证见 docs/07，浏览器截图核对脚本见 `scripts/slide-visual-check.mjs`，真实生成冒烟脚本见 `scripts/deepseek-slide-smoke.mjs`。
+
 2026-08-31 互动扩展：支持关系探索、过程模拟、互动挑战和 Python/JavaScript 编程实验；分类不锁死玩法。大纲页可改互动类型与设计意图。资源策略改为允许 CDN/联网、保留无同源权限 iframe；不要在互动页输入敏感数据。课堂展示使用最大可用 16:9 视口，Prompt 提供三种可改写布局骨架以及 SVG/Canvas/reset 示例；独立 HTML 下载仍保持自身自适应。请运行 `pnpm db:migrate` 应用 003 场景数量修复与 004 Quiz 多选作答迁移。详见 09 第 6 节。
 
 互动稳定性补充：新生成使用 `scene-<type>.v2.3`，Canvas 尺寸与绘制分离，补齐数值输入、游戏失败与重置示例。ResizeObserver 循环与未处理异常都会停止 iframe 并降级，新桥接保留行列和初始化错误重放。降级区可由用户点击“重新生成本场互动”，成功才替换这一场，失败保留原内容；“重新加载原脚本”不调用模型。课程 `ready` 只代表生成保存完成，不代表全部玩法已验收。
@@ -73,7 +75,7 @@ app/
   api/health/config/             # [M6 已实现] 当前 AI 档位的无密钥配置检查
 components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
-  slides/                        # [M8 已实现] 只读 SlideCanvas 与 text/shape/line/code Renderer
+  slides/                        # [M8 已实现，v2.2 扩展] 只读 SlideCanvas 与 text/shape/line/code/chart/table Renderer
   interactive/                   # [M9 已实现] sandbox iframe 宿主与消息桥
   editor/                        # [M11 可选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
@@ -85,7 +87,7 @@ lib/
   generation/                    # [M7.1 已实现] outline.v2、解析、服务端复算、修复、预算与受限重试
   playback/                      # [M5 已实现] 播放 reducer、Action executor 与语音适配器
   quality/                       # [M7 历史/可选] 固定主题与离线汇总工具
-  slides/                        # [M8 已实现] Slide/PPTElement、规范化与富文本净化
+  slides/                        # [M8 已实现，v2.2 扩展] Slide/PPTElement、规范化、富文本净化、主题预设与形状解析
   interactive/                   # [M9 已实现] HTML 校验、CSP patch、运行协议与布局 Prompt 骨架
   export/                        # [M12 可选] Slide/PPTElement → PPTX 与简单 ZIP 打包
 migrations/                      # [M2 已实现] 版本化 SQL 迁移

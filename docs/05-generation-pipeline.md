@@ -4,7 +4,7 @@
 > 前置文档：[03-architecture.md](03-architecture.md)、[04-domain-model.md](04-domain-model.md)  
 > 核心原则：模型输出先经过不可信边界，再进入领域装配和持久化。
 
-> 实现状态（2026-09-01）：outline.v2.3、scene-slide.v2.1、scene-quiz.v2 与 scene-diagram/simulation/game/code.v2.3 已接入正式路径。quiz 支持单选和多选，答案统一为索引/ID 数组并采用完全匹配判分；人工编辑题目不调用模型。
+> 实现状态（2026-09-05）：outline.v2.4、scene-slide.v2.4、scene-quiz.v2 与 scene-diagram/simulation/game/code.v2.3 已接入正式路径。scene-slide.v2.2 在四类元素基础上新增 chart/table 数据元素、shape 渐变与 pathFormula 预设、按 courseId 确定性选择的主题预设，并移植 OpenMAIC 的量化排版规则、装饰线配方、整页示例与输出前自检清单。v2.3/v2.4 进一步移植上游 requirements-to-outlines 的可视化规划机制：大纲阶段用 [Chart]/[Table] 标记把图表/表格需求写入 slide 页 keyPoints，场景阶段按标记落实为真实元素；v2.4 同时把 mechanism 页的连线要求改为按内容关系条件触发，并增加连线工艺规范（边到边、长度下限、禁止色条拼接）。quiz 支持单选和多选，答案统一为索引/ID 数组并采用完全匹配判分；人工编辑题目不调用模型。
 
 ## 1. 设计结论
 
@@ -437,7 +437,7 @@ export interface OutlineGenerationV2DTO {
 
 原始 topic 在 User Prompt 中使用清晰的数据边界和 JSON 转义传入。描述中即使包含“忽略此前规则”等文本，也只是课程需求数据，不能改变 System Prompt、字段优先级、输出 Schema、安全门或调用预算。Prompt 边界降低误遵循风险，严格解析、服务端复算和领域校验才是最终约束。
 
-大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定版式强加给所有主题。`scene-slide.v2` 由 OpenMAIC `slide-content` Prompt 裁剪而来，明确“页面是视觉提示，不是讲稿”，细节进入 narration；模型返回完整 `{type, content, narration, summary}` 外壳，其中 content 只有背景和带坐标的 `text/shape/line/code`。服务端过滤、补默认值、净化文本、分配 id 并装配 Slide；quiz.v1 继续生成可机械验证的答案与解析。
+大纲内容应先围绕 resolved learningGoal 安排 hook、概念/机制、案例或练习和评估，但不能把固定版式强加给所有主题。`scene-slide.v2` 由 OpenMAIC `slide-content` Prompt 裁剪而来，明确“页面是视觉提示，不是讲稿”，细节进入 narration；模型返回完整 `{type, content, narration, summary}` 外壳，其中 content 只有背景和带坐标的 `text/shape/line/code/chart/table`。v2.2 起按 SceneOutline.role 提供版式骨架分支，并强制文本框高度查表、宽度容量估算、对齐公式和对称元素数值一致；chart/table 只允许模型输出数据（labels/series/rows），绘制由固定渲染器完成。User Prompt 注入按 courseId 确定性选择的本场主题 JSON，模型颜色只允许来自该主题；服务端过滤、补默认值、净化文本、解析 pathFormula、分配 id、写入同一主题并装配 Slide；quiz.v1 继续生成可机械验证的答案与解析。
 
 互动按 widgetType 分流 Prompt，直接输出 HTML 而不是转义到 JSON 字符串；适配器不发送 JSON response_format。head 中 scene-meta 保存 narration/summary/fallback，缺省时从大纲取得纯文本替代内容。服务端提取元数据、检查完整文档与 256 KiB 大小、注入 CSP/InteractiveRuntime，再装配 Scene。允许 CDN，保留无同源 iframe 隔离；Prompt 不是安全证明。code 使用可终止 Worker 执行 Python/JavaScript。`scene-interactive.v2` 还会从 `lib/interactive/layout-templates.ts` 注入三种可改写布局骨架及 SVG/Canvas/reset 示例，并要求新脚本以课堂 16:9 单屏可见为首要约束，避免 `100vh` 和未约束高度把完成控件推出视口；课堂展示层固定最大 16:9 视口，独立 HTML 仍按自身 CSS 自适应。详细边界以 docs/09 第6节为准。
 

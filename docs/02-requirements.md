@@ -171,7 +171,7 @@ MVP 只有一个逻辑参与者：本地用户。
 | 编号 | 需求 |
 |---|---|
 | FR-301 | SceneRenderer 必须使用 scene.type 分派固定 React 组件。 |
-| FR-302 | slide 必须支持标题、段落、要点列表、提示块和静态代码块。 |
+| FR-302 | slide 必须支持标题、段落、要点列表、提示块、静态代码块，以及数据图表（bar/column/line/pie）和数据对比表格。 |
 | FR-303 | 代码块必须转义显示，支持 language、code 和可选 caption，不允许执行代码。 |
 | FR-304 | quiz 首版只支持单选题，每题必须有 2～4 个选项。 |
 | FR-305 | 未知场景类型或不匹配 content 不能导致白屏，必须显示可诊断错误。 |
@@ -252,14 +252,15 @@ MVP 只有一个逻辑参与者：本地用户。
 | 编号 | 需求 |
 |---|---|
 | FR-Q201 | 新生成 slide 必须在 `content.canvas` 中保存与 OpenMAIC 同构的 `Slide`：`viewportSize=1000`、`viewportRatio=0.5625`、背景、主题和带稳定 id 的绝对坐标元素。这里的 canvas 是逻辑坐标容器，不是 HTML `<canvas>`。 |
-| FR-Q202 | M8 首版只支持 `text/shape/line/code` 四类 PPTElement。模型可以直接返回 left、top、width、height、rotate 和样式，但不能控制元素 id、Course/Scene 标识、状态、revision 或 Action。 |
-| FR-Q203 | `scene-slide.v2` 应从 OpenMAIC 的 `slide-content` Prompt 裁剪：保留 1000 × 562.5 画布、对齐、留白、字号、视觉层级和“幻灯片不是讲稿”等规则，删除图片、视频、图表、复杂公式及其他未实现元素。 |
+| FR-Q202 | 新生成 slide 支持 `text/shape/line/code/chart/table` 六类 PPTElement（slide Prompt v2.2 起扩展 chart/table，shape 增加渐变填充；历史四类元素保持完全兼容）。模型可以直接返回 left、top、width、height、rotate 和样式，但不能控制元素 id、Course/Scene 标识、状态、revision 或 Action。 |
+| FR-Q203 | `scene-slide.v2` 应从 OpenMAIC 的 `slide-content` Prompt 裁剪：保留 1000 × 562.5 画布、对齐、留白、字号、视觉层级和“幻灯片不是讲稿”等规则，删除图片、视频和 LaTeX 公式等媒体元素；v2.2 起图表与表格以受限数据契约重新引入——模型只输出 labels/series/rows 等数据，绘制由固定渲染器完成。 |
 | FR-Q204 | 通用只读 SlideCanvas 必须在 `1280×720` 及更大桌面视口等比缩放 16:9 逻辑画布并完整展示主要内容；M8～M10 不要求为移动端、平板或窄屏实现专门重排。 |
 | FR-Q205 | `content.canvas` 是当前 Course v5 的唯一 slide 表达；v4 课程只对 Quiz 的 `correctOptionId` 执行无损读取升级，v1～v3 保留但隐藏并明确拒绝。未知或损坏的模型元素应在规范化时局部丢弃，不能导致整个课堂白屏。 |
 | FR-Q206 | 服务端必须对模型元素执行轻量规范化：过滤未支持类型，补齐必要默认值，拒绝非有限坐标、非正尺寸和关键字段缺失，净化 text 富文本，并为保留元素分配 id；若最终元素为空则按场景生成失败处理。 |
 | FR-Q207 | 展示字体只用于短标题或关键结论，关键正文和要点使用无衬线字体且不得低于 16px 等效字号；不能靠缩小、隐藏、画布外元素或内部滚动规避内容超载。 |
 | FR-Q208 | M8 使用 3 个代表主题做 DeepSeek 真实生成，并以固定桌面视口 MHTML 供人工检查标题、正文、视觉关系和留白；不建立 PNG 档案或自动美学评分。 |
 | FR-Q209 | 浏览器测试证明 16:9 等比缩放、`text/shape/line/code` 可渲染、主要内容没有被容器裁掉；移动端和窄屏视觉档案不属于 M8～M10 硬门。 |
+| FR-Q210 | 新生成 slide 的颜色只能来自按 courseId 确定性选择的主题预设（slide Prompt v2.2 起）：User Prompt 注入本场主题 JSON，服务端把同一主题写入 `content.canvas.theme`；历史课程继续使用已存主题，模型不得自选主题外颜色。 |
 | FR-Q210 | Course v4 slide 只采用 `content.canvas` 下的 PPT 式 `Slide/PPTElement` 表达；系统不同时提供新的类 Markdown、纵向讲义或同课第二套 Renderer，旧 block 路径不再读取。 |
 | FR-Q211 | PPT 式页面必须执行统一视觉基线：四周安全边距、短标题与副标题层级、可选标题强调线、等宽卡片/步骤、稳定列间距和简洁要点；页面外层阴影与圆角只属于 Web 播放 chrome，不写入导出画布。 |
 | FR-Q212 | 每张 slide 必须在 PPT 画布内包含一个 `textType=title` 标题；网页外层只保留场景编号等元信息，不能把未来导出所需标题放在画布外。 |

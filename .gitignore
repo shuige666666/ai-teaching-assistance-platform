@@ -12,7 +12,7 @@
 
 # testing
 /coverage
-/output/playwright/
+/output/
 /.playwright-cli/
 /eval/runs/
 /eval/.tmp/

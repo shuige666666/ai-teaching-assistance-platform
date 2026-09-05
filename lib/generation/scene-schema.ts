@@ -10,6 +10,7 @@ import {
   normalizeGeneratedSlideScene,
   type NormalizedSlideSceneOutput,
 } from "@/lib/slides/normalize-slide";
+import { resolveCourseTheme } from "@/lib/slides/theme-presets";
 
 const QuizQuestionModelSchema = z.object({
   type: z.enum(["single_choice", "multiple_choice"]),
@@ -101,12 +102,12 @@ export function parseSceneResponse(text: string, outline: SceneOutline): unknown
   };
 }
 
-/** 校验场景 DTO；slide 先走元素规范化，quiz 继续执行严格题目契约。 */
-export function validateSceneOutput(value: unknown, outline: SceneOutline): SceneModelOutput {
+/** 校验场景 DTO；slide 先走元素规范化（主题由 courseId 确定性选择），quiz 继续执行严格题目契约。 */
+export function validateSceneOutput(value: unknown, outline: SceneOutline, courseId?: string): SceneModelOutput {
   if (outline.type === "slide") {
     let output: NormalizedSlideSceneOutput;
     try {
-      output = normalizeGeneratedSlideScene(value);
+      output = normalizeGeneratedSlideScene(value, courseId ? resolveCourseTheme(courseId) : undefined);
     } catch (error) {
       if (error instanceof InvalidGeneratedSlideError) throw new InvalidSceneError(error.issues, { cause: error });
       throw error;
