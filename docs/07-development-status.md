@@ -47,6 +47,14 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 第二轮真实 smoke（《四种后端语言》同主题重跑）确认机制生效：concept 页出现 5 行 × 4 列真实 table，worked_example 页出现 column chart + 渐变卡片，全部一次通过、0 修复（证据已按 eval 惯例归档为 MHTML：`eval/runs/slide-v2.2-first-smoke/`、`slide-v2.3-marker-smoke/`、`slide-v2.3-tcp-line-issue/`、`slide-v2.4-tcp-smoke/`，两门课程保留在库中可对照）。随后用户自建课程（《TCP 拥塞控制》）暴露 v2.3 连线硬要求的执行工艺缺陷：mechanism 页语义正确地画了流程连线，但模型用"20px 短线 + 80×3 色条"拼接连接线，箭镞落在连接线中段指向色条而非节点边缘，且线（y=200）与色条（y=195）错位 5px（几何证据见 `eval/runs/slide-quality-audit/2026-09-05/`，审计脚本 `scripts/layout-audit.mjs`，批量连线审计 `scripts/line-craft-batch.mjs`，课程归档工具 `scripts/archive-course-to-eval.mjs`）。`scene-slide.v2.4` 据此修订：连线要求改为按内容关系条件触发（流程/因果→必须连线；并列/分类→分组卡片、不应画线），并加入连线工艺规范（从上一节点边缘到下一节点边缘、两端留 4～8px、单根长度 ≥40px、一条连接只用一根 line、禁止 shape 色条拼接、同排连线 y 对齐）。
 
+### M11 资源包导出（2026-09-05，已实现并验收）
+
+按 [11-slide-export-editor-plan.md](11-slide-export-editor-plan.md) 完成 M11 导出：课堂页头部新增"导出资源包"（ready/partial 可用、draft 禁用），客户端以 pptxgenjs + jszip 生成 ZIP（课程 PPTX + `interactive/<序号>_<安全标题>.html`）。六类元素全部映射：chart → PPTX 原生图表（数据无损）、shape pathFormula → PPTX 预设几何（历史手写 path 按坐标反推，识别不了跳过计数）、table → addTable、text 富文本解析为 runs（段级内联样式作为整段基础格式）、code → 等宽文本、line 含箭头/虚线；渐变类（页面背景/形状）在 PPTX 中无原生支持时降级纯色并在完成提示中按类计数。导出为只读操作，不写库、不改 revision。schema 侧 shape 新增可选 `pathFormula` 字段（规范化阶段保留，渲染器不受影响）。新增依赖 pptxgenjs 4.0.1、jszip 3.10.1（均已登记 THIRD_PARTY_NOTICES）。
+
+配套模块：`lib/export/{filename,rich-text-runs,pptx-mapping,build-course-package,use-export-zip}`、`components/export/export-button`，工具 `scripts/archive-course-to-eval.mjs`（数据库课程 → eval/runs MHTML 归档）与 `export-structure-check`/`export-browser-check` 两个自检脚本。
+
+验收：12 个新单元测试（文件名安全化、runs 解析、六类映射含降级分支、打包结构）+ 全量 162 单测、tsc、lint、build、e2e 回归全部通过。两门真实课程结构自检通过：v2.4《TCP 拥塞控制》3 页、v2.3《后端语言选型》4 页，页数一致、表格进入 PPTX、原生图表部件（barChart）生成、文本中文内容完整；浏览器下载链路（点击 → 下载 → 解包 → UI 降级提示）验证通过，ZIP 样例留存 `output/export-check/`。AC-E02（PowerPoint/WPS 人工打开核对）待用户执行。
+
 ### M10 ready 单场景再生成与新版 slide 验收（修订能力 2026-09-01；需求验收 2026-09-02）
 
 课堂调度台已向 ready slide/interactive/quiz 提供“修订本场”，要求填写 500 字以内意见并调用独立 `/revise`；降级页调用 `/regenerate` 干净重生成失败互动。只有修订会把当前旧场景作为不可信参考发送给模型，interactive 会先剥离平台 Runtime/CSP；降级重生成只发送错误背景。两条路径都按原大纲、Brief 与当前类型 Prompt 生成完整候选，成功提交才替换本场；失败保留旧场景及其他内容。不重做大纲、不重生成整课、不自动反复调用模型，也不实现编辑器。

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { QuizEditDialog } from "@/components/course/quiz-edit-dialog";
+import { ExportButton } from "@/components/export/export-button";
 import { SceneRenderer } from "@/components/renderers/scene-renderer";
 import type { EditableQuizQuestion } from "@/lib/domain/quiz-edit";
 import type { Course } from "@/lib/domain/schemas";
@@ -190,7 +191,10 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
       <header className="classroom-header">
         <Link className="brand brand--inverse" href="/"><span className="brand-mark">课</span><span><strong>课序</strong><small>CLASSROOM</small></span></Link>
         <div className="classroom-course"><span>{course.title}</span><small>REV.{course.revision} · {(course.scenes[0]?.generation.provider ?? "unknown").toUpperCase()}{isPartialPreview ? " · PARTIAL PREVIEW" : ""}</small></div>
-        <Link className="exit-link" href={`/generation/${course.id}`}>退出课堂</Link>
+        <div className="classroom-actions">
+          <ExportButton course={course} />
+          <Link className="exit-link" href={`/generation/${course.id}`}>退出课堂</Link>
+        </div>
       </header>
 
       <div className="classroom-progress"><i style={{ width: `${courseProgress}%` }} /></div>

@@ -26,6 +26,9 @@ const GradientColorSchema = z.object({
   color: SlideColorSchema,
 }).strict();
 
+/** 导出映射使用的形状预设白名单；与 lib/slides/resolve-shape-path.ts 保持一致。 */
+export const SlideShapeFormulaSchema = z.enum(["rect", "roundRect", "circle", "triangle", "diamond", "rightArrow"]);
+
 export const SlideGradientSchema = z.object({
   type: z.enum(["linear", "radial"]),
   rotate: z.number().finite().min(-360).max(360),
@@ -65,6 +68,7 @@ export const PPTShapeElementSchema = PPTBaseElementSchema.extend({
   type: z.literal("shape"),
   path: z.string().trim().min(1).max(4_000),
   viewBox: z.tuple([z.number().finite().positive(), z.number().finite().positive()]),
+  pathFormula: SlideShapeFormulaSchema.optional(),
   fill: SlideColorSchema,
   gradient: SlideGradientSchema.optional(),
   fixedRatio: z.boolean(),

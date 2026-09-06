@@ -313,7 +313,7 @@ function normalizeElement(value: unknown, index: number, theme: SlideThemePreset
     }
     return PPTElementSchema.parse({
       id: randomUUID(), type: "shape", ...box, rotate: element.rotate ?? 0,
-      path, viewBox, fill: element.fill ?? theme.theme.themeColors[0], gradient: element.gradient,
+      path, viewBox, pathFormula: element.pathFormula, fill: element.fill ?? theme.theme.themeColors[0], gradient: element.gradient,
       fixedRatio: element.fixedRatio ?? false,
       outline: element.outline ? {
         style: element.outline.style ?? "solid",

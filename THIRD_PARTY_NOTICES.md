@@ -31,6 +31,10 @@ slide 页 keyPoints，经 keyPoints 透传给场景阶段执行）移植自同�
 "Special Element Design Guidelines"（93-122 行）；标记示例按本项目四种图表类型
 （bar/column/line/pie）改写。
 
+M11 资源包导出（scene-slide.v2.4 同期）使用 npm 分发的 `pptxgenjs`（MIT License）生成 PPTX、
+`jszip`（MIT License）打包 ZIP；PPTElement → PPTX 的映射思路参考上述提交的
+`lib/export/use-export-pptx.ts`，未复制其代码。两库通过 npm 安装，许可证文本见各自包内文件。
+
 OpenMAIC is licensed under the MIT License:
 M9 的 `scene-interactive.v2` 裁剪自上述提交的
 `packages/@openmaic/generation/templates/` 下 `diagram-content`、`simulation-content`、
