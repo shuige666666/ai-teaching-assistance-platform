@@ -1,11 +1,11 @@
 # 07. 当前开发状态
 
 > 本文记录已经进入正式调用链并通过验证的能力。目标设计仍以 01～06 文档为准；本文不把后续计划描述成已实现功能。
-> 最后更新：2026-09-07。当前已完成 M1～M11；M12 仍为概要设计，尚未开始。
+> 最后更新：2026-09-07。当前已完成 M1～M11；M12 对话式课程修订 Agent 已完成方案设计，尚未开始实现。
 
 ## 1. 当前结论
 
-项目已完成 **M1～M10 的 v0.4 当前范围**，并完成已确认的可选 **M11 课程资源包导出**；M12 幻灯片编辑器仍未开始。当前默认 mock 路径不需要模型 Key 和模型网络，正式课程仍以本机 MySQL 为唯一来源：
+项目已完成 **M1～M10 的 v0.4 当前范围**，并完成 **M11 课程资源包导出**；M12 已确定为对话式课程修订 Agent，目前只有设计文档、尚无实现。专业幻灯片编辑器已后移为 MX。当前默认 mock 路径不需要模型 Key 和模型网络，正式课程仍以本机 MySQL 为唯一来源：
 
 ```text
 首页填写主题、选择 4～8 个场景（默认 5 个）并可选展开高级要求
@@ -36,11 +36,11 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 #### M11 资源包导出（2026-09-07，已实现并完成验收）
 
-按 [11-slide-export-editor-plan.md](11-slide-export-editor-plan.md) 完成 M11 导出：课堂页头部新增"导出资源包"（ready/partial 可用、draft 禁用），客户端以 pptxgenjs + jszip 生成 ZIP（课程 PPTX + `interactive/<序号>_<安全标题>.html`）。六类元素均已建立导出映射：chart → PPTX 原生图表（数据无损）、shape pathFormula → PPTX 预设几何（历史手写 path 按坐标反推，识别不了跳过计数）、table → addTable、text 富文本解析为 runs（段级内联样式作为整段基础格式）、code → 等宽文本、line → 直线及箭头/虚线；`curve` 二次曲线暂不导出，后续补充映射时需同步加入降级计数。渐变类（页面背景/形状）当前取首个色标降级为纯色，并在完成提示中按类计数。导出为只读操作，不写库、不改 revision。schema 侧 shape 新增可选 `pathFormula` 字段（规范化阶段保留，渲染器不受影响）。新增依赖 pptxgenjs 4.0.1、jszip 3.10.1（均已登记 THIRD_PARTY_NOTICES）。
+按 [M11 导出方案](stage-plans/m11-slide-export-plan.md)完成 M11 导出：课堂页头部新增“导出资源包”（ready/partial 可用、draft 禁用），客户端以 pptxgenjs + jszip 生成 ZIP（课程 PPTX + `interactive/<序号>_<安全标题>.html`）。六类元素均已建立导出映射：chart → PPTX 原生图表（数据无损）、shape pathFormula → PPTX 预设几何（历史手写 path 按坐标反推，识别不了跳过计数）、table → addTable、text 富文本解析为 runs（段级内联样式作为整段基础格式，并支持元素级默认字体与透明度）、code → 等宽文本并对长内容启用收缩适配、line → 直线及箭头/虚线；PPTX 原生直线支持任意角度，只有 `curve` 二次曲线按端点直线近似并计入“曲线按直线近似”。渐变类（页面背景/形状）当前取首个色标降级为纯色，并在完成提示中按类计数。导出为只读操作，不写库、不改 revision。下载对象 URL 延迟释放，完成提示具备状态播报语义，移动端较长提示放在导出按钮下方。schema 侧 shape 新增可选 `pathFormula` 字段（规范化阶段保留，渲染器不受影响）。新增依赖 pptxgenjs 4.0.1、jszip 3.10.1（均已登记 THIRD_PARTY_NOTICES）。Windows 保留设备名未纳入本次低概率场景门禁。
 
-配套模块：`lib/export/{filename,rich-text-runs,pptx-mapping,build-course-package,use-export-zip}`、`components/export/export-button`，工具 `scripts/archive-course-to-eval.mjs`（数据库课程 → eval/runs MHTML 归档）与 `export-structure-check`/`export-browser-check` 两个开发期自检脚本；前者尚未接入 `package.json` 的正式命令。
+配套模块：`lib/export/{filename,rich-text-runs,pptx-mapping,build-course-package,use-export-zip}`、`components/export/export-button`，工具 `scripts/archive-course-to-eval.mjs`（数据库课程 → eval/runs MHTML 归档）与 `export-structure-check`/`export-browser-check` 两个自检脚本。`pnpm check:export` 已作为正式命令接入；结构检查通过 `jiti` 复用 TypeScript 导出实现，并对 API 响应、ZIP 条目、PPTX 页数和互动 HTML 做失败即退出的断言。
 
-验收：12 个新单元测试（文件名安全化、runs 解析、六类映射含主要降级分支、打包结构）+ 全量 162 单测、tsc、lint、build、e2e 回归全部通过。两门真实课程结构自检通过：v2.4《TCP 拥塞控制》3 页、v2.3《后端语言选型》4 页，页数一致、表格进入 PPTX、原生图表部件（barChart）生成、文本中文内容完整；浏览器下载链路（点击 → 下载 → 解包 → UI 降级提示）验证通过，ZIP 样例留存 `output/export-check/`。AC-E02（PowerPoint/WPS 人工打开核对）已由用户于 2026-09-07 人工核对通过。
+验收：14 个 M11 相关单元测试（文件名安全化、runs 解析、六类映射含主要降级分支、字体/透明度/长代码文本、打包结构）+ 全量 164 单测、tsc、lint、build、e2e 回归全部通过。两门真实课程结构自检通过：v2.4《TCP 拥塞控制》3 页、v2.3《后端语言选型》4 页，页数一致、表格进入 PPTX、原生图表部件（barChart）生成、文本中文内容完整；浏览器 E2E 已覆盖点击下载、解包、完成提示状态播报和刷新恢复，ZIP 样例留存 `output/export-check/`。AC-E02（PowerPoint/WPS 人工打开核对）已由用户于 2026-09-07 人工核对通过。
 
 #### M8 slide 视觉升级 v2.2：图表、表格、主题与量化排版（2026-09-05）
 
@@ -188,15 +188,15 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 
 ### 3.1 最新自动化检查
 
-以 M11 提交后的工作树为准，当前已完成以下检查：
+以当前工作树（含 M11 后续收尾修正）为准，当前已完成以下检查：
 
 - `pnpm lint`：通过；
-- `pnpm test`：26 个测试文件、162 项通过；
+- `pnpm test`：26 个测试文件、164 项通过；
 - `node node_modules/typescript/bin/tsc --noEmit --incremental false`：通过；
 - `pnpm build`：production build 通过；
-- `pnpm test:e2e`：1/1 通过，覆盖现有 mock 课程创建、互动、测验和刷新恢复流程；该用例目前不包含导出断言；
+- `pnpm test:e2e`：1/1 通过，覆盖 mock 课程创建、导出下载与解包、互动、测验和刷新恢复流程；
 - `scripts/export-browser-check.mjs`：真实课堂点击、下载、解包和完成提示链路通过；
-- `scripts/export-structure-check.mjs`：开发期结构检查脚本，当前尚未接入 `package.json` 的正式命令。
+- `pnpm check:export`：两门真实课程的 ZIP 结构、PPTX 页数/文本、表格、原生图表和互动 HTML 检查通过。
 
 ### 3.2 M11 验收项
 
@@ -205,7 +205,7 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 | AC-E01：真实 ready 课程导出并校验 ZIP 结构 | ✅ 两门真实课程通过，PPTX 页数和互动页命名符合预期 |
 | AC-E02：PowerPoint/WPS 人工打开核对 | ✅ 用户人工核对通过 |
 | AC-E03：chart 导出为 PPTX 原生图表 | ✅ 生成 `barChart` 部件，数据无损 |
-| AC-E04：降级元素在完成提示中分组计数 | ✅ 浏览器链路显示渐变降级提示 |
+| AC-E04：降级元素在完成提示中分组计数 | ✅ 浏览器链路显示渐变降级提示；曲线近似由单测确认计数，斜线不再误报 |
 | AC-E05：导出不写库、不改 revision | ✅ 客户端纯只读转换 |
 
 ### 3.3 历史验证记录（M1～M6）
@@ -244,9 +244,9 @@ M6 可观测性补强回归进一步故意延迟课程创建响应，确认首�
 - 超时租约可以被下一次显式生成请求接管，但尚无后台扫描器主动恢复遗留操作；
 - 尚未在另一台机器复现部署；当前项目只承诺本机或受信任网络运行，异机交付按需扩展；
 - BrowserSpeech 的回退与控制已自动测试，实际系统音色和听感仍需目标演示机器人工确认；
-- M11 当前只在课堂页提供导出入口；互动 HTML 不承诺离线运行，`curve` 二次曲线暂不导出，M12 编辑器仍未开始。
+- M11 当前只在课堂页提供导出入口；互动 HTML 不承诺离线运行，`curve` 二次曲线按直线近似并提示降级，Windows 保留设备名等低概率输入不增加严格门禁；M12 对话式课程修订 Agent 尚未实现。
 
-上述项目均不阻塞当前 MVP，也不改变已经关闭的 v0.4 退出门；M11 是独立可选扩展，M12 和 MX 仍按后续范围单独推进。
+上述项目均不阻塞当前 MVP，也不改变已经关闭的 v0.4 退出门；M11 是已完成的独立扩展，M12 按单 Agent 工具闭环分批推进，专业编辑器和论文研究问题留在 MX 单独立项。
 
 ## 5. 当前质量边界与历史差距
 
@@ -299,7 +299,7 @@ M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` �
 
 2026-08-28 需求澄清后，提交 `85be4b9f` 遗留的 `slide-density.v1.json`、44 张 PNG、DOM/密度报告、`scores.json` 和独立汇总脚本被删除或收束。`report.json` 继续保存原课程、narration、quiz、生成耗时、调用、token、repair 和错误；`summary.md` 只做事实索引，`scenes/` 保存逐场景 MHTML。后续配对评分不再作为 M10 任务；M8～M10 只承诺 `1280×720` 及更大桌面视口，MHTML 仅用于固定视口视觉留档。
 
-M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7.1 已在不改写这些基线产物的前提下升级正式运行链；M8 PPT 式只读幻灯片画布、M9 多类型互动和 M10 单场景再生成及新版 slide 需求验收均已完成。M11 导出已于 2026-09-07 完成，M12 编辑器仍为可选项。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
+M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7.1 已在不改写这些基线产物的前提下升级正式运行链；M8 PPT 式只读幻灯片画布、M9 多类型互动和 M10 单场景再生成及新版 slide 需求验收均已完成。M11 导出已于 2026-09-07 完成，M12 对话式课程修订 Agent 已设计、尚未实现；专业编辑器后移为 MX。完整边界见 [M7～M10 方案](stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md)和 [M12 方案](stage-plans/m12-conversational-course-revision-agent-plan.md)。
 
 ### M7.1 CourseBrief、Course v2 与 outline.v2.1
 

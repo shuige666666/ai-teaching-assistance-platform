@@ -35,7 +35,7 @@ MVP 面向“教师或学生输入一个主题，生成并运行一门微型课�
 - 大纲与场景分阶段生成，模型输出经过 Schema 和语义校验；
 - 固定渲染器展示 slide/quiz 和只读代码块，确定性播放引擎执行 speech/pause。
 
-v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 把新生成的 slide 统一升级为只读、桌面端的 OpenMAIC 式 `Slide/PPTElement` 幻灯片，在 M9 加入 diagram/simulation/game/code 多样化互动页；不再并行建设类 Markdown/纵向讲义视图。只含 PPTX 与 `interactive/*.html` 的简化 ZIP 导出留到可选 M11，基于同一 Slide 数据的编辑器留到可选 M12，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
+v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 把新生成的 slide 统一升级为只读、桌面端的 OpenMAIC 式 `Slide/PPTElement` 幻灯片，在 M9 加入 diagram/simulation/game/code 多样化互动页；不再并行建设类 Markdown/纵向讲义视图。只含 PPTX 与 `interactive/*.html` 的简化 ZIP 导出已在 M11 完成，下一阶段 M12 建设对话式课程修订 Agent；专业幻灯片编辑器后移为 MX 按需候选，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
 
 ## 为什么不一比一照搬 OpenMAIC
 
@@ -52,14 +52,15 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 | [03. 系统架构设计](docs/03-architecture.md) | OpenMAIC 实际如何运行，目标系统如何分层和调用 |
 | [04. 领域模型与数据契约](docs/04-domain-model.md) | Course、Scene、Action、状态和 DTO 如何定义 |
 | [05. AI 生成管线设计](docs/05-generation-pipeline.md) | Prompt、解析、校验、修复、重试和预算如何控制 |
-| [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M10、可选 M11/M12 与暂存 MX 如何分阶段，每阶段用什么证据退出 |
+| [06. 复刻实施路线图](docs/06-roadmap.md) | M1～M12 与暂存 MX 如何分阶段，每阶段用什么证据退出 |
 | [07. 当前开发状态](docs/07-development-status.md) | 哪些代码已进入调用链、通过了什么验证、下一步是什么 |
 | [08. 部署、恢复与验收手册](docs/08-deployment-and-acceptance.md) | 如何生产启动、备份恢复、排障并复现 AC-01～AC-12 |
-| [09. v0.4 课程质量、幻灯片与互动开发方案](docs/09-v0.4-quality-and-interaction-plan.md) | M7～M10 的 CourseBrief、PPT 式只读幻灯片、互动沙箱、再生成，以及 M11/M12 和 OpenMAIC 参考路径 |
-| [10. M6.5 远端响应韧性与可观测性开发方案](docs/10-m6.5-remote-response-resilience-plan.md) | DeepSeek 响应分类、受限重试、安全日志和验收证据 |
-| [11. M11 资源包导出与 M12 幻灯片编辑器开发方案](docs/11-slide-export-editor-plan.md) | 导出优先的两阶段可选扩展：PPTX + HTML 资源包映射表、保真度决策与编辑器概要设计 |
+| [09. v0.4 课程质量、幻灯片与互动开发方案](docs/stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md) | M7～M10 的 CourseBrief、PPT 式只读幻灯片、互动沙箱、再生成与 OpenMAIC 参考路径 |
+| [10. M6.5 远端响应韧性与可观测性开发方案](docs/stage-plans/m6.5-remote-response-resilience-plan.md) | DeepSeek 响应分类、受限重试、安全日志和验收证据 |
+| [11. M11 资源包导出开发方案](docs/stage-plans/m11-slide-export-plan.md) | M11 PPTX + HTML 资源包映射表、保真度决策与验收证据 |
+| [12. M12 对话式课程修订 Agent 开发方案](docs/stage-plans/m12-conversational-course-revision-agent-plan.md) | 右侧对话侧栏、课程工具、流式思考、并发保护与分阶段验收 |
 
-01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，09 是 M7～M10 的可执行开发方案，10 是插入 M6 与 M7 之间的 M6.5 工程加固方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
+01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，stage-plans 中分别保存 M6.5、M7～M10、M11 和 M12 的可执行开发方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
 
 ## 目标架构
 
@@ -78,7 +79,8 @@ components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
   slides/                        # [M8 已实现，v2.2 扩展] 只读 SlideCanvas 与 text/shape/line/code/chart/table Renderer
   interactive/                   # [M9 已实现] sandbox iframe 宿主与消息桥
-  editor/                        # [M12 可选] 在 SlideCanvas 上叠加 PPT 式编辑交互
+  agent/                         # [M12 规划] 对话侧栏、思考/工具卡片与课程刷新协调
+  editor/                        # [MX 按需候选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
   domain/                        # [M10 已实现] Course v5、单选/多选 Quiz、CourseBrief、Slide/PPTElement 与 fixture
   repository/                    # [M7.1 已实现] v2 InMemory / MySQL 仓储、旧行隔离与错误映射
@@ -90,7 +92,7 @@ lib/
   quality/                       # [M7 历史/可选] 固定主题与离线汇总工具
   slides/                        # [M8 已实现，v2.2 扩展] Slide/PPTElement、规范化、富文本净化、主题预设与形状解析
   interactive/                   # [M9 已实现] HTML 校验、CSP patch、运行协议与布局 Prompt 骨架
-  export/                        # [M11 可选] Slide/PPTElement → PPTX 与简单 ZIP 打包
+  export/                        # [M11 已实现] Slide/PPTElement → PPTX 与简单 ZIP 打包
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
 scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
 e2e/                             # [M6 已实现] production mock 完整浏览器回归
@@ -98,7 +100,9 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
-标记为 M1～M10 的当前能力已经进入正式调用链；M10 已完成 ready slide/interactive/quiz 的单场景修订、运行失败 interactive 的干净重生成和新版 slide 单人需求验收，不再要求配对质量验收。MHTML 只作为固定 `1280×720` 视口的静态留档，实时课堂页面负责响应式缩放。M11/M12 只有在再次确认可选范围后才创建。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M11 的当前能力已经进入正式调用链；M10 已完成 ready slide/interactive/quiz 的单场景修订、运行失败 interactive 的干净重生成和新版 slide 单人需求验收，M11 已完成课堂页 PPTX + interactive HTML 简化资源包导出，不再要求配对质量验收。MHTML 只作为固定 `1280×720` 视口的静态留档，实时课堂页面负责响应式缩放。M12 对话式课程修订 Agent 已完成方案设计、尚未实现。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+
+专业幻灯片编辑器后移为 MX：它主要解决拖拽、缩放和精确排版，不能直接提高课程事实正确性或教学质量，而且当前已经可以导出 PPTX 后在 PowerPoint/WPS 中精修。只有当真实使用持续出现“自然语言修订无法解决的精确坐标调整”，或产品目标明确转为平台内专业课件制作时，才重新立项；届时仍复用 `Slide/PPTElement`、净化、完整 Schema 与 `expectedRevision` 保存边界，不建立第二套页面格式。
 
 ## 技术栈
 
@@ -181,9 +185,9 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 9. **M8（已完成）**：裁剪 OpenMAIC 的 `slide-content Prompt → 带坐标 PPTElement → normalize → Slide → SlideCanvas` 纵向链，升级 Course v3，并用 3 个真实主题和 4 份 MHTML 完成桌面校准；
 10. **M9（已完成）**：裁剪 OpenMAIC 四类互动 Prompt，实现多样化生成、外部依赖加载、隔离运行和 fallback；
 11. **M10（当前范围已完成）**：`/revise` 根据必填意见和当前旧场景修订 ready slide/interactive/quiz；`/regenerate` 对运行失败 interactive 做不携带旧 HTML 的干净重生成；失败保留原内容，quiz 修订时事务化清理旧作答；新版 slide 已由开发者依据已确认需求完成单人验收，v0.3 仅作历史留档，不再进行 v0.3/v0.4 成对质量验收；
-12. **M11（可选）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP（方案见 [11-slide-export-editor-plan.md](docs/11-slide-export-editor-plan.md)）；
-13. **M12（可选）**：在 M8 的同一 `Slide/PPTElement` 上增加选择、拖拽、缩放、文本编辑、撤销重做和保存，不建立第二套页面格式，也不阻塞 v0.4；
-14. **MX（暂时搁置）（未选题）**：如后续确有需要，再从已完成的 M7～M10 数据中选择一个可度量的毕业论文研究问题，另行设计实验范围。
+12. **M11（已完成，2026-09-07）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；已补充字体/透明度、长代码文本、下载释放时序、状态播报和移动端提示适配；课堂 E2E、两门真实课程结构检查和 PowerPoint/WPS 人工核对均已通过（方案与证据见 [m11-slide-export-plan.md](docs/stage-plans/m11-slide-export-plan.md)）；
+13. **M12（已设计，尚未实现）**：把 M10 单次修订升级为对话式课程修订 Agent，通过 `read_stage/list_scenes/grep_stage/patch_stage/edit_deck/generate_scene` 等受控工具读取、搜索和修改课程，并保留流式思考、工具明细、revision 冲突保护和修改后复读确认；
+14. **MX（暂时搁置）**：专业幻灯片编辑器与毕业设计 AI Search 研究选题均按真实需求另行立项，不作为 M12 前置。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。
 

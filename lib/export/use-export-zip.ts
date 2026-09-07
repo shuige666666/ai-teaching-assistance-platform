@@ -10,6 +10,8 @@ export type ExportState = {
   degraded: ExportDegradation[];
 };
 
+const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
+
 /** 课堂页导出：生成课程 ZIP（PPTX + interactive/*.html）并触发浏览器下载。 */
 export function useExportZip() {
   const [state, setState] = useState<ExportState>({ status: "idle", message: null, degraded: [] });
@@ -23,8 +25,12 @@ export function useExportZip() {
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = pkg.filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      try {
+        anchor.click();
+      } finally {
+        // 延后一小段时间释放对象 URL，给不同浏览器完成下载接管的机会。
+        window.setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_REVOKE_DELAY_MS);
+      }
       const degradedSummary = pkg.degraded.reduce((sum, item) => sum + item.count, 0);
       setState({
         status: "done",

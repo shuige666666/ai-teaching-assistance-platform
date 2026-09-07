@@ -22,7 +22,13 @@ export function ExportButton({ course }: { course: Course }) {
         {state.status === "working" ? "导出中…" : "⤓ 导出课程"}
       </button>
       {state.message && (
-        <small className={state.status === "error" ? "export-message export-message-error" : "export-message"} data-testid="export-message">
+        <small
+          className={state.status === "error" ? "export-message export-message-error" : "export-message"}
+          data-testid="export-message"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           {state.message}
           {state.degraded.length > 0 && (
             <span className="export-degraded">

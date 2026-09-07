@@ -1,7 +1,9 @@
+import { readFile } from "node:fs/promises";
+import JSZip from "jszip";
 import { expect, test } from "@playwright/test";
 
-test("mock 课程从创建、互动、测验到刷新恢复", async ({ page, request }) => {
-  const topic = `M9 互动验收 ${Date.now()}`;
+test("mock 课程从创建、导出、互动、测验到刷新恢复", async ({ page, request }) => {
+  const topic = `M11 导出验收 ${Date.now()}`;
   const browserErrors: string[] = [];
   let courseId: string | undefined;
   let interceptedCourseId: string | undefined;
@@ -74,6 +76,25 @@ test("mock 课程从创建、互动、测验到刷新恢复", async ({ page, req
     const slideBox = await slideCanvas.boundingBox();
     expect(slideBox).not.toBeNull();
     expect(slideBox!.width / slideBox!.height).toBeCloseTo(16 / 9, 1);
+
+    // 真实点击导出按钮，解包下载物并核对 PPTX 与互动 HTML 均已进入资源包。
+    const downloadPromise = page.waitForEvent("download");
+    await expect(page.getByTestId("export-button")).toBeEnabled();
+    await page.getByTestId("export-button").click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.zip$/);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (!downloadPath) throw new Error("导出下载没有可读取的临时文件");
+    const packageZip = await JSZip.loadAsync(await readFile(downloadPath));
+    const packageNames = Object.keys(packageZip.files);
+    expect(packageNames.filter((name) => name.endsWith(".pptx"))).toHaveLength(1);
+    const interactiveNames = packageNames.filter((name) => name.startsWith("interactive/") && name.endsWith(".html"));
+    expect(interactiveNames).toHaveLength(1);
+    expect(await packageZip.file(interactiveNames[0])!.async("string")).toContain("<!doctype html>");
+    await expect(page.getByTestId("export-message")).toContainText("已导出 2 页 PPTX + 1 个互动页");
+    await expect(page.getByTestId("export-message")).toHaveAttribute("role", "status");
+
     await page.getByRole("button", { name: /开始课堂/ }).click();
     const pause = page.getByRole("button", { name: /暂停讲解/ });
     await expect(pause).toBeVisible();

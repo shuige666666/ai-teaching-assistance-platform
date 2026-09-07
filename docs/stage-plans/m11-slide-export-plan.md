@@ -1,18 +1,18 @@
-# 11. M11 资源包导出与 M12 幻灯片编辑器开发方案
+# 11. M11 资源包导出开发方案
 
 > 文档版本：1.1（2026-09-07）
-> 状态：M11 已实现并完成结构、浏览器链路及 PowerPoint/WPS 人工核对（2026-09-07）；M12 为概要设计，开工前按本文档细化
+> 状态：M11 已实现并完成结构、浏览器链路及 PowerPoint/WPS 人工核对（2026-09-07）
 > 上游依赖：M8 只读幻灯片（已完成）、M9 自包含互动页（已完成）、Course v5 契约（稳定）
 
 ## 1. 决策结论
 
-2026-09-05 用户确认：**先做导出，两阶段编号互换**——原路线图中的 M12（资源包导出）改为 **M11**，原 M11（幻灯片编辑器）改为 **M12**。编号互换已同步至 docs/01、02、03、06、07、08、09、10 与 README。
+2026-09-05 用户确认优先实现资源包导出，并将其编号确定为 **M11**。相关编号与验收状态已同步至范围、需求、架构、路线图、开发状态、验收文档和 README。
 
-互换理由：导出工作量约为半个里程碑（映射机械、库成熟、参考实现现成），成果可在答辩现场演示；v2.2 起的数据化元素设计（chart 只存数据、shape 走 pathFormula 预设）与 PPTX 原生能力高度契合；而编辑器是交互重活，放到后一阶段。
+优先导出的理由是其映射过程相对机械、依赖库成熟、参考实现现成，而且成果可以在答辩现场直接演示。v2.2 起的数据化元素设计（chart 只存数据、shape 走 pathFormula 预设）也与 PPTX 原生能力高度契合。
 
-两个阶段共用同一 `Slide/PPTElement` 契约（docs/03 AD-X01），互不依赖、可独立交付。**解耦的关键约束：M12 编辑器的保存必须复用与生成侧相同的净化与 SlideSchema 校验边界，保证"编辑产出的数据 ⊆ 契约数据"**——M11 的导出映射因此只需覆盖契约覆盖面，不感知编辑器的存在。
+M11 只读取既有 `Slide/PPTElement` 契约，不引入导出专用页面模型，也不反向要求生成、渲染或持久化链增加编辑状态。
 
-本文档即路线图（docs/06 §17）要求的"M11/M12 开始前另行确认范围"。后续范围调整先改本文档，再改代码。
+本文档记录 M11 已确认的范围、实现决策和验收证据。后续若扩大导出范围，应先修改本文档，再改代码。
 
 ## 2. M11：PPTX + interactive HTML 简化资源包导出
 
@@ -45,16 +45,16 @@
 
 | PPTElement | PPTX 映射 | 保真度决策 |
 | --- | --- | --- |
-| text | 文本框 + 文本 runs：解析净化 HTML——`p` → 段落，`strong/b` → bold，`em/i` → italic，`u` → underline，span 内联 `font-size/color/line-height/text-align` 映射到 runs 与段落属性 | 净化白名单（6 种样式属性）即解析全集，单测钉住；解析不到的结构降级为纯文本 |
+| text | 文本框 + 文本 runs：解析净化 HTML——`p` → 段落，`strong/b` → bold，`em/i` → italic，`u` → underline，span 内联 `font-size/color/line-height/text-align` 映射到 runs 与段落属性；元素级 `defaultFontName` 应用到文本框和 runs，`opacity` 映射为 PPTX 透明度 | 净化白名单（6 种样式属性）即解析全集，单测钉住；解析不到的结构降级为纯文本，字体只声明名称、不嵌入字体 |
 | shape | `pathFormula` 预设 → PPTX 预设几何：rect→rect、roundRect→roundRect、circle→ellipse、triangle→triangle、diamond→diamond、rightArrow→rightArrow；shape `gradient`（v2.2）取首个色标降级为纯色，并在完成提示中计数 | 手写任意 `path`（无 pathFormula）第一版降级为跳过并计数上报；不尝试任意 path 转换 |
-| line | 直线连接符：start/end → 端点坐标，`width` → 线宽，`points` 端点 → arrow/dot 端头 | 当前版本导出直线、箭头和虚线；`curve` 二次曲线暂不导出，后续补充映射时需同步加入降级计数 |
-| code | 等宽字体文本框；`fileName`/`language` 写入首行元数据文本，`lines` 逐行写入 | `showLineNumbers` 不导出行号（PPT 无等宽对齐需求） |
+| line | 直线连接符：start/end → 端点坐标，`width` → 线宽，`points` 端点 → arrow/dot 端头 | 当前版本导出任意角度的直线、箭头和虚线；`curve` 二次曲线按端点直线近似，并在完成提示中计入“曲线按直线近似” |
+| code | 等宽字体文本框；`fileName`/`language` 写入首行元数据文本，`lines` 逐行写入；长文本启用 PPTX `shrink` 自适应 | `showLineNumbers` 不导出行号（PPT 无等宽对齐需求），优先保持代码块在页面内可读 |
 | chart | `addChart` 原生图表：column→bar（纵向）、bar→bar（横向）、line→line、pie→pie；`labels`/`series` 直传，`themeColors` → 系列配色 | 数据元素与 PPTX 原生图表天然契合，无损映射 |
 | table | `addTable`：`colWidths` 比例 → 列宽，`rows` → 单元格，`header` → 首行加粗 + 底色 | 单元格纯文本（规范化已保证） |
 | background | solid → 纯色填充；linear/radial gradient → 取首个色标降级为纯色，并在完成提示中计数 | 当前版本不生成 PPTX 原生渐变 |
-| theme | `fontName` → 全局字体声明，`fontColor` → 默认字色，`themeColors` → 强调色序列 | 字体声明 `Microsoft YaHei`，不嵌入字体文件 |
+| theme | `fontName` → 全局/主题默认字体，`fontColor` → 默认字色，`themeColors` → 强调色序列；元素级 `defaultFontName` 可覆盖文本默认字体 | 只声明字体名，不嵌入字体文件；目标机器缺少字体时由 PowerPoint/WPS 自动回退 |
 
-通用保真原则：**已识别但无法映射的元素跳过并计数，绝不中断导出**；完成提示中明确列出降级/跳过数量。当前 `curve` 字段尚未支持，待补充映射时纳入同一规则。
+通用保真原则：**已识别但无法完整映射的元素采用明确的近似或跳过策略并计数，绝不中断导出**；完成提示中明确列出降级/跳过数量。PPTX 原生直线可以表达斜线，因此斜线不计降级；`curve` 仅保留端点并按直线近似，统一计入降级清单。
 
 ### 2.4 模块结构
 
@@ -74,9 +74,9 @@ components/export/        # "导出资源包"按钮与进度提示（当前挂�
   - AC-E01 真实 ready 课程导出 → 解包校验 ZIP 结构（一个 PPTX + interactive 命名规范）✅ 2026-09-05 两门真实课程通过；
   - AC-E02 PPTX 在 PowerPoint 与 WPS 中人工打开核对：文字、形状、图表、表格可读且顺序正确 ✅ 2026-09-07 用户人工核对通过（ZIP 样例在 output/export-check/）；
   - AC-E03 chart 元素导出为可编辑的 PPTX 原生图表（非图片）✅ barChart 部件生成、数据无损；
-  - AC-E04 含降级元素的导出在完成提示中如实列出数量 ✅ 浏览器链路显示"形状渐变降级纯色 ×1"；
+  - AC-E04 含降级元素的导出在完成提示中如实列出数量 ✅ 浏览器链路显示"形状渐变降级纯色 ×1"；曲线近似单测计数，斜线不误报；
   - AC-E05 导出过程不产生任何写库操作（revision 不变）✅ 纯只读转换，未调用任何写接口。
-- 自动化验证：现有 mock 课程全流程 E2E 通过；导出按钮的真实点击、下载、解包和完成提示由 `scripts/export-browser-check.mjs` 单独验证，当前尚未并入 mock E2E。
+- 自动化验证：`pnpm test:e2e` 已将导出按钮的真实点击、下载、解包和完成提示并入 mock 课程全流程；`pnpm check:export` 对两门真实课程执行 ZIP/PPTX/HTML 结构检查，`scripts/export-browser-check.mjs` 继续作为独立浏览器探针保留。
 
 ### 2.6 硬边界
 
@@ -89,35 +89,13 @@ components/export/        # "导出资源包"按钮与进度提示（当前挂�
 3. **能力 spike 前置**：已完成最小 spike，确认原生柱状图可用；当前版本的页面/形状渐变按首个色标降级为纯色，并按 §2.3 的降级路径实现；
 4. **降级透明化**：AC-E04 的"跳过/降级计数"在导出完成提示中按元素类型分组列出，便于发现映射盲区。
 
-## 3. M12：PPT 式幻灯片编辑器（概要设计，开工前细化）
+### 2.8 M11 后续可用性与兼容性修正（2026-09-07）
 
-### 3.1 第一批范围
+在不扩大 `Slide/PPTElement` 契约、也不为低概率输入增加严格门禁的前提下，补齐以下收尾项：文本元素的 `defaultFontName` 与 `opacity` 分别映射到 PPTX 字体和透明度；代码块使用 `shrink` 适配较长内容；浏览器下载对象 URL 延迟释放 1 秒，降低下载接管时序差异；完成提示使用 `role="status"` + `aria-live="polite"`；移动端允许课堂头部按内容增高，并将较长提示约束在导出按钮下方；`app/globals.css` 清理 M11 之外的历史格式化噪声，保留现有语义和本次移动端规则。
 
-选择、拖拽、缩放、删除、文字编辑、撤销重做、MySQL 保存。**明确排除**：chart/table 的内容编辑（图表数据、表格单元格）、旋转编辑、复制粘贴、对齐吸附、图层管理——这些属于第二批或更远。
+Windows 保留设备名不纳入本次处理：文件名仍只做常规非法字符、长度与重名安全化，不把几乎不会出现的输入变成导出硬门禁。
 
-### 3.2 架构概要
-
-- `components/editor/`：`EditorOverlay`（命中测试、选择框、缩放角手柄）、编辑状态机与命令栈（undo/redo）；
-- 渲染继续复用只读 `SlideCanvas`，编辑交互由叠加层接管（overlay 层恢复 pointer-events，命中测试按 z 序 = 数组序倒序）；
-- 坐标换算：复用现有 ResizeObserver 的 scale，screen ↔ logical（1000 × 562.5）双向映射；
-- 保存：新 API `POST /api/courses/[courseId]/scenes/[outlineId]/edit`，携带 `expectedRevision` 与编辑后画布，服务端在短事务内将画布过 `SlideSchema` + sanitize（与生成侧同一边界）后整场替换——复用 quiz 手动编辑已验证的事务模式；
-- 保存失败/冲突保留原版本（与修订/重生成行为一致）。
-
-### 3.3 与 M11 的解耦约束（重申）
-
-编辑保存走同一契约边界 ⇒ 编辑产出 ⊆ 契约数据 ⇒ M11 导出映射无需任何感知或改动。若未来编辑器需要突破契约（例如新增样式能力），必须先扩 `SlideSchema` 并同步 M11 映射，不允许绕过。
-
-### 3.4 测试概要
-
-命令栈与坐标换算纯函数单测；保存冲突/失败保留原版本用例（复用 repository 测试模式）；Playwright 编辑冒烟（选择→拖动→保存→刷新恢复）。开工前本节细化为与 M11 §2.5 同粒度的 AC 列表。
-
-## 4. 实施顺序
-
-1. M11：`pptx-mapping`/`rich-text-runs` 纯函数与单测 → 客户端导出链路 → 真实课程 AC-E01～E05 验收 → docs/07/08 登记；
-2. M12：单独一轮范围确认 → 按 §3 细化 AC → 实现 → 验收；
-3. 两阶段各自独立提交，均不进入 v0.4 硬门。
-
-## 5. 风险
+## 3. 风险
 
 | 风险 | 应对 |
 | --- | --- |
@@ -125,8 +103,7 @@ components/export/        # "导出资源包"按钮与进度提示（当前挂�
 | 目标机器缺 Microsoft YaHei | 只声明字体名不嵌入字体，PowerPoint 自动回退 |
 | 富文本 runs 解析遗漏 | 净化白名单即全集，单测钉住六种样式属性的全部合法组合 |
 | 手写 path 占比过高导致 shape 大量跳过 | Prompt v2.4 已引导 pathFormula 预设；若真实课程跳过多，再评估 path → 图片降级 |
-| M12 编辑交互范围膨胀 | 第一批清单锁死；chart/table 内容编辑明确排除 |
 
-## 6. 与毕业论文的关系
+## 4. 与毕业论文的关系
 
-M11/M12 均为工程增强，不做论文创新主张；可/export 能力可作为"系统实现"章节的演示点（现场导出 PPTX），MX 研究问题仍独立选择，不以本两阶段为前置。
+M11 是工程增强，不做论文创新主张；导出能力可作为“系统实现”章节的演示点（现场导出 PPTX），MX 研究问题仍独立选择，不以 M11 为前置。

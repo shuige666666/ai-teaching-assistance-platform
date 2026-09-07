@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:db": "node --env-file=.env.local ./node_modules/vitest/vitest.mjs run --config vitest.integration.config.mjs",
     "test:e2e": "playwright test",
+    "check:export": "node scripts/export-structure-check.mjs",
     "eval:validate": "node eval/scripts/collect-course-quality-baseline.mjs --validate-only",
     "eval:smoke": "node eval/scripts/collect-course-quality-baseline.mjs --smoke-mock",
     "eval:baseline": "node eval/scripts/collect-course-quality-baseline.mjs",
@@ -42,6 +43,7 @@
     "@types/sanitize-html": "^2.16.1",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
+    "jiti": "^2.7.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11"

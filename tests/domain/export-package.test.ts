@@ -120,6 +120,21 @@ describe("pptx element mapping", () => {
 });
 
 describe("build course package", () => {
+  it("线条降级统计只记录曲线，不把斜线误报为降级", async () => {
+    const course: Course = materializeFixtureCourse(createFixtureCourse("线条导出", 3));
+    const slide = course.scenes.find((scene) => scene.type === "slide");
+    if (!slide || slide.type !== "slide") throw new Error("fixture 缺少 slide 场景");
+    const line = slide.content.canvas.elements.find((element) => element.type === "line");
+    if (!line || line.type !== "line") throw new Error("fixture 缺少 line 元素");
+    line.end = [64, 48];
+    line.curve = [32, 72];
+
+    const pkg = await buildCoursePackage(course, "nodebuffer");
+
+    expect(pkg.degraded).toContainEqual({ kind: "曲线按直线近似", count: 1 });
+    expect(pkg.degraded.some(({ kind }) => kind === "斜线按直线近似")).toBe(false);
+  });
+
   it("fixture 课程打包为 ZIP：一个 PPTX、quiz 不进导出物", async () => {
     const course: Course = materializeFixtureCourse(createFixtureCourse("导出打包", 3));
     const pkg = await buildCoursePackage(course, "nodebuffer");
@@ -137,6 +152,33 @@ describe("build course package", () => {
     expect(slideNames).toHaveLength(3);
     const slide1 = await pptx.file("ppt/slides/slide1.xml")!.async("string");
     expect(slide1).toContain("导出打包");
+  });
+
+  it("PPTX 导出覆盖元素字体与透明度，并为代码块启用长文本收缩", async () => {
+    const course: Course = materializeFixtureCourse(createFixtureCourse("导出样式", 4));
+    const firstSlide = course.scenes.find((scene) => scene.type === "slide" && scene.order === 1);
+    const secondSlide = course.scenes.find((scene) => scene.type === "slide" && scene.order === 2);
+    if (!firstSlide || firstSlide.type !== "slide" || !secondSlide || secondSlide.type !== "slide") {
+      throw new Error("fixture 缺少样式检查所需的 slide 场景");
+    }
+    const text = firstSlide.content.canvas.elements.find((element) => element.type === "text");
+    const code = secondSlide.content.canvas.elements.find((element) => element.type === "code");
+    if (!text || text.type !== "text" || !code || code.type !== "code") {
+      throw new Error("fixture 缺少样式检查所需的 text/code 元素");
+    }
+    text.defaultFontName = "Aptos";
+    text.opacity = 0.5;
+    code.lines[0].content += " // " + "x".repeat(180);
+
+    const pkg = await buildCoursePackage(course, "nodebuffer");
+    const zip = await JSZip.loadAsync(pkg.zip);
+    const pptx = await JSZip.loadAsync(await zip.file("导出样式：从概念到实践.pptx")!.async("nodebuffer"));
+    const slide1 = await pptx.file("ppt/slides/slide1.xml")!.async("string");
+    const slide2 = await pptx.file("ppt/slides/slide2.xml")!.async("string");
+
+    expect(slide1).toContain('typeface="Aptos"');
+    expect(slide1).toContain('<a:alpha val="50000"/>');
+    expect(slide2).toContain("<a:normAutofit/>");
   });
 
   it("interactive 场景按序号与安全化标题写入 ZIP", async () => {

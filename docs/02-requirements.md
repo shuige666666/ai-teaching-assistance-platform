@@ -292,16 +292,36 @@ MVP 只有一个逻辑参与者：本地用户。
 | FR-Q306 | v0.4 退出前必须由项目负责人确认新版 slide 满足已确定的课堂页面需求；v0.3 仅作为历史参考，不要求与 v0.4 做成对人工比较。 |
 | FR-Q307 | ready 场景再生成期间不改变 Course.status 或持久化 activeOperation；最终用 expectedRevision 原子替换。quiz 再生成必须经用户确认，并在同一事务删除旧 sceneId 的作答。 |
 
-### 4.13 PPT 式编辑与简化资源包（M11/M12 可选）
+### 4.13 简化资源包导出（M11，已完成）
 
 | 编号 | 需求 |
 |---|---|
-| FR-X101 | M12 编辑器必须直接读取并更新 M8 的 `Slide/PPTElement`，复用同一只读 SlideCanvas 作为绘制层，不创建另一份编辑器专用页面格式。 |
-| FR-X102 | M12 第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和基于 expectedRevision 的 MySQL 保存；冲突或保存失败必须保留原版本。 |
 | FR-X103 | M11 导出包固定为一个 ZIP：根目录一个课程 PPTX，`interactive/` 下按 `Scene.order` 保存自包含 HTML；不额外生成 manifest、README 或 assets 目录。 |
 | FR-X104 | PPTX 只写入 slide 场景并保持其相对顺序；互动 HTML 文件名必须包含补零后的原始场景序号和安全化标题，例如 `03_流程互动.html`。 |
 | FR-X105 | M11 再确认外部依赖的导出策略；当前互动页允许 CDN，不承诺单个 HTML 离线执行。 |
-| FR-X106 | M11/M12 不属于 M7～M10/v0.4 退出门；只有 M10/v0.4 已完成且用户再次确认范围后，才进入实现和独立验收。 |
+| FR-X106 | M11 不属于 M7～M10/v0.4 退出门；只在 M10/v0.4 完成后进入独立实现和验收。 |
+
+### 4.14 对话式课程修订 Agent（M12，已设计）
+
+| 编号 | 需求 |
+|---|---|
+| FR-A101 | 课堂必须提供可收起、可恢复的右侧对话侧栏；“对话”和“修订本场”进入同一 Agent 会话，并冻结每条消息发送时的 currentSceneId 与 Course revision。 |
+| FR-A102 | 模型可按需调用 `list_scenes`、`read_stage`、`grep_stage`、`patch_stage`、`edit_deck` 和 `generate_scene`；工具只能通过 application service 和 Repository 访问当前课程。 |
+| FR-A103 | 模型明确返回的可见 reasoning、正文和工具生命周期必须通过 SSE 流式展示；思考卡与工具组默认收起，展开工具后可查看经展示净化的实际入参和结果原文。 |
+| FR-A104 | `read_stage` 必须提供有界的 tree/text/source 投影；`grep_stage` 只执行有界字面量搜索，读取结果不得把媒体字节或无限课程原文放入模型上下文。 |
+| FR-A105 | `patch_stage` 只能对一个场景执行字段白名单内的有限原子补丁；任一操作失败或最终 Scene/Course 校验失败时整批不保存。 |
+| FR-A106 | 所有写工具必须携带 `expectedRevision` 并串行执行；冲突时不得套用旧补丁。场景重新生成继续复用 operation lease 和“新结果成功前不替换旧内容”的语义。 |
+| FR-A107 | 删除页面、修改或重新生成 quiz、一次修改三页及以上必须进入结构化确认；确认时 Course revision 已变化则原确认作废。 |
+| FR-A108 | 会话、可见消息、工具轨迹和 run 状态必须独立于 Course 聚合持久化；聊天消息不增加 Course revision，课程删除时相关会话级联删除。 |
+| FR-A109 | 停止请求只能取消未提交步骤；已经成功写库的工具调用不得回滚或显示成全部取消。多工具部分成功必须逐项报告。 |
+| FR-A110 | 工具成功只证明参数、结构、并发保护和持久化通过；系统不得据此宣称事实、教学质量、代码执行或视觉质量已经正确。 |
+
+### 4.15 专业幻灯片编辑器（MX，暂时搁置）
+
+| 编号 | 需求 |
+|---|---|
+| FR-X101 | 若 MX 重新立项，编辑器必须直接读取并更新 M8 的 `Slide/PPTElement`，复用同一只读 SlideCanvas 作为绘制层，不创建另一份编辑器专用页面格式。 |
+| FR-X102 | MX 编辑器只有在自然语言修订无法解决的精确坐标调整成为持续真实需求，或产品目标转为平台内专业课件制作时才启动；范围另行确认，保存仍基于 `expectedRevision`，冲突或失败保留原版本。 |
 
 ## 5. 非功能需求
 
@@ -448,8 +468,9 @@ MVP 只有一个逻辑参与者：本地用户。
 | PPT 式只读幻灯片画布 | FR-Q201～211 | M8 |
 | 受控互动场景 | FR-I101～110、NFR-SEC-08～10 | M9 |
 | 单场景再生成与质量验收 | FR-Q301～307 | M10 |
-| PPTX + interactive HTML 简化资源包 | FR-X103～106 | M11（可选） |
-| PPT 式幻灯片编辑器 | FR-X101～102、106 | M12（可选） |
+| PPTX + interactive HTML 简化资源包 | FR-X103～106 | M11（已完成） |
+| 对话式课程修订 Agent | FR-A101～110 | M12（已设计） |
+| PPT 式幻灯片编辑器 | FR-X101～102 | MX（暂时搁置） |
 | 单一可度量研究问题 | 从 M7～M10 数据中另行立项 | MX |
 
-当需求编号或范围发生变化时，必须同步更新 [01-scope.md](01-scope.md)、[03-architecture.md](03-architecture.md)、[06-roadmap.md](06-roadmap.md) 和 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+当需求编号或范围发生变化时，必须同步更新 [01-scope.md](01-scope.md)、[03-architecture.md](03-architecture.md)、[06-roadmap.md](06-roadmap.md) 和对应的 [阶段方案](stage-plans/)。

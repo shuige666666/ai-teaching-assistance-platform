@@ -30,6 +30,11 @@ function countDegraded(degradations: Degradations, kind: string, count = 1): voi
   degradations.set(kind, (degradations.get(kind) ?? 0) + count);
 }
 
+/** 将渲染器使用的 0～1 不透明度换算为 PPTX 的 0～100 透明度。 */
+function pptxTransparency(opacity: number | undefined): number | undefined {
+  return opacity === undefined || opacity >= 1 ? undefined : Math.round((1 - opacity) * 100);
+}
+
 /**
  * 把 ready/partial 课程打包为 ZIP（课程 PPTX + interactive/*.html）。
  * 纯只读转换：不写库、不改 revision；映射不了的元素跳过并计入降级清单。
@@ -60,7 +65,8 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
     for (const element of canvas.elements) {
       if (element.type === "line") {
         const geometry = resolveLineGeometry(element);
-        if (geometry.kind === "diagonal") countDegraded(degradations, "斜线按直线近似");
+        // PPTX 原生直线支持任意角度；只有 SVG 二次曲线需要按直线近似。
+        if (element.curve) countDegraded(degradations, "曲线按直线近似");
         slide.addShape(pptx.ShapeType.line, {
           x: geometry.x, y: geometry.y, w: geometry.w, h: geometry.h,
           flipH: geometry.flipH || undefined, flipV: geometry.flipV || undefined,
@@ -76,6 +82,7 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
       const box = { x: inches(element.left), y: inches(element.top), w: inches(element.width), h: inches(element.height) };
       if (element.type === "text") {
         const { runs, defaultFontSize } = resolveTextRuns(element);
+        const transparency = pptxTransparency(element.opacity);
         slide.addText(
           runs.map((run) => ({
             text: run.text,
@@ -84,7 +91,9 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
               italic: run.italic || undefined,
               underline: run.underline ? { style: "sng" as const } : undefined,
               color: run.color ?? hex(element.defaultColor),
+              fontFace: element.defaultFontName,
               fontSize: run.fontSize ?? defaultFontSize,
+              transparency,
               align: run.align,
               lineSpacingMultiple: run.lineSpacingMultiple,
               breakLine: run.paragraphEnd || undefined,
@@ -93,8 +102,9 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
           })),
           {
             ...box, valign: element.vAlign ?? "top", rotate: element.rotate || undefined,
-            fontFace: canvas.theme.fontName, fontSize: defaultFontSize, color: hex(element.defaultColor),
-            fill: element.fill ? { color: hex(element.fill) } : undefined,
+            fontFace: element.defaultFontName, fontSize: defaultFontSize, color: hex(element.defaultColor),
+            transparency,
+            fill: element.fill ? { color: hex(element.fill), transparency } : undefined,
             margin: 0, isTextBox: true,
           },
         );
@@ -131,7 +141,7 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
           ],
           {
             ...box, fontFace: "Consolas", fontSize: element.fontSize * PT_PER_PX, color: "1F2937",
-            fill: { color: "F8FAFC" }, margin: 6, valign: "top", rotate: element.rotate || undefined,
+            fill: { color: "F8FAFC" }, fit: "shrink", margin: 6, valign: "top", rotate: element.rotate || undefined,
           },
         );
         continue;

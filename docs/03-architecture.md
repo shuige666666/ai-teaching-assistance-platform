@@ -173,7 +173,7 @@ M8 的产品形态只有一种：固定比例、一次展示一个场景的 PPT 
 
 桌面课堂用只读 SlideCanvas 等比缩放 16:9 页面；`1280×720` 及更大桌面视口中主要内容无需幻灯片内部滚动即可查看。首版通过 3 个真实主题 MHTML 和单人需求检查调整 Prompt，不建设通用自动排版、碰撞求解或逐元素质量报告。MHTML 只作为固定视口静态留档，响应式缩放以实时课堂页面为准；移动端、平板和窄屏不进入 M8～M10 架构承诺。
 
-参考链必须成套查看：生成侧的 [`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md)、[`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts)、[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts) 和 [`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts)，以及 DSL/渲染侧的 [`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts)、[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts)、[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 与 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx)。移植时保留 MIT 许可，裁掉媒体、复杂公式、动效、编辑器依赖，并为上游富文本渲染增加本项目的小型白名单净化。详细边界见 [09-v0.4 方案第 5 节](09-v0.4-quality-and-interaction-plan.md)。
+参考链必须成套查看：生成侧的 [`slide-content/system.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/templates/slide-content/system.md)、[`pipeline-types.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/pipeline-types.ts)、[`scene-generator.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-generator.ts) 和 [`scene-builder.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/generation/src/scene-builder.ts)，以及 DSL/渲染侧的 [`slides.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/slides.ts)、[`normalize.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/dsl/src/normalize.ts)、[`SlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideCanvas.tsx) 与 [`SlideElement.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/renderer/src/SlideElement.tsx)。移植时保留 MIT 许可，裁掉媒体、复杂公式、动效、编辑器依赖，并为上游富文本渲染增加本项目的小型白名单净化。详细边界见 [M7～M10 方案第 5 节](stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md)。
 
 ### AD-11：互动资源开放，宿主保持隔离
 
@@ -187,9 +187,13 @@ CourseBrief、Prompt v2、Slide/PPTElement 和 diagram HTML 都是现有两阶�
 
 在线硬门只处理 Schema、不变量、元素可解析性、答案索引、HTML 隔离和运行协议等确定性判断；幻灯片是否清楚、教学适配度和事实正确性通过固定主题与人工量表离线评估。LLM-as-judge 不进入当前在线链路。
 
-### AD-X01：可选编辑器和导出继续复用 `Slide/PPTElement`
+### AD-X01：M11 导出继续复用 `Slide/PPTElement`
 
-M11 的 PPTX 导出器也读取相同 `Slide/PPTElement`；互动场景不嵌入 PPTX，以 HTML 放入 ZIP（外部依赖离线策略到M11确认）的 `interactive/` 目录。M12 的编辑器可以把 M8 的只读 SlideCanvas 作为绘制层，在其上叠加命中区域、选择框、拖拽和缩放交互；编辑操作最终通过 CourseRepository 保存。两项扩展都不得反向要求 M8 预先实现编辑状态、导出字段或第二份页面数据。
+M11 的 PPTX 导出器读取相同 `Slide/PPTElement`；互动场景不嵌入 PPTX，以 HTML 放入 ZIP 的 `interactive/` 目录。导出不得反向要求 M8 增加导出字段或第二份页面数据。专业幻灯片编辑器已后移为 MX；若未来重新立项，仍必须复用同一 SlideCanvas、数据契约和 CourseRepository 保存边界。
+
+### AD-X02：M12 采用单 Agent、受控工具与独立会话存储
+
+M12 不复制 OpenMAIC 的多 Agent Director 和后台 Worker，而是在 Next.js 服务端增加单 Agent 工具循环。对话会话、消息和 run 独立保存，Course 继续是课程内容真源；读取、搜索、补丁、调序和页面生成工具必须通过 application service 与 CourseRepository，并沿用完整 Schema、净化、`expectedRevision` 和现有生成 operation lease。模型可见 reasoning、正文和工具生命周期通过 SSE 发送，默认收起的工具卡可以展开查看经净化和限长的实际入参与结果。
 
 ## 4. 组件视图
 
@@ -473,7 +477,7 @@ Next.js Server
 
 ## 13. 已选 v0.4 扩展与更远期边界
 
-M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、多样化互动和单场景再生成，按接口扩展而不重写主链。M11 的简化资源包导出与 M12 的 PPT 式幻灯片编辑器是两个独立可选产品里程碑，不阻塞 v0.4 或 MX。以下能力仍属于 MX 或更远期候选：
+M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、多样化互动和单场景再生成，按接口扩展而不重写主链。M11 简化资源包导出已经完成，M12 对话式课程修订 Agent 已完成方案设计、尚未实现；二者都不反向改变 v0.4 退出条件。以下能力仍属于 MX 或更远期候选：
 
 - 文档输入：在 outline 请求前增加 DocumentExtractor；
 - 生成优化：替换 GenerationPolicy，不改变已持久化身份和恢复语义；
@@ -484,5 +488,6 @@ M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、多样化�
 - 数据库演进：复杂查询出现后，把 Course JSON 列逐步规范化；
 - 异步任务：把客户端循环迁移到持久化 Job/Queue；
 - 多模态与 RAG：仅在材料输入或来源增强成为明确研究问题时加入。
+- 专业幻灯片编辑器：只有自然语言修订无法解决的精确排版成为持续真实需求，或产品目标转为平台内专业课件制作时重新立项。
 
-任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。M7～M10 的完整依赖、顺序和止损规则见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)；M11/M12 的范围与开发方案见 [11-slide-export-editor-plan.md](11-slide-export-editor-plan.md)。
+任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。M7～M10 的完整依赖、顺序和止损规则见 [M7～M10 方案](stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md)；M11 与 M12 分别见 [M11 导出方案](stage-plans/m11-slide-export-plan.md)和 [M12 对话式修订 Agent 方案](stage-plans/m12-conversational-course-revision-agent-plan.md)。

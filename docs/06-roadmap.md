@@ -8,13 +8,13 @@
 
 复刻不按 OpenMAIC 的目录逐项照搬，而按纵向闭环推进：**固定课程可浏览 → MySQL 可恢复 → 真实大纲 → 真实场景 → 播放与测验 → 完整验收**。数据库现在是基础能力，因此必须在真实模型接入前完成，不能等课程已经生成后再补持久化。
 
-M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读幻灯片、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的可选 PPTX + interactive HTML 简化资源包导出，M12 是可选的 PPT 式幻灯片编辑器；暂存的 MX 才选择一个可度量研究问题。
+M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读幻灯片、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的 PPTX + interactive HTML 简化资源包导出，已按独立扩展完成；M12 在 M10 基础上建设对话式课程修订 Agent。专业幻灯片编辑器后移为 MX 按需候选，可度量研究问题仍在 MX 中独立选题。
 
-**当前进度：M1～M10 当前范围已完成；M10 的 ready 场景修订、失败互动重生成、quiz 单选/多选、人工题目编辑和新版 slide 单人需求验收均已完成。M7.0 六题与旧版 MHTML 保持冻结并作为历史留档，不再要求同题 A/B 评分。完整 slide 导出/编辑器仍为可选 M11/M12。** 实施证据见 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M10 当前范围已完成，M11 简化资源包导出也已完成；M10 的 ready 场景修订、失败互动重生成、quiz 单选/多选、人工题目编辑和新版 slide 单人需求验收均已完成。M7.0 六题与旧版 MHTML 保持冻结并作为历史留档，不再要求同题 A/B 评分。M12 对话式课程修订 Agent 已完成方案设计、尚未实现；专业幻灯片编辑器已移出确定阶段。** 实施证据见 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
-以下定义适用于 M1～M10 的实现任务；M0 只执行文档链接、术语和追踪一致性检查。M11/M12 开始前必须另行确认范围，但一旦进入实现也遵守同一完成定义。
+以下定义适用于所有实现任务；M0 只执行文档链接、术语和追踪一致性检查。M11 已独立完成，M12 按已确认方案分批实施，也遵守同一完成定义。
 
 1. 代码已经进入正式调用链，不是孤立示例；
 2. 正常路径能在 `AI_MODE=mock` 下复现；
@@ -44,9 +44,9 @@ M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。
 | M8 PPT 式只读幻灯片（已完成） | 裁剪 OpenMAIC 的直接坐标元素链，保存、恢复并只读播放 | 纵向 Block 堆叠 | 分类型/fixture、Prompt/生成、渲染/实测已完成 |
 | M9 diagram 互动闭环（已完成） | 一个可操作、可重置、可完成且可安全失败的互动页 | 全静态场景 | 一个纵向闭环 |
 | M10 课程修订与 v0.4 验收（已完成） | ready 三类场景修订、新版 slide 单人需求验收 | 不自动重生成整课、不做 A/B 评分 | 单场事务闭环 + 固定视口视觉验收 |
-| M11 简化资源包导出（可选） | 一个 ZIP 内含课程 PPTX 与 `interactive/*.html` | M8 slide + M9 interactive | 不阻塞 v0.4/MX |
-| M12 PPT 式幻灯片编辑器（可选） | 在同一 `Slide/PPTElement` 上选择、拖拽、缩放、文字编辑、撤销重做和保存 | M8 只读幻灯片 | 不阻塞 v0.4/MX |
-| MX 毕业论文延展（暂存） | 基于 M7～M10 数据完成一个可度量研究问题 | 无 | 视选题而定 |
+| M11 简化资源包导出（已完成） | 一个 ZIP 内含课程 PPTX 与 `interactive/*.html` | M8 slide + M9 interactive | 不阻塞 v0.4/MX |
+| M12 对话式课程修订 Agent（已设计） | 右侧持续对话通过受控工具读取、搜索、局部修改、调序和重新生成课程 | M10 单次修订 | M12.0～M12.3 分批实施 |
+| MX 后置候选（暂存） | 专业幻灯片编辑器，或基于既有数据完成一个可度量研究问题 | 无 | 仅在真实需求成立后立项 |
 
 建议投入是专注开发日。延期时先减少视觉装饰和扩展能力，不压缩 Schema、事务、错误恢复和测试。
 
@@ -257,7 +257,7 @@ quiz 进入页面即可作答；自动播放到 learner pause 时进入 awaiting
 
 ## 10.5. M6.5：远端响应韧性与可观测性
 
-> 状态：已完成实施与验收。完整分类、调用预算、验收矩阵和实测证据见 [10-m6.5-remote-response-resilience-plan.md](10-m6.5-remote-response-resilience-plan.md)。
+> 状态：已完成实施与验收。完整分类、调用预算、验收矩阵和实测证据见 [M6.5 远端响应韧性方案](stage-plans/m6.5-remote-response-resilience-plan.md)。
 
 M6.5 是 M6 与 M7 之间的工程加固里程碑，不重新打开 M6 的交付范围，也不替代 M7～M10 的质量、画布、互动和修订计划。它将 HTTP 2xx 下的空响应、非 JSON、异常 OpenAI-compatible envelope 和空 content 从“未知且不可重试”改为可诊断、可受限重试的上游响应错误，同时保留严格 Zod、领域语义门、一次 repair 和单请求 4 次上游调用硬上限。
 
@@ -277,7 +277,7 @@ AC-R01～AC-R11 全部具备证据；`pnpm verify:full` 已通过；真实 DeepS
 
 ## 11. M7：课程质量基础
 
-> 状态：M7.0 自动基线和逐场景 MHTML 已完成，作为 v0.3 历史留档；M7.1 功能已实现。M10 不再安排独立 A/B 或量表评分，完整字段和边界见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+> 状态：M7.0 自动基线和逐场景 MHTML 已完成，作为 v0.3 历史留档；M7.1 功能已实现。M10 不再安排独立 A/B 或量表评分，完整字段和边界见 [M7～M10 开发方案](stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md)。
 
 ### M7.0：质量基线与评价协议
 
@@ -323,31 +323,35 @@ M9 当前实现 diagram/simulation/game/code：从 OpenMAIC 裁剪分类 Prompt�
 
 **M10 退出门**：AC-Q01～AC-Q11 全部有证据；M6 `pnpm verify:full` 继续通过；新版 slide 已通过固定视口下的单人需求验收。达到此门后宣布 v0.4 当前范围完成，不把该验收写成事实正确性、教学质量或统计意义上的版本优越性结论。
 
-## 15. M11：PPTX + interactive HTML 简化资源包导出（可选）
+## 15. M11：PPTX + interactive HTML 简化资源包导出（已完成）
 
-M11 只在 M10/v0.4 已完成、M8 slide 与 M9 interactive 均稳定且用户再次确认范围后开始。导出结果固定为一个 ZIP：根目录只放一个课程 PPTX，`interactive/` 目录只放按原始场景顺序命名的自包含 HTML，例如 `03_流程互动.html`。第一版不生成 manifest、README 或 assets 目录；外部依赖的离线策略到 M11 再确认，本轮不承诺完全离线。PPTX 只写入 slide 场景并保持相对顺序，互动页面不尝试嵌入 PPTX。v2.2 起元素集已扩展为 text/shape/line/code/chart/table 六类，导出映射必须覆盖全部六类——chart 映射为 PPTX 原生图表、table 映射为 PPTX 表格——具体映射表与保真度决策见 [11-slide-export-editor-plan.md](11-slide-export-editor-plan.md)。
+M11 在 M10/v0.4 已完成、M8 slide 与 M9 interactive 稳定且用户确认范围后实施，并于 2026-09-07 完成验收。导出结果固定为一个 ZIP：根目录只放一个课程 PPTX，`interactive/` 目录只放按原始场景顺序命名的自包含 HTML，例如 `03_流程互动.html`。第一版不生成 manifest、README 或 assets 目录；外部依赖不承诺完全离线。PPTX 只写入 slide 场景并保持相对顺序，互动页面不尝试嵌入 PPTX。v2.2 起元素集已扩展为 text/shape/line/code/chart/table 六类，导出映射已覆盖全部六类——chart 映射为 PPTX 原生图表、table 映射为 PPTX 表格；文本默认字体/透明度和代码长文本收缩已与课堂渲染能力对齐；下载对象 URL 延迟释放，完成提示具备状态播报语义，移动端长提示放在导出按钮下方。斜线使用 PPTX 原生直线，`curve` 按直线近似并计入降级清单；Windows 保留设备名不纳入低概率场景硬门禁。具体映射表与保真度决策见 [M11 导出方案](stage-plans/m11-slide-export-plan.md)。
+
+M11 退出证据包括：`pnpm test` 通过 26 个文件、164 项测试；`pnpm lint`、TypeScript 检查和 `pnpm build` 通过；`pnpm test:e2e` 覆盖真实点击下载、解包、完成提示状态播报和刷新恢复；`pnpm check:export` 在两门真实 ready 课程上核对 ZIP、PPTX 页数、文本、表格、原生图表和互动 HTML。PowerPoint/WPS 人工打开核对已由用户于 2026-09-07 完成。导出仍为课堂页纯只读能力，不改数据库或 revision。
 
 可参考 OpenMAIC 的 [`lib/export/use-export-pptx.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/lib/export/use-export-pptx.ts) 中 PPTElement 到 PPTX 的映射、资源包组装、标题安全化和 `interactive/` 分包方式，以及其内置 [`packages/pptxgenjs`](https://github.com/THU-MAIC/OpenMAIC/tree/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/pptxgenjs)。固定提交按“第几个互动页”编号，本项目明确改为原始 `Scene.order`，不能原样复制该编号逻辑。本项目不复用 `.maic.zip` manifest、导入协议、视频导出或完整媒体管线。
 
-## 16. M12：PPT 式幻灯片编辑器（可选）
+## 16. M12：对话式课程修订 Agent（已设计）
 
-M12 只在 M10/v0.4 已完成、M8 的 `Slide/PPTElement` 已稳定且用户再次确认范围后开始。第一批能力限于选择、拖拽、缩放、删除、文字编辑、撤销重做和 MySQL 保存；第二批再考虑复制粘贴、对齐吸附和图层。它复用 M8 的只读 Renderer，在同一 PPT 式页面上叠加编辑交互，不建立第二套页面格式，不反向改变 M8 生成契约，也不作为 MX 的前置条件。
+M12 把 M10 的一次性单场景修订升级为课堂右侧的持续对话：模型可以先讨论，再按需调用 `list_scenes/read_stage/grep_stage/patch_stage/edit_deck/generate_scene` 等受控工具读取、搜索和修改课程。模型明确返回的可见 reasoning、正文与工具生命周期通过 SSE 流式展示；思考卡和工具组默认收起，展开后可查看经净化和限长的真实入参与结果。
 
-可参考 OpenMAIC Editor 的三层边界：[`README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/README.md)、[`core/index.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/core/index.ts)、[`EditableSlideCanvas.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/react/EditableSlideCanvas.tsx) 和 [`EditableSlideCanvasWithUI.tsx`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/%40openmaic/editor/src/ui/EditableSlideCanvasWithUI.tsx)。本项目用 MySQL revision/事务保存替代 OpenMAIC 的宿主状态与本地持久化方式。
+第一版采用单 Agent、独立 MySQL 会话记录和服务端工具循环，不复制 OpenMAIC 的多 Agent Director、后台 Worker、Skills、媒体或语音系统。所有写工具继续经过 application service、完整 Schema、净化与 `expectedRevision`；生成工具复用现有 operation lease。按 M12.0 只读对话、M12.1 单页最小修改、M12.2 页序与生成、M12.3 体验和证据收口分批退出，完整方案见 [M12 对话式课程修订 Agent 开发方案](stage-plans/m12-conversational-course-revision-agent-plan.md)。
 
 ## 17. 共同硬边界
 
-M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、3D/procedural-skill 或服务端代码执行。M9 已按用户确认扩展四类互动和浏览器代码练习；M8 不实现直接编辑，M11/M12 不并入 v0.4 硬门。
+M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、3D/procedural-skill 或服务端代码执行。M9 已按用户确认扩展四类互动和浏览器代码练习；M8 不实现直接编辑，M11/M12 不并入 v0.4 硬门。M12 的 Agent 工具不获得任意文件系统、数据库、网络或代码执行能力。
 
 ## 18. MX：毕业论文延展
 
+专业幻灯片编辑器后移到 MX，不再占用确定阶段编号。它的选择、拖拽、缩放、命中测试、坐标换算和撤销重做属于较重的前端交互工程，但主要解决精确人工排版，不能直接提高课程事实正确性、教学质量或 Agent 修订能力；当前 M11 已支持导出 PPTX，精细调整也可以在 PowerPoint/WPS 中完成，因此它不是 M12 的前置条件。
 
+只有满足以下任一条件时才重新立项编辑器：真实使用持续出现自然语言修订无法解决的精确坐标/尺寸调整；课程作者必须在平台内完成专业课件制作；或论文明确研究“AI 生成与人工精修协同”。重新立项时仍复用 `Slide/PPTElement`、SlideCanvas、净化、完整 CourseSchema 与 `expectedRevision` 保存边界，不建立第二套编辑器格式。MX 的论文研究选题与编辑器候选彼此独立，一次仍只选择一个主问题。
 
 ## 19. 风险登记与止损规则
 
 | 风险 | 早期信号 | 止损措施 |
 | --- | --- | --- |
-| 范围膨胀 | M8 未稳定就并行开发互动、编辑器、导出、RAG 或 Agent | 严格按 M7 → M8 → M9 → M10，M11/M12 与额外能力不进入 v0.4 硬门 |
+| 范围膨胀 | M12 同时建设完整编辑器、多 Agent、媒体、RAG 或后台任务平台 | M12 只做单 Agent 课程工具闭环；编辑器与其他扩展留在 MX |
 | 数据库先于领域模型扩张 | 页面和 API 直接拼 SQL | 强制 CourseRepository 与契约测试 |
 | 长事务 | 模型调用期间占用数据库事务 | 使用登记操作和结果提交两个短事务 |
 | 并发覆盖 | 迟到响应覆盖重试结果 | operation id + expectedRevision |
@@ -366,4 +370,4 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、3D/proc
 
 ## 20. 推荐的下一次开发迭代
 
-当前 M7.0 基线保持冻结，M9 多样化互动与 M10 单场修订、quiz 人工题目编辑、新版 slide 单人需求验收均已完成，最新实测以 docs/07 为准。新课程为 Course v5、4～8 场景；v4 按需无损升级，v1～v3 不迁移。下一步只按实际需求选择可选的 M11 导出、M12 编辑器或 MX 论文延展，不继续建设当前范围之外的 A/B 评分体系。
+当前 M7.0 基线保持冻结，M9 多样化互动、M10 单场修订/quiz 人工题目编辑、新版 slide 单人需求验收和 M11 导出均已完成，最新实测以 docs/07 为准。新课程为 Course v5、4～8 场景；v4 按需无损升级，v1～v3 不迁移。下一步按 [M12 方案](stage-plans/m12-conversational-course-revision-agent-plan.md)先完成 M12.0 只读对话和 M12.1 单页最小修改；专业编辑器与论文延展继续留在 MX，不恢复当前范围之外的 A/B 评分体系。

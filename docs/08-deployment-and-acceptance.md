@@ -1,6 +1,6 @@
 # 08. 部署、恢复与验收手册
 
-> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M10/v0.4 的增量验收，其中 M7.1、M8、M9 与 M10 当前范围已完成。当前版本没有账户与权限系统，不允许直接暴露到公网。
+> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M11 的增量验收，其中 M7.1、M8、M9、M10 与 M11 当前范围已完成。当前版本没有账户与权限系统，不允许直接暴露到公网。
 
 ## 1. 最小生产启动
 
@@ -43,9 +43,10 @@ DeepSeek smoke test 应完成一门至少 3 场景的课程，并从 MySQL 中�
 pnpm exec playwright install chromium  # 新机器首次运行 E2E
 pnpm verify                            # lint + unit/API contract + build
 pnpm verify:full                       # 再加 MySQL integration + production E2E
+pnpm check:export                      # 需先启动 production server；检查两门真实课程的导出结构
 ```
 
-`verify:full` 要求 MySQL 已启动且 `.env.local` 有效。E2E 使用唯一主题创建测试课程，覆盖创建、大纲、三个场景、PPT 画布四类元素与 16:9、播放/暂停/继续、quiz、刷新恢复和配置健康检查，并在 `finally` 中删除课程。Playwright 启动的 production server 显式覆盖为 `AI_MODE=mock` 且不复用既有端口服务，因此即使 `.env.local` 当前配置为 remote，也不会由自动验收触发付费模型调用。`output/playwright/` 的失败 trace/截图只用于临时排障；MHTML 仅作为 `1280×720` 固定视口的静态视觉留档，不用于证明离线文件的响应式缩放，实时缩放能力以课堂页面为准。
+`verify:full` 要求 MySQL 已启动且 `.env.local` 有效。E2E 使用唯一主题创建测试课程，覆盖创建、大纲、导出下载与 ZIP 解包、四个场景、PPT 画布四类元素与 16:9、播放/暂停/继续、quiz、刷新恢复和配置健康检查，并在 `finally` 中删除课程。Playwright 启动的 production server 显式覆盖为 `AI_MODE=mock` 且不复用既有端口服务，因此即使 `.env.local` 当前配置为 remote，也不会由自动验收触发付费模型调用。`pnpm check:export` 默认访问 `http://localhost:3100`，也可用 `EXPORT_BASE_URL` 指向 production server；它读取两门已保存的真实 ready 课程并对 ZIP、PPTX 页数/文本、表格、原生图表和互动 HTML 执行失败即退出的结构断言。`output/playwright/` 的失败 trace/截图只用于临时排障；MHTML 仅作为 `1280×720` 固定视口的静态视觉留档，不用于证明离线文件的响应式缩放，实时缩放能力以课堂页面为准。
 
 GitHub Actions 使用临时 MySQL 和 `AI_MODE=mock` 执行相同质量门，不保存真实 Key，也不调用付费 Provider。
 
@@ -135,7 +136,7 @@ M6/M6.5 已按本机、MySQL、mock 与 DeepSeek 的 v0.3 边界完成。百炼�
 
 ## 8. M7～M10/v0.4 验收记录与当前口径
 
-M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程碑先通过自己的退出门，M10 再汇总 AC-Q01～AC-Q11 并宣布 v0.4 完成；M6 证据必须继续有效。详细范围见 [01-scope.md](01-scope.md)，开发顺序见 [09-v0.4-quality-and-interaction-plan.md](09-v0.4-quality-and-interaction-plan.md)。
+M7～M10 不能用现有 AC-01～AC-12 自动继承完成结论。每个里程碑先通过自己的退出门，M10 再汇总 AC-Q01～AC-Q11 并宣布 v0.4 完成；M6 证据必须继续有效。详细范围见 [01-scope.md](01-scope.md)，开发顺序见 [M7～M10 开发方案](stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md)。
 
 截至 2026-08-28，M7.0 六题输入已冻结，mock smoke 和 6 主题 DeepSeek Prompt v1 自动基线均已完成并保留失败样本。28 个已保存场景已经从既有 MySQL 课程归档为 `1280×720` MHTML，没有重新调用模型。M8～M10 只承诺桌面视口；M10 通过新版 slide 的单人需求验收完成，不再安排同题配对评分。
 
@@ -213,4 +214,17 @@ M7.0 的六题输入、课程内容、失败样本和生成元数据保持不变
 | AC-Q10 新版 slide 样式需求验收 | M10 | 单人需求检查 + `1280×720` 固定视口视觉证据 | 已通过 |
 | AC-Q11 M6 全量回归 | M7～M10 | `pnpm verify:full` | 每个里程碑退出时复跑 |
 
-M7、M8、M9 和 M10 可以在各自相关行具备证据后单独更新为完成；当前表中 M10 的新版 slide 需求验收已经通过，v0.4 当前范围可以标记完成。M7.0 旧基线继续作为历史留档，配对脚本和人工量表不属于运行质量门。M11 简化资源包导出和 M12 编辑器是 v0.4 之后的可选扩展，不得混入本表伪装为当前验收项；若启动，必须另建需求、测试和退出证据。
+M7、M8、M9 和 M10 可以在各自相关行具备证据后单独更新为完成；当前表中 M10 的新版 slide 需求验收已经通过，v0.4 当前范围可以标记完成。M7.0 旧基线继续作为历史留档，配对脚本和人工量表不属于运行质量门。M11 已作为独立扩展完成，退出证据见下节；M12 对话式课程修订 Agent 已完成方案设计，后续必须按 M12.0～M12.3 分别补充需求、测试和退出证据。专业幻灯片编辑器已后移为 MX，不在当前验收范围内。
+
+### 8.6 M11 资源包导出验收
+
+M11 于 2026-09-07 完成。课堂页导出是纯只读操作：`ready`/`partial_failed` 课程生成一个 ZIP，根目录包含一个课程 PPTX，`interactive/` 下保存按原始 `Scene.order` 命名的互动 HTML，quiz 不进入导出物。PPTX 原生直线支持斜线；`curve` 二次曲线按端点直线近似，并在完成提示中计入降级，不能把斜线误报为降级。后续收尾已补充元素级默认字体、文本透明度、代码长文本收缩、下载对象 URL 延迟释放、状态播报语义和移动端提示布局；Windows 保留设备名不作为本次低概率场景门禁。
+
+验收命令与结果：
+
+- `pnpm test`：26 个文件、164 项测试通过，包含曲线/斜线降级统计、字体/透明度/长代码文本回归；
+- `pnpm test:e2e`：1/1 通过，mock 课程真实点击导出、读取下载 ZIP、核对 1 个 PPTX、1 个互动 HTML 和完成提示；
+- `pnpm check:export`：两门真实 ready 课程通过 ZIP 结构、PPTX 页数/文本、表格、原生 `barChart` 和互动 HTML 检查；
+- AC-E02：PowerPoint/WPS 人工打开核对已由用户确认通过，样例留存于 `output/export-check/`。
+
+这些证据证明的是导出结构、内容进入文件和当前样例可读，不等于所有未来生成课程都没有字体替换、布局或内容质量问题；互动 HTML 仍不承诺离线运行。
