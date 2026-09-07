@@ -1,7 +1,7 @@
 # 11. M11 资源包导出与 M12 幻灯片编辑器开发方案
 
-> 文档版本：1.0（2026-09-05）
-> 状态：M11 已实现并完成结构自检（2026-09-05）；AC-E02 待人工在 PowerPoint/WPS 中打开核对；M12 为概要设计，开工前按本文档细化
+> 文档版本：1.1（2026-09-07）
+> 状态：M11 已实现并完成结构、浏览器链路及 PowerPoint/WPS 人工核对（2026-09-07）；M12 为概要设计，开工前按本文档细化
 > 上游依赖：M8 只读幻灯片（已完成）、M9 自包含互动页（已完成）、Course v5 契约（稳定）
 
 ## 1. 决策结论
@@ -36,7 +36,7 @@
 
 - `pptxgenjs`：客户端（浏览器）生成 PPTX，OpenMAIC 同款库（MIT）；
 - `jszip`：打包 ZIP（MIT）；
-- 全客户端链路：课堂页/生成页新增"导出资源包"按钮 → 拉取课程 JSON → 生成 PPTX → 组装 ZIP → 触发浏览器下载。无服务端文件中转、无新增 API；
+- 全客户端链路：课堂页新增"导出资源包"按钮 → 使用已加载的课程 JSON 生成 PPTX → 组装 ZIP → 触发浏览器下载。无服务端文件中转、无新增 API；生成页入口留到后续批次；
 - PPTX 画布：16:9（对应逻辑画布 1000 × 562.5，映射系数 1 逻辑 px = 1/75 英寸）；
 - 换算系数统一：位置与尺寸 1 逻辑 px = 1/75 英寸；字号 1px = 0.75pt（CSS px → PPT point）；
 - 依赖登记：安装时锁定 pptxgenjs/jszip 版本，并在 THIRD_PARTY_NOTICES.md 登记来源与许可证。
@@ -46,15 +46,15 @@
 | PPTElement | PPTX 映射 | 保真度决策 |
 | --- | --- | --- |
 | text | 文本框 + 文本 runs：解析净化 HTML——`p` → 段落，`strong/b` → bold，`em/i` → italic，`u` → underline，span 内联 `font-size/color/line-height/text-align` 映射到 runs 与段落属性 | 净化白名单（6 种样式属性）即解析全集，单测钉住；解析不到的结构降级为纯文本 |
-| shape | `pathFormula` 预设 → PPTX 预设几何：rect→rect、roundRect→roundRect、circle→ellipse、triangle→triangle、diamond→diamond、rightArrow→rightArrow；shape `gradient`（v2.2）→ pptxgenjs 渐变填充，不支持时降级为首个色标纯色 | 手写任意 `path`（无 pathFormula）第一版降级为跳过并计数上报；不尝试任意 path 转换 |
-| line | 直线连接符：start/end → 端点坐标，`width` → 线宽，`points` 端点 → arrow/dot 端头 | `curve` 二次曲线第一版展平为直线，导出完成提示中计入降级数量 |
-| code | 等宽字体文本框；`fileName`/`language` 写入首行注释行，`lines` 逐行写入 | `showLineNumbers` 不导出行号（PPT 无等宽对齐需求） |
+| shape | `pathFormula` 预设 → PPTX 预设几何：rect→rect、roundRect→roundRect、circle→ellipse、triangle→triangle、diamond→diamond、rightArrow→rightArrow；shape `gradient`（v2.2）取首个色标降级为纯色，并在完成提示中计数 | 手写任意 `path`（无 pathFormula）第一版降级为跳过并计数上报；不尝试任意 path 转换 |
+| line | 直线连接符：start/end → 端点坐标，`width` → 线宽，`points` 端点 → arrow/dot 端头 | 当前版本导出直线、箭头和虚线；`curve` 二次曲线暂不导出，后续补充映射时需同步加入降级计数 |
+| code | 等宽字体文本框；`fileName`/`language` 写入首行元数据文本，`lines` 逐行写入 | `showLineNumbers` 不导出行号（PPT 无等宽对齐需求） |
 | chart | `addChart` 原生图表：column→bar（纵向）、bar→bar（横向）、line→line、pie→pie；`labels`/`series` 直传，`themeColors` → 系列配色 | 数据元素与 PPTX 原生图表天然契合，无损映射 |
 | table | `addTable`：`colWidths` 比例 → 列宽，`rows` → 单元格，`header` → 首行加粗 + 底色 | 单元格纯文本（规范化已保证） |
-| background | solid → 纯色填充；linear gradient → pptxgenjs 渐变（若版本不支持则取首个色标降级为纯色） | radial 渐变第一版降级纯色 |
+| background | solid → 纯色填充；linear/radial gradient → 取首个色标降级为纯色，并在完成提示中计数 | 当前版本不生成 PPTX 原生渐变 |
 | theme | `fontName` → 全局字体声明，`fontColor` → 默认字色，`themeColors` → 强调色序列 | 字体声明 `Microsoft YaHei`，不嵌入字体文件 |
 
-通用保真原则：**映射不了的元素跳过并计数，绝不中断导出**；完成提示中明确列出降级/跳过数量。
+通用保真原则：**已识别但无法映射的元素跳过并计数，绝不中断导出**；完成提示中明确列出降级/跳过数量。当前 `curve` 字段尚未支持，待补充映射时纳入同一规则。
 
 ### 2.4 模块结构
 
@@ -64,19 +64,19 @@ lib/export/
 ├─ rich-text-runs.ts      # 净化 HTML → 文本 runs 解析（纯函数，可单测）
 ├─ filename.ts            # 标题安全化（非法字符、长度、重名）
 └─ use-export-zip.ts      # 客户端 hook：课程 JSON → PPTX → ZIP → 下载
-components/export/        # "导出资源包"按钮与进度提示（挂课堂页/生成页）
+components/export/        # "导出资源包"按钮与进度提示（当前挂课堂页）
 ```
 
 ### 2.5 测试与验收
 
-- 单元测试：映射纯函数逐类覆盖（含降级分支）、runs 解析白名单全集、文件名安全化（非法字符/超长/空标题）；
+- 单元测试：映射纯函数逐类覆盖（含主要降级分支）、runs 解析核心标签与样式、文件名安全化（非法字符/超长/空标题）；
 - 验收（新增 AC-E 系列，写入 docs/08 前先在本文件维护）：
   - AC-E01 真实 ready 课程导出 → 解包校验 ZIP 结构（一个 PPTX + interactive 命名规范）✅ 2026-09-05 两门真实课程通过；
-  - AC-E02 PPTX 在 PowerPoint 与 WPS 中人工打开核对：文字、形状、图表、表格可读且顺序正确 ⏳ 待用户执行（ZIP 样例在 output/export-check/）；
+  - AC-E02 PPTX 在 PowerPoint 与 WPS 中人工打开核对：文字、形状、图表、表格可读且顺序正确 ✅ 2026-09-07 用户人工核对通过（ZIP 样例在 output/export-check/）；
   - AC-E03 chart 元素导出为可编辑的 PPTX 原生图表（非图片）✅ barChart 部件生成、数据无损；
   - AC-E04 含降级元素的导出在完成提示中如实列出数量 ✅ 浏览器链路显示"形状渐变降级纯色 ×1"；
   - AC-E05 导出过程不产生任何写库操作（revision 不变）✅ 纯只读转换，未调用任何写接口。
-- e2e：mock 课程全流程回归新增导出按钮冒烟（结构断言，不解包内容）。
+- 自动化验证：现有 mock 课程全流程 E2E 通过；导出按钮的真实点击、下载、解包和完成提示由 `scripts/export-browser-check.mjs` 单独验证，当前尚未并入 mock E2E。
 
 ### 2.6 硬边界
 
@@ -86,7 +86,7 @@ components/export/        # "导出资源包"按钮与进度提示（挂课堂�
 
 1. **入口位置**：导出按钮放在课堂页头部区域（课程 JSON 已在客户端加载，零额外请求）；生成页入口留到第二批；
 2. **可用性规则**：`ready` 与 `partial_failed` 课程均可导出（导出全部已保存场景）；`draft`/`outline_ready` 无场景可导出，按钮禁用并提示；
-3. **能力 spike 前置**：全量实现前先做一个最小 spike——用 pptxgenjs 生成"文本 + 渐变圆角矩形 + 原生柱状图"的单页样张，验证渐变填充与原生图表的实际支持度，再按 §2.3 的降级路径定稿映射；
+3. **能力 spike 前置**：已完成最小 spike，确认原生柱状图可用；当前版本的页面/形状渐变按首个色标降级为纯色，并按 §2.3 的降级路径实现；
 4. **降级透明化**：AC-E04 的"跳过/降级计数"在导出完成提示中按元素类型分组列出，便于发现映射盲区。
 
 ## 3. M12：PPT 式幻灯片编辑器（概要设计，开工前细化）

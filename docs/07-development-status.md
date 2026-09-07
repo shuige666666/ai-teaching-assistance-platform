@@ -1,10 +1,11 @@
 # 07. 当前开发状态
 
 > 本文记录已经进入正式调用链并通过验证的能力。目标设计仍以 01～06 文档为准；本文不把后续计划描述成已实现功能。
+> 最后更新：2026-09-07。当前已完成 M1～M11；M12 仍为概要设计，尚未开始。
 
 ## 1. 当前结论
 
-项目已完成 **M1～M10 当前范围**，包括可选互动的生成、保存、隔离运行与 fallback，以及新版 slide 的单人需求验收；多样化增量已完成本轮实现与验证，最新状态见下节。当前默认 mock 路径不需要模型 Key 和模型网络，正式课程仍以本机 MySQL 为唯一来源：
+项目已完成 **M1～M10 的 v0.4 当前范围**，并完成已确认的可选 **M11 课程资源包导出**；M12 幻灯片编辑器仍未开始。当前默认 mock 路径不需要模型 Key 和模型网络，正式课程仍以本机 MySQL 为唯一来源：
 
 ```text
 首页填写主题、选择 4～8 个场景（默认 5 个）并可选展开高级要求
@@ -20,15 +21,28 @@
   → 课堂按 Action 自动播放、暂停、继续和重播
   → quiz 停在 awaitingLearner，服务端判分并写入 quiz_attempts
   → 重启 Next.js 后从 MySQL 恢复课程
+  → 课堂页将课程 PPTX 与 interactive HTML 组装为 ZIP 并触发下载（纯只读）
   → 显式删除课程及其关联测验记录
   → CI 使用临时 MySQL 重跑同一套 mock 质量门
 ```
 
 MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository` 仍用于不依赖数据库的单元测试，但正式 `.env.local` 使用 `COURSE_REPOSITORY=mysql`，不会在数据库失败时静默切换到内存。
 
-## 2. 已实现内容
+## 2. 当前能力快照与最近变更
 
-### slide 视觉升级 v2.2：图表、表格、主题与量化排版（2026-09-05）
+### 2.1 最近里程碑（按当前版本由新到旧）
+
+本节按当前版本从新到旧列出 M11～M8；段内保留各里程碑当时的验证叙述，历史措辞不代表当前待办状态。
+
+#### M11 资源包导出（2026-09-07，已实现并完成验收）
+
+按 [11-slide-export-editor-plan.md](11-slide-export-editor-plan.md) 完成 M11 导出：课堂页头部新增"导出资源包"（ready/partial 可用、draft 禁用），客户端以 pptxgenjs + jszip 生成 ZIP（课程 PPTX + `interactive/<序号>_<安全标题>.html`）。六类元素均已建立导出映射：chart → PPTX 原生图表（数据无损）、shape pathFormula → PPTX 预设几何（历史手写 path 按坐标反推，识别不了跳过计数）、table → addTable、text 富文本解析为 runs（段级内联样式作为整段基础格式）、code → 等宽文本、line → 直线及箭头/虚线；`curve` 二次曲线暂不导出，后续补充映射时需同步加入降级计数。渐变类（页面背景/形状）当前取首个色标降级为纯色，并在完成提示中按类计数。导出为只读操作，不写库、不改 revision。schema 侧 shape 新增可选 `pathFormula` 字段（规范化阶段保留，渲染器不受影响）。新增依赖 pptxgenjs 4.0.1、jszip 3.10.1（均已登记 THIRD_PARTY_NOTICES）。
+
+配套模块：`lib/export/{filename,rich-text-runs,pptx-mapping,build-course-package,use-export-zip}`、`components/export/export-button`，工具 `scripts/archive-course-to-eval.mjs`（数据库课程 → eval/runs MHTML 归档）与 `export-structure-check`/`export-browser-check` 两个开发期自检脚本；前者尚未接入 `package.json` 的正式命令。
+
+验收：12 个新单元测试（文件名安全化、runs 解析、六类映射含主要降级分支、打包结构）+ 全量 162 单测、tsc、lint、build、e2e 回归全部通过。两门真实课程结构自检通过：v2.4《TCP 拥塞控制》3 页、v2.3《后端语言选型》4 页，页数一致、表格进入 PPTX、原生图表部件（barChart）生成、文本中文内容完整；浏览器下载链路（点击 → 下载 → 解包 → UI 降级提示）验证通过，ZIP 样例留存 `output/export-check/`。AC-E02（PowerPoint/WPS 人工打开核对）已由用户于 2026-09-07 人工核对通过。
+
+#### M8 slide 视觉升级 v2.2：图表、表格、主题与量化排版（2026-09-05）
 
 对照 OpenMAIC 固定提交的 slide Prompt 做差距分析后，确认页面单调来自四层叠加：Prompt 缺量化排版规则与整页示例、元素只有四类、全局单一色板、生成参数保守。本次升级在不改变 Course v5 结构和 quiz/interactive 链路的前提下完成：
 
@@ -39,7 +53,7 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 验证：`pnpm lint`、`pnpm test`（150，含新增 16 个图表/表格/主题/形状预设用例）、`pnpm test:db`（18）、`pnpm build`、`pnpm test:e2e`（mock 回归覆盖 chart/table/渐变圆角卡片/代码块渲染）全部通过；mock 服务真实浏览器截图确认 ECharts 图表、表格与渐变卡片位置和样式正确（`scripts/slide-visual-check.mjs`，输出 `output/slide-visual-check/`）。DeepSeek 真实生成首轮结果与后续迭代见下节；`ready` 仍只代表生成保存完成。
 
-### 大纲级可视化规划 v2.3/v2.4（2026-09-05，真实 smoke 迭代）
+#### M8 后续：大纲级可视化规划 v2.3/v2.4（2026-09-05，真实 smoke 迭代）
 
 `scripts/deepseek-slide-smoke.mjs` 首轮真实 DeepSeek 生成（《四种后端语言性能与生态对比》，5 场全部一次通过、0 修复、单场约 8s）证实：主题配色、装饰线配方、角色版式骨架均被模型遵循，但 4 张 slide 全部只有 shape+text——chart/table/渐变/line/code 零使用，worked_example 的演示位被文字卡片代替。对照 OpenMAIC 源码定位到机制差异：上游在**大纲阶段**（requirements-to-outlines 的 Special Element Design Guidelines）就用触发式指令让大纲模型把 `[Chart]`/`[Table]` 标记（含图表类型、维度、数据范围）写进 slide 页 keyPoints，keyPoints 原样透传给场景阶段执行；其 slide prompt 的 chart/table 章节反而只是纯 schema 参考。本项目 v2.2 只改了场景 prompt，大纲要点里没有任何可视化信号，与上游机制不符。
 
@@ -47,15 +61,7 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 第二轮真实 smoke（《四种后端语言》同主题重跑）确认机制生效：concept 页出现 5 行 × 4 列真实 table，worked_example 页出现 column chart + 渐变卡片，全部一次通过、0 修复（证据已按 eval 惯例归档为 MHTML：`eval/runs/slide-v2.2-first-smoke/`、`slide-v2.3-marker-smoke/`、`slide-v2.3-tcp-line-issue/`、`slide-v2.4-tcp-smoke/`，两门课程保留在库中可对照）。随后用户自建课程（《TCP 拥塞控制》）暴露 v2.3 连线硬要求的执行工艺缺陷：mechanism 页语义正确地画了流程连线，但模型用"20px 短线 + 80×3 色条"拼接连接线，箭镞落在连接线中段指向色条而非节点边缘，且线（y=200）与色条（y=195）错位 5px（几何证据见 `eval/runs/slide-quality-audit/2026-09-05/`，审计脚本 `scripts/layout-audit.mjs`，批量连线审计 `scripts/line-craft-batch.mjs`，课程归档工具 `scripts/archive-course-to-eval.mjs`）。`scene-slide.v2.4` 据此修订：连线要求改为按内容关系条件触发（流程/因果→必须连线；并列/分类→分组卡片、不应画线），并加入连线工艺规范（从上一节点边缘到下一节点边缘、两端留 4～8px、单根长度 ≥40px、一条连接只用一根 line、禁止 shape 色条拼接、同排连线 y 对齐）。
 
-### M11 资源包导出（2026-09-05，已实现并验收）
-
-按 [11-slide-export-editor-plan.md](11-slide-export-editor-plan.md) 完成 M11 导出：课堂页头部新增"导出资源包"（ready/partial 可用、draft 禁用），客户端以 pptxgenjs + jszip 生成 ZIP（课程 PPTX + `interactive/<序号>_<安全标题>.html`）。六类元素全部映射：chart → PPTX 原生图表（数据无损）、shape pathFormula → PPTX 预设几何（历史手写 path 按坐标反推，识别不了跳过计数）、table → addTable、text 富文本解析为 runs（段级内联样式作为整段基础格式）、code → 等宽文本、line 含箭头/虚线；渐变类（页面背景/形状）在 PPTX 中无原生支持时降级纯色并在完成提示中按类计数。导出为只读操作，不写库、不改 revision。schema 侧 shape 新增可选 `pathFormula` 字段（规范化阶段保留，渲染器不受影响）。新增依赖 pptxgenjs 4.0.1、jszip 3.10.1（均已登记 THIRD_PARTY_NOTICES）。
-
-配套模块：`lib/export/{filename,rich-text-runs,pptx-mapping,build-course-package,use-export-zip}`、`components/export/export-button`，工具 `scripts/archive-course-to-eval.mjs`（数据库课程 → eval/runs MHTML 归档）与 `export-structure-check`/`export-browser-check` 两个自检脚本。
-
-验收：12 个新单元测试（文件名安全化、runs 解析、六类映射含降级分支、打包结构）+ 全量 162 单测、tsc、lint、build、e2e 回归全部通过。两门真实课程结构自检通过：v2.4《TCP 拥塞控制》3 页、v2.3《后端语言选型》4 页，页数一致、表格进入 PPTX、原生图表部件（barChart）生成、文本中文内容完整；浏览器下载链路（点击 → 下载 → 解包 → UI 降级提示）验证通过，ZIP 样例留存 `output/export-check/`。AC-E02（PowerPoint/WPS 人工打开核对）待用户执行。
-
-### M10 ready 单场景再生成与新版 slide 验收（修订能力 2026-09-01；需求验收 2026-09-02）
+#### M10 ready 单场景再生成与新版 slide 验收（修订能力 2026-09-01；需求验收 2026-09-02）
 
 课堂调度台已向 ready slide/interactive/quiz 提供“修订本场”，要求填写 500 字以内意见并调用独立 `/revise`；降级页调用 `/regenerate` 干净重生成失败互动。只有修订会把当前旧场景作为不可信参考发送给模型，interactive 会先剥离平台 Runtime/CSP；降级重生成只发送错误背景。两条路径都按原大纲、Brief 与当前类型 Prompt 生成完整候选，成功提交才替换本场；失败保留旧场景及其他内容。不重做大纲、不重生成整课、不自动反复调用模型，也不实现编辑器。
 
@@ -75,7 +81,7 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 
 本轮 `pnpm verify:full` 通过：122 项单元、15 项 MySQL、production build、Chromium E2E 1/1。Playwright CLI 验证原清洁机器人遇到布局循环后卸载 iframe；临时 mock 课程验证失败提示、重复点击禁用、单场替换、大纲/其他场景保持不变及刷新恢复 ready。临时课程已按 ID、主题、revision 与场景数量核对后删除（API 204，复查 404）。随后按用户要求对课程 `d67c6d7f-6dd5-4381-adbb-a4972f6b825a` 的第 02 互动执行一次真实 DeepSeek 再生成：REV.10 → REV.12，场景 ID 已替换，promptVersion 为 `scene-diagram.v2.3`，1 次上游调用、0 repair；新 HTML 约 23.4 KiB，课堂 iframe 实测 819×460，文档与视口同高，天气/数学两条路径均可完成。其余 3 个场景和 4 条大纲未改写。
 
-### M9 多样化增量（2026-08-31，已完成本轮验证）
+#### M9 多样化互动（2026-08-31，已完成本轮验证）
 
 正式路径已扩展为 diagram/simulation/game/code。分类选择 Prompt，不限制具体玩法；大纲可以编辑 widgetType、设计意图与 code 语言（Python/JavaScript）。outline.v2.3，互动 Prompt 为 scene-<type>.v2.3。模型直接输出 HTML，服务端从 scene-meta 提取讲解/fallback 后装配；避免整页 JSON 转义失败。diagram/simulation 16,000 tokens，game/code 20,000，注入后 256 KiB；没有增加 repair 轮次、玩法门禁或自动视觉审核。
 
@@ -99,7 +105,7 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 
 四门课程共20/20场景保存、20份MHTML，完整课程、生成历史与runtimeChecks收束到同目录report.json。保留两份旧v2.0运行失败页：工具路由code的编辑器覆盖按钮、数据救援diagram的入口漏绑/弹窗/SVG越界，未手工修改。game 样例虽能完成，仍有无效操作推进进度、顶部磁盘状态未更新的小问题，已列入报告，留给人工评估，不称为无缺陷或稳定成功率。MHTML只作静态对照，脚本能力请在课堂验收。
 
-### M9 diagram 基础版历史（已被上述范围扩展取代）
+##### 历史：M9 diagram 基础版（已被上述范围扩展取代）
 
 课程范围已改为 4～8 场景、默认 5。大纲页由用户选择 off/required，默认关闭，模型不能自动开启；required 在 4/5～6/7～8 场景下分别允许 1/1～2/1～3 个 interactive，至少 2 个 slide 和 1 个 quiz，首场 slide、互动不相邻。当前 Course v5 自动读取升级 v4；v1～v3 旧行不删除、不迁移，只隐藏并明确拒绝。
 
@@ -111,7 +117,9 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 
 最终 `scene-diagram.v1.3` 样例为“事务状态转换图：开始、提交与回滚”，courseId=`a3dfc090-4bc0-41c4-8da3-4e0b96af7225`，Course v4/revision 10/ready。大纲和四个场景全部一次调用通过、0 repair；互动 13,856ms。真实 Chromium 验证四个节点、完成事件、播放器完成、宿主重置和刷新恢复；1280×720 课堂下 iframe 为 821×387，文档同尺寸且无滚动溢出。最终 `pnpm verify:full` 通过 101 项单元测试、13 项 MySQL 集成测试、production build、Chromium E2E 1/1。当时 diagram 基础版退出验收完成；生成内容的教学与视觉质量仍需人工评价，不承诺所有新 HTML 无逻辑或版式错误。
 
-### 数据库与仓储
+### 2.2 当前系统能力快照
+
+#### 数据库与仓储
 
 - 使用 `mysql2/promise` 的服务端进程级连接池；
 - `ai_teaching` 数据库中的 courses、quiz_attempts 和 schema_migrations 表；
@@ -122,7 +130,7 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 - quiz_attempts 通过外键在删除 Course 时级联清理；
 - 数据库不可用、版本冲突、存储数据损坏和配置错误具有独立错误类型。
 
-### 页面与接口
+#### 页面与接口
 
 - `/`：创建 MySQL 课程、显示重启后恢复的历史课程并显式确认删除；
 - `/generation/[courseId]`：从 MySQL 读取草稿，审核大纲，串行生成场景，展示逐项进度和失败重试；
@@ -137,7 +145,7 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 - 首页创建草稿显示“保存 MySQL → 打开工作台”的分阶段进度、耗时和 requestId；成功后使用完整导航规避开发模式 RSC 长时间停在 Rendering；
 - 大纲与场景生成页面显示当前阶段、耗时、结束状态和 requestId，服务端同步输出 started/running/succeeded/failed 结构化日志。
 
-### AI 大纲与场景管线
+#### AI 大纲与场景管线
 
 - `MockAIAdapter` 与 `OpenAICompatibleAdapter` 共用 `AIAdapter` 接口；
 - `AI_MODE=remote` 时由服务端 `AI_PROVIDER=deepseek|bailian` 选择配置档，浏览器不能覆盖 Key、Base URL、模型名或 Prompt；
@@ -151,7 +159,7 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 - 场景失败只修改目标 `SceneProgress`，其他 Scene 保留；pending 场景仍可继续，failed 场景重试后按 outlineId 替换而不是重复追加；
 - 进程崩溃遗留的 generating 操作只有租约到期后才能由相同 outline 恢复。
 
-### 配置与安全边界
+#### 配置与安全边界
 
 - `.env.example` 只提供无密码示例；真实 `.env.local` 被 Git 忽略；
 - DATABASE_URL 只在服务端数据库模块读取，没有 `NEXT_PUBLIC_` 变量；
@@ -164,7 +172,7 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 - GitHub Actions 只使用 mock 与临时 MySQL，不读取或调用远端模型 Key。
 - `pnpm dev:inspect` 开启 Next.js Node Inspector 供 IDE 断点调试；普通 `pnpm dev` 同样保留业务结构化日志和每 10 秒心跳。
 
-### 课堂播放与学习行为
+#### 课堂播放与学习行为
 
 - 纯 playback reducer 覆盖 idle、playing、paused、awaitingLearner、completed；
 - Action executor 顺序执行 speech、timed pause 与 learner pause，并用 sceneId、runId、actionIndex 拒绝迟到完成事件；
@@ -176,7 +184,31 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 - `POST /api/courses/[courseId]/quiz-attempts` 只接受 scene/question/option ID，服务端从 Course 查题判分；
 - 作答独立写入 quiz_attempts，不增加 Course revision；语音偏好只保存在 localStorage。
 
-## 3. 验证记录
+## 3. 当前验证与验收总览
+
+### 3.1 最新自动化检查
+
+以 M11 提交后的工作树为准，当前已完成以下检查：
+
+- `pnpm lint`：通过；
+- `pnpm test`：26 个测试文件、162 项通过；
+- `node node_modules/typescript/bin/tsc --noEmit --incremental false`：通过；
+- `pnpm build`：production build 通过；
+- `pnpm test:e2e`：1/1 通过，覆盖现有 mock 课程创建、互动、测验和刷新恢复流程；该用例目前不包含导出断言；
+- `scripts/export-browser-check.mjs`：真实课堂点击、下载、解包和完成提示链路通过；
+- `scripts/export-structure-check.mjs`：开发期结构检查脚本，当前尚未接入 `package.json` 的正式命令。
+
+### 3.2 M11 验收项
+
+| 验收项 | 当前结果 |
+| --- | --- |
+| AC-E01：真实 ready 课程导出并校验 ZIP 结构 | ✅ 两门真实课程通过，PPTX 页数和互动页命名符合预期 |
+| AC-E02：PowerPoint/WPS 人工打开核对 | ✅ 用户人工核对通过 |
+| AC-E03：chart 导出为 PPTX 原生图表 | ✅ 生成 `barChart` 部件，数据无损 |
+| AC-E04：降级元素在完成提示中分组计数 | ✅ 浏览器链路显示渐变降级提示 |
+| AC-E05：导出不写库、不改 revision | ✅ 客户端纯只读转换 |
+
+### 3.3 历史验证记录（M1～M6）
 
 ```text
 pnpm db:migrate  # 首次 applied 001；复跑 skip 001
@@ -211,13 +243,25 @@ M6 可观测性补强回归进一步故意延迟课程创建响应，确认首�
 - 百炼兼容配置尚未用有效 Key 联调；该能力不属于当前 MVP，后续有双 Provider 对比需求时再验收；
 - 超时租约可以被下一次显式生成请求接管，但尚无后台扫描器主动恢复遗留操作；
 - 尚未在另一台机器复现部署；当前项目只承诺本机或受信任网络运行，异机交付按需扩展；
-- BrowserSpeech 的回退与控制已自动测试，实际系统音色和听感仍需目标演示机器人工确认。
+- BrowserSpeech 的回退与控制已自动测试，实际系统音色和听感仍需目标演示机器人工确认；
+- M11 当前只在课堂页提供导出入口；互动 HTML 不承诺离线运行，`curve` 二次曲线暂不导出，M12 编辑器仍未开始。
 
-上述项目均不阻塞当前 MVP。M6 已依据 v0.3 范围完成，不再保留外部 Provider 或异机前置条件。
+上述项目均不阻塞当前 MVP，也不改变已经关闭的 v0.4 退出门；M11 是独立可选扩展，M12 和 MX 仍按后续范围单独推进。
 
-## 5. 已确认的质量差距
+## 5. 当前质量边界与历史差距
 
-M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表课程内容已达到 OpenMAIC 的表现力。当前实现的限制已经从代码与真实课程中确认：
+### 5.1 当前仍成立的质量边界
+
+- 当前自动化门禁主要保证 JSON/Schema、领域结构、运行状态、持久化和恢复链路，不等于事实正确性、教学深度、案例价值或互动教学质量；
+- Slide、Interactive 和 PPTX 导出均已有真实样例验证，但单个或少量课程不能证明平均内容质量，也不能据此作出统计意义上的版本优越性结论；
+- MHTML 是固定视口的视觉留档，PPTX/WPS 人工核对通过只说明当前验收样例可读，不代表所有未来生成课程都没有内容、排版或字体替换问题；
+- 互动 HTML 的运行质量仍需按具体场景进行课堂验收；导出后的 HTML 可能依赖外部资源，且不再处于课堂 iframe 的完整运行边界内。
+
+### 5.2 历史记录：M6 阶段质量差距
+
+以下内容保留 M6 阶段的质量差距记录，用于说明 M7～M10 为什么需要继续演进，不作为当前版本的直接状态描述：
+
+M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表课程内容已达到 OpenMAIC 的表现力。当时实现的限制已经从代码与真实课程中确认：
 
 - 创建请求只有 topic 和 3～5 场景数；即使用户把受众、难度和学习结果写进 topic，当前系统也只把它当作一段不透明文本，没有逐字段归一、默认补全、来源记录或冲突处理，后续调用无法证明使用的是同一份教学要求；
 - outline.v1 只要求“概念、机制到应用”，SceneOutline 没有场景角色、常见误区、案例/练习意图或互动计划；
@@ -231,7 +275,11 @@ M6 证明的是结构、状态、持久化、恢复和运行闭环，不代表�
 
 DeepSeek 已验收课程的 5 个场景为 4 个 slide + 1 个 quiz，适合作为 v0.3 工程基线样本，但单个样本不能证明平均课程质量。当前 v0.4 采用需求验收口径；若论文后续需要声称 Prompt/契约版本带来客观质量提升，再另行设计固定主题集和同一模型配置下的独立比较实验。
 
-## 6. M6.5 远端响应韧性与可观测性验收结果
+## 6. 历史里程碑记录（M6.5～M7.1）
+
+以下内容是按时间保留的历史实施与验收记录。当前状态以第 1～5 节为准。
+
+### M6.5 远端响应韧性与可观测性验收结果
 
 M6.5 已完成。`OpenAICompatibleAdapter` 现在分层读取 HTTP 2xx 响应，区分空体、非 JSON、异常 envelope 和空 content；outline/scene pipeline 作为唯一重试决策者，在单请求 4 次硬上限内执行最多 2 次指数退避重试。Abort 不会在已取消请求内继续调用，但保留用户之后手动恢复的语义。
 
@@ -239,7 +287,7 @@ M6.5 主验收时 62 个单元测试、9 个 MySQL 集成测试、production bui
 
 2026-08-26 缺陷回归确认课程 `6648e038-c9df-4faa-b77f-f49bfc75f4d0` 的第 4 场连续失败并非远端 envelope 故障，而是 React 教学内容中的 JSX 被全对象 HTML 正则误判。校验现已只检查会作为普通文本展示的字段，排除始终被转义的 `code.code`；Prompt 与 repair Prompt 同步声明只读源码边界。同时课堂门禁从“Course.status 必须 ready”调整为“至少存在一个已保存 Scene”，partial preview 显示完成数、原始场景序号和返回生成页入口。修复后 `pnpm verify:full` 通过：15 个文件、64 项单元测试，1 个文件、9 项 MySQL 集成测试，production build 与 Chromium E2E 1/1 均成功。
 
-## 7. 已完成：M7.0 质量基线与场景归档
+### M7.0 质量基线与场景归档
 
 M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` 固定概念解释、机制流程和编程实践三类共 6 个公开主题，`README.md` 是唯一操作与验收说明，`scripts/` 保存输入校验、正式采集和 MHTML 迁移工具，`runs/` 保存正式结果。六题输入已于 `2026-08-27T13:24:42.566Z` 冻结。
 
@@ -251,9 +299,9 @@ M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` �
 
 2026-08-28 需求澄清后，提交 `85be4b9f` 遗留的 `slide-density.v1.json`、44 张 PNG、DOM/密度报告、`scores.json` 和独立汇总脚本被删除或收束。`report.json` 继续保存原课程、narration、quiz、生成耗时、调用、token、repair 和错误；`summary.md` 只做事实索引，`scenes/` 保存逐场景 MHTML。后续配对评分不再作为 M10 任务；M8～M10 只承诺 `1280×720` 及更大桌面视口，MHTML 仅用于固定视口视觉留档。
 
-M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7.1 已在不改写这些基线产物的前提下升级正式运行链；M8 PPT 式只读幻灯片画布、M9 多类型互动和 M10 单场景再生成及新版 slide 需求验收均已完成。M11 导出和 M12 编辑器均为可选项。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
+M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7.1 已在不改写这些基线产物的前提下升级正式运行链；M8 PPT 式只读幻灯片画布、M9 多类型互动和 M10 单场景再生成及新版 slide 需求验收均已完成。M11 导出已于 2026-09-07 完成，M12 编辑器仍为可选项。完整边界见 [09-v0.4 方案](09-v0.4-quality-and-interaction-plan.md)。
 
-## 8. 已实现：M7.1 CourseBrief、Course v2 与 outline.v2.1
+### M7.1 CourseBrief、Course v2 与 outline.v2.1
 
 新建课程统一写入 `schemaVersion: 2` 和非空 `brief_json`。首页保留 topic 为唯一必填输入，并增加可折叠高级设置；字段缺失由原始描述或默认值补齐，显式空数组仍表示用户明确选择“无”。`interactionMode` 在当前 Schema 中固定为 `off`，M7.1 不产生 interactive 场景。
 

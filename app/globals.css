@@ -155,25 +155,6 @@ a {
   font-size: clamp(54px, 6vw, 92px);
   line-height: 1.08;
 }
-.hero-description {
-  max-width: 600px;
-  margin: 36px 0 32px;
-  font-size: 17px;
-  line-height: 1.9;
-  color: var(--muted);
-}
-.principle-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.principle-row span {
-  border: 1px solid var(--ink);
-  padding: 7px 11px;
-  font-size: 12px;
-  background: rgba(255, 255, 255, 0.22);
-}
-
 .composer-card {
   position: relative;
   padding: 38px;
@@ -403,12 +384,6 @@ a {
   padding: 12px;
   font-size: 13px;
   color: var(--ink);
-}
-.form-footnote {
-  margin: 15px 0 0;
-  text-align: center;
-  color: var(--muted);
-  font-size: 11px;
 }
 .creation-progress {
   margin: 0 0 14px;
