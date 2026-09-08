@@ -29,6 +29,16 @@ export type AgentToolBlock = {
   type: "tool"; id: string; modelTurn: number; callId: string; name: string; label: string;
   status: "running" | "completed" | "failed" | "waiting_confirmation" | "not_executed" | "cancelled";
   arguments: unknown; result?: unknown; durationMs?: number; targetSceneId?: string; confirmationId?: string;
+  confirmationKind?: "patch" | "delete" | "regenerate_quiz";
+};
+
+export type AgentSceneReplacement = { oldSceneId: string; newSceneId: string; outlineId: string };
+export type AgentCourseUpdate = {
+  revision: number;
+  affectedSceneIds: string[];
+  removedSceneIds?: string[];
+  sceneReplacements?: AgentSceneReplacement[];
+  contentChanged?: boolean;
 };
 export type AgentContentBlock = AgentThinkingBlock | AgentTextBlock | AgentToolBlock;
 export type AgentSseEvent =
@@ -42,12 +52,23 @@ export type AgentSseEvent =
   | { type: "tool_started"; block: AgentToolBlock }
   | { type: "tool_finished"; block: AgentToolBlock }
   | { type: "confirmation_required"; block: AgentToolBlock; summary: string }
-  | { type: "course_updated"; revision: number; affectedSceneIds: string[] }
+  | ({ type: "course_updated" } & AgentCourseUpdate)
   | { type: "run_finished"; status: "completed" | "failed" | "cancelled" | "waiting_confirmation" | "interrupted"; error?: string };
 
 export type AgentSessionStatus = "idle" | "running" | "waiting_confirmation";
 export type AgentRunStatus = "running" | "completed" | "failed" | "cancelled" | "waiting_confirmation" | "interrupted";
 export type AgentSession = { id: string; courseId: string; title: string; status: AgentSessionStatus; createdAt: number; updatedAt: number };
+export type AgentRunMetrics = {
+  modelCalls: number;
+  toolCalls: number;
+  toolCompleted: number;
+  toolFailed: number;
+  toolWaitingConfirmation: number;
+  toolCancelled: number;
+  totalDurationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+};
 export type AgentMessage = {
   id: string; sessionId: string; runId?: string; sequence: number; role: "user" | "assistant";
   content: { text: string; currentSceneId?: string; courseRevision?: number } | { blocks: AgentContentBlock[] };
@@ -55,17 +76,18 @@ export type AgentMessage = {
 };
 export type AgentRun = {
   id: string; sessionId: string; status: AgentRunStatus; baseRevision: number; finalRevision?: number;
-  deadlineAt: number; error?: string; createdAt: number; finishedAt?: number;
+  deadlineAt: number; error?: string; createdAt: number; finishedAt?: number; metrics?: AgentRunMetrics;
 };
+export type AgentContextInfo = { omittedMessageCount: number; includedTurnCount: number; usedCharacters: number; maxCharacters: number };
 export type AgentConfirmation = {
   id: string; sessionId: string; runId: string; callId: string; toolName: string;
-  status: "pending" | "completed" | "cancelled" | "expired"; baseRevision: number; payload: unknown;
+  status: "pending" | "completed" | "cancelled" | "expired" | "failed"; baseRevision: number; payload: unknown;
   result?: unknown; summary: string; expiresAt: number; createdAt: number; updatedAt: number;
 };
 
 export class AgentApplicationError extends Error {
   constructor(
-    public readonly code: "INVALID_ARGUMENT" | "NOT_FOUND" | "COURSE_CONFLICT" | "RUN_IN_PROGRESS" | "CONFIRMATION_REQUIRED" | "TOOL_EXECUTION_FAILED",
+    public readonly code: "INVALID_ARGUMENT" | "NOT_FOUND" | "COURSE_CONFLICT" | "RUN_IN_PROGRESS" | "CONFIRMATION_REQUIRED" | "TOOL_EXECUTION_FAILED" | "INVALID_COURSE_STATE",
     message: string,
     public readonly status = 400,
   ) { super(message); this.name = "AgentApplicationError"; }

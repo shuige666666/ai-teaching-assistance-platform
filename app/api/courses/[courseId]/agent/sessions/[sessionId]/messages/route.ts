@@ -25,8 +25,8 @@ export async function POST(request: Request, context: { params: Promise<{ course
       const emit = (event: AgentSseEvent) => {
         if (!closed) controller.enqueue(encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`));
       };
-      const { adapter, timeoutMs } = createAgentAdapter();
-      void new CourseAgentService(getCourseRepository(), getAgentSessionRepository(), adapter, timeoutMs)
+      const { adapter, generationAdapter, timeoutMs, sceneTimeoutMs } = createAgentAdapter();
+      void new CourseAgentService(getCourseRepository(), getAgentSessionRepository(), adapter, timeoutMs, Date.now, generationAdapter, sceneTimeoutMs)
         .run(courseId, sessionId, input, request.signal, emit)
         .catch((error) => {
           const mapped = mapAgentError(error);

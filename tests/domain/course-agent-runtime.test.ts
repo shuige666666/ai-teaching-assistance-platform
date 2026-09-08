@@ -116,6 +116,7 @@ describe("Agent runtime", () => {
     if (!required || required.type !== "confirmation_required" || !required.block.confirmationId) throw new Error("confirmation missing");
     const confirmation = await service.confirm(course.id, session.id, required.block.confirmationId, "confirm");
     expect(confirmation.status).toBe("completed");
+    expect((await sessions.getLatestRun(session.id))?.status).toBe("completed");
     expect((await courses.get(course.id))?.revision).toBe(course.revision + 1);
     const messages = await sessions.listMessages(session.id);
     const block = messages.flatMap((message) => "blocks" in message.content ? message.content.blocks : []).find((item) => item.type === "tool");

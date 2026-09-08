@@ -203,6 +203,8 @@ export const CourseSchema = z
       .object({
         id: z.string().min(1),
         stage: z.enum(["outline", "scene"]),
+        // insert 用于 Agent 新增页；历史生成记录没有该字段时仍按原语义读取。
+        purpose: z.enum(["insert"]).optional(),
         outlineId: z.string().min(1).optional(),
         startedAt: z.number().int().nonnegative(),
         expiresAt: z.number().int().nonnegative(),

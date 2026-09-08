@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AIAdapter } from "@/lib/ai/contracts";
-import { CourseSchema, type Course, type DomainError, type Scene } from "@/lib/domain/schemas";
+import { CourseSchema, type Course, type DomainError, type Scene, type SceneOutline } from "@/lib/domain/schemas";
 import { generateScene, SceneGenerationError } from "@/lib/generation/scene-pipeline";
 import { extractInteractiveAuthorHtml } from "@/lib/interactive/html-policy";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
@@ -71,6 +71,93 @@ export class SceneGenerationService {
       confirmQuizAttemptDeletion: options.confirmQuizAttemptDeletion,
       requestSignal: options.requestSignal,
     });
+  }
+
+  /** 新增页只在内存中扩展候选课程；生成成功后才一次插入目录、场景和进度。 */
+  async insert(courseId: string, expectedRevision: number, requestId: string, outline: SceneOutline, position: number, instruction: string, requestSignal?: AbortSignal): Promise<Course> {
+    const current = await this.repository.get(courseId);
+    if (!current) throw new SceneApplicationError("COURSE_NOT_FOUND", "课程不存在");
+    if (current.revision !== expectedRevision) throw new CourseConflictError();
+    if (current.status !== "ready" || current.activeOperation) throw new SceneApplicationError("INVALID_COURSE_STATE", "只有没有生成任务的 ready 课程可以新增页面");
+    if (current.outlines.length >= 8 || current.requestedSceneCount >= 8) throw new SceneApplicationError("INVALID_COURSE_STATE", "课程最多包含 8 个页面");
+    if (position < 1 || position > current.outlines.length + 1) throw new SceneApplicationError("INVALID_COURSE_STATE", `新增页位置必须在 1～${current.outlines.length + 1} 之间`);
+    if (current.outlines.some((item) => item.id === outline.id)) throw new SceneApplicationError("INVALID_COURSE_STATE", "新增页 ID 与已有大纲冲突");
+
+    const operationId = randomUUID();
+    const startedAt = this.now();
+    const candidateOutlines = [...current.outlines];
+    candidateOutlines.splice(position - 1, 0, { ...outline, order: position });
+    const outlineIds = candidateOutlines.map((item) => item.id);
+    const orderById = new Map(outlineIds.map((id, index) => [id, index + 1]));
+    const orderedOutlines = candidateOutlines.map((item) => ({ ...item, order: orderById.get(item.id)! }));
+    const orderedScenes = current.scenes.map((scene) => ({ ...scene, order: orderById.get(scene.outlineId)! })).sort((a, b) => a.order - b.order);
+    const orderedProgress = [
+      ...current.sceneProgress,
+      { outlineId: outline.id, status: "pending" as const, attempts: 0, updatedAt: startedAt },
+    ].sort((a, b) => (orderById.get(a.outlineId) ?? Number.MAX_SAFE_INTEGER) - (orderById.get(b.outlineId) ?? Number.MAX_SAFE_INTEGER));
+    // 1. 先在内存验证新增后的完整课程，失败时不登记租约、不留下半成品。
+    const generationCourseShape = CourseSchema.parse({
+      ...current,
+      status: "generating",
+      requestedSceneCount: current.requestedSceneCount + 1,
+      outlines: orderedOutlines,
+      scenes: orderedScenes,
+      sceneProgress: orderedProgress,
+    });
+    const generationOutline = orderedOutlines.find((item) => item.id === outline.id)!;
+    // 2. 只登记租约；持久化课程仍保持原有目录和页数，不写入占位页。
+    const registered = await this.repository.save(CourseSchema.parse({
+      ...current,
+      status: "generating",
+      activeOperation: { id: operationId, stage: "scene", purpose: "insert", outlineId: outline.id, startedAt, expiresAt: startedAt + this.timeoutMs + 30_000 },
+      updatedAt: startedAt,
+    }), expectedRevision);
+    const generationCourse = CourseSchema.parse({
+      ...generationCourseShape,
+      revision: registered.revision,
+      activeOperation: registered.activeOperation,
+      updatedAt: registered.updatedAt,
+    });
+    const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
+    const signal = requestSignal ? AbortSignal.any([requestSignal, timeoutSignal]) : timeoutSignal;
+    try {
+      // 3. 新增指令进入与已有场景相同的底层生成、修复、装配链。
+      signal.throwIfAborted();
+      const scene = await generateScene(this.adapter, { course: generationCourse, outline: generationOutline, requestId, signal, regeneration: { kind: "insert", instruction: instruction.slice(0, 500) } });
+      signal.throwIfAborted();
+      const latest = await this.repository.get(courseId);
+      if (!latest || latest.revision !== registered.revision || latest.activeOperation?.id !== operationId) throw new CourseConflictError();
+      signal.throwIfAborted();
+      const finalProgress = orderedProgress.map((item) => item.outlineId === outline.id ? { ...item, status: "ready" as const, updatedAt: this.now() } : item);
+      const finalScenes = [...orderedScenes, scene].sort((a, b) => a.order - b.order);
+      // 4. 新页和更新后的连续页序一次提交，旧页面 ID 与作答保持不变。
+      return await this.repository.save(CourseSchema.parse({
+        ...latest,
+        requestedSceneCount: current.requestedSceneCount + 1,
+        status: "ready",
+        outlines: orderedOutlines,
+        scenes: finalScenes,
+        sceneProgress: finalProgress,
+        activeOperation: undefined,
+        lastError: undefined,
+        updatedAt: this.now(),
+      }), latest.revision);
+    } catch (error) {
+      const failure = signal.aborted && !(error instanceof SceneGenerationError)
+        ? new SceneGenerationError("AI_TIMEOUT", "新增页面已取消或超时，原课程保持不变", true, 0, undefined, { cause: error }) : error;
+      const latest = await this.repository.get(courseId);
+      // 5. 只有仍持有本次租约时才清理；迟到响应不能覆盖其他操作。
+      if (latest?.revision === registered.revision && latest.activeOperation?.id === operationId) {
+        await this.repository.save(CourseSchema.parse({
+          ...latest,
+          status: "ready",
+          activeOperation: undefined,
+          lastError: asDomainError(failure),
+          updatedAt: this.now(),
+        }), latest.revision);
+      }
+      throw failure;
+    }
   }
 
   /** 两个入口共用租约、候选校验和原子替换，避免并发语义出现分叉。 */

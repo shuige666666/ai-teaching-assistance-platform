@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AgentApplicationError, type AgentConfirmation, type AgentContentBlock, type AgentMessage, type AgentRun, type AgentRunStatus, type AgentSession } from "@/lib/agent/contracts";
+import { AgentApplicationError, type AgentConfirmation, type AgentContentBlock, type AgentMessage, type AgentRun, type AgentRunMetrics, type AgentRunStatus, type AgentSession } from "@/lib/agent/contracts";
 import type { AgentSessionRepository } from "./agent-session-repository";
 
 export class InMemoryAgentSessionRepository implements AgentSessionRepository {
@@ -21,6 +21,26 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
   async getSession(courseId: string, sessionId: string) {
     const session = this.sessions.get(sessionId);
     return session?.courseId === courseId ? structuredClone(session) : null;
+  }
+  /** 返回会话最近一次运行，供刷新后的状态提示和指标展示使用。 */
+  async getLatestRun(sessionId: string) {
+    const run = [...this.runs.values()].filter((item) => item.sessionId === sessionId).sort((a, b) => b.createdAt - a.createdAt)[0];
+    return run ? structuredClone(run) : null;
+  }
+  /** 将已经超过 deadline 的运行收尾，避免刷新后一直显示“执行中”。 */
+  async recoverExpiredRuns(sessionId: string, now: number) {
+    for (const [id, run] of this.runs) {
+      if (run.sessionId !== sessionId || run.status !== "running" || run.deadlineAt > now) continue;
+      this.runs.set(id, { ...run, status: "interrupted", finishedAt: now, error: "运行超过截止时间，刷新时已标记为中断" });
+    }
+    const session = this.sessions.get(sessionId);
+    if (session && ![...this.runs.values()].some((run) => run.sessionId === sessionId && run.status === "running")) {
+      this.sessions.set(sessionId, { ...session, status: "idle", updatedAt: now });
+    }
+  }
+  /** 返回仍可操作的确认记录，不暴露给其他课程会话。 */
+  async listPendingConfirmations(sessionId: string) {
+    return [...this.confirmations.values()].filter((item) => item.sessionId === sessionId && item.status === "pending").sort((a, b) => b.createdAt - a.createdAt).map((item) => structuredClone(item));
   }
   async listMessages(sessionId: string) { return structuredClone(this.messages.get(sessionId) ?? []); }
   async appendMessage(sessionId: string, input: Omit<AgentMessage, "id" | "sequence" | "createdAt">) {
@@ -53,11 +73,11 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
     this.sessions.set(sessionId, { ...session, status: "running", updatedAt: now });
     return structuredClone(run);
   }
-  async finishRun(runId: string, status: Exclude<AgentRunStatus, "running">, finalRevision?: number, error?: string) {
+  async finishRun(runId: string, status: Exclude<AgentRunStatus, "running">, finalRevision?: number, error?: string, metrics?: AgentRunMetrics) {
     const run = this.runs.get(runId);
     if (!run) return;
     const now = this.now();
-    this.runs.set(runId, { ...run, status, finalRevision, error, finishedAt: now });
+    this.runs.set(runId, { ...run, status, finalRevision, error, metrics: structuredClone(metrics), finishedAt: now });
     const session = this.sessions.get(run.sessionId);
     if (session) this.sessions.set(session.id, { ...session, status: status === "waiting_confirmation" ? "waiting_confirmation" : "idle", updatedAt: now });
   }
@@ -71,7 +91,7 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
     const item = this.confirmations.get(confirmationId);
     return item?.sessionId === sessionId ? structuredClone(item) : null;
   }
-  async resolveConfirmation(confirmationId: string, status: "completed" | "cancelled" | "expired", result?: unknown) {
+  async resolveConfirmation(confirmationId: string, status: "completed" | "cancelled" | "expired" | "failed", result?: unknown) {
     const current = this.confirmations.get(confirmationId);
     if (!current) throw new AgentApplicationError("NOT_FOUND", "确认记录不存在", 404);
     const next = { ...current, status, result: structuredClone(result), updatedAt: this.now() };

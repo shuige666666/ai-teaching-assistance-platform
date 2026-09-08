@@ -1,18 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { Pool, PoolConnection } from "mysql2/promise";
-import { AgentApplicationError, type AgentConfirmation, type AgentContentBlock, type AgentMessage, type AgentRun, type AgentRunStatus, type AgentSession } from "@/lib/agent/contracts";
+import { AgentApplicationError, type AgentConfirmation, type AgentContentBlock, type AgentMessage, type AgentRun, type AgentRunMetrics, type AgentRunStatus, type AgentSession } from "@/lib/agent/contracts";
 import { getDatabasePool } from "@/lib/db/pool";
 import { DatabaseUnavailableError } from "./course-repository";
 import type { AgentSessionRepository } from "./agent-session-repository";
 
 interface SessionRow extends RowDataPacket { id: string; course_id: string; title: string; status: AgentSession["status"]; created_at: string | number; updated_at: string | number }
 interface MessageRow extends RowDataPacket { id: string; session_id: string; run_id: string | null; sequence_no: number; role: AgentMessage["role"]; content_json: unknown; created_at: string | number }
-interface RunRow extends RowDataPacket { id: string; session_id: string; status: AgentRun["status"]; base_revision: string | number; final_revision: string | number | null; deadline_at: string | number; error_text: string | null; created_at: string | number; finished_at: string | number | null }
+interface RunRow extends RowDataPacket { id: string; session_id: string; status: AgentRun["status"]; base_revision: string | number; final_revision: string | number | null; deadline_at: string | number; error_text: string | null; metrics_json: unknown | null; created_at: string | number; finished_at: string | number | null }
 interface ConfirmationRow extends RowDataPacket { id: string; session_id: string; run_id: string; call_id: string; tool_name: string; status: AgentConfirmation["status"]; base_revision: string | number; payload_json: unknown; result_json: unknown | null; summary: string; expires_at: string | number; created_at: string | number; updated_at: string | number }
 function json<T>(value: unknown): T { return (typeof value === "string" ? JSON.parse(value) : value) as T }
 function session(row: SessionRow): AgentSession { return { id: row.id, courseId: row.course_id, title: row.title, status: row.status, createdAt: Number(row.created_at), updatedAt: Number(row.updated_at) } }
 function message(row: MessageRow): AgentMessage { return { id: row.id, sessionId: row.session_id, runId: row.run_id ?? undefined, sequence: row.sequence_no, role: row.role, content: json(row.content_json), createdAt: Number(row.created_at) } }
+function run(row: RunRow): AgentRun { return { id: row.id, sessionId: row.session_id, status: row.status, baseRevision: Number(row.base_revision), finalRevision: row.final_revision === null ? undefined : Number(row.final_revision), deadlineAt: Number(row.deadline_at), error: row.error_text ?? undefined, metrics: row.metrics_json === null ? undefined : json<AgentRunMetrics>(row.metrics_json), createdAt: Number(row.created_at), finishedAt: row.finished_at === null ? undefined : Number(row.finished_at) } }
 function confirmation(row: ConfirmationRow): AgentConfirmation { return { id: row.id, sessionId: row.session_id, runId: row.run_id, callId: row.call_id, toolName: row.tool_name, status: row.status, baseRevision: Number(row.base_revision), payload: json(row.payload_json), result: row.result_json === null ? undefined : json(row.result_json), summary: row.summary, expiresAt: Number(row.expires_at), createdAt: Number(row.created_at), updatedAt: Number(row.updated_at) } }
 function fail(error: unknown): never { if (error instanceof AgentApplicationError) throw error; throw new DatabaseUnavailableError({ cause: error }) }
 
@@ -27,6 +28,24 @@ export class MySQLAgentSessionRepository implements AgentSessionRepository {
   }
   async getSession(courseId: string, sessionId: string) {
     try { const [rows] = await this.pool.execute<SessionRow[]>("SELECT * FROM agent_sessions WHERE id = ? AND course_id = ? LIMIT 1", [sessionId, courseId]); return rows[0] ? session(rows[0]) : null; } catch (error) { fail(error) }
+  }
+  /** 从数据库读取最近一次运行，恢复完成/失败/中断和轻量指标。 */
+  async getLatestRun(sessionId: string) {
+    try { const [rows] = await this.pool.execute<RunRow[]>("SELECT * FROM agent_runs WHERE session_id = ? ORDER BY created_at DESC LIMIT 1", [sessionId]); return rows[0] ? run(rows[0]) : null; } catch (error) { fail(error) }
+  }
+  /** 刷新会话时收尾已超过 deadline 的运行，保留“中断”事实而不自动续跑。 */
+  async recoverExpiredRuns(sessionId: string, now: number) {
+    let connection: PoolConnection | undefined;
+    try {
+      connection = await this.pool.getConnection(); await connection.beginTransaction();
+      await connection.execute("UPDATE agent_runs SET status = 'interrupted', finished_at = ?, error_text = '运行超过截止时间，刷新时已标记为中断' WHERE session_id = ? AND status = 'running' AND deadline_at <= ?", [now, sessionId, now]);
+      await connection.execute("UPDATE agent_sessions SET status = 'idle', updated_at = ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM agent_runs WHERE session_id = ? AND status = 'running')", [now, sessionId, sessionId]);
+      await connection.commit();
+    } catch (error) { if (connection) await connection.rollback(); fail(error) } finally { connection?.release() }
+  }
+  /** 只读取当前会话尚未处理的确认状态，payload 仍由服务端执行链保管。 */
+  async listPendingConfirmations(sessionId: string) {
+    try { const [rows] = await this.pool.execute<ConfirmationRow[]>("SELECT * FROM agent_confirmations WHERE session_id = ? AND status = 'pending' ORDER BY created_at DESC", [sessionId]); return rows.map(confirmation); } catch (error) { fail(error) }
   }
   async listMessages(sessionId: string) {
     try { const [rows] = await this.pool.execute<MessageRow[]>("SELECT * FROM agent_messages WHERE session_id = ? ORDER BY sequence_no", [sessionId]); return rows.map(message); } catch (error) { fail(error) }
@@ -70,8 +89,8 @@ export class MySQLAgentSessionRepository implements AgentSessionRepository {
     } catch (error) { if (connection) await connection.rollback(); fail(error) } finally { connection?.release() }
     throw new DatabaseUnavailableError();
   }
-  async finishRun(runId: string, status: Exclude<AgentRunStatus, "running">, finalRevision?: number, error?: string) {
-    try { const now = this.now(); await this.pool.execute("UPDATE agent_runs r JOIN agent_sessions s ON s.id=r.session_id SET r.status=?,r.final_revision=?,r.error_text=?,r.finished_at=?,s.status=?,s.updated_at=? WHERE r.id=?", [status, finalRevision ?? null, error?.slice(0,1000) ?? null, now, status === "waiting_confirmation" ? "waiting_confirmation" : "idle", now, runId]); } catch (cause) { fail(cause) }
+  async finishRun(runId: string, status: Exclude<AgentRunStatus, "running">, finalRevision?: number, error?: string, metrics?: AgentRunMetrics) {
+    try { const now = this.now(); await this.pool.execute("UPDATE agent_runs r JOIN agent_sessions s ON s.id=r.session_id SET r.status=?,r.final_revision=?,r.error_text=?,r.metrics_json=?,r.finished_at=?,s.status=?,s.updated_at=? WHERE r.id=?", [status, finalRevision ?? null, error?.slice(0,1000) ?? null, metrics === undefined ? null : JSON.stringify(metrics), now, status === "waiting_confirmation" ? "waiting_confirmation" : "idle", now, runId]); } catch (cause) { fail(cause) }
   }
   async createConfirmation(input: Omit<AgentConfirmation, "id" | "status" | "createdAt" | "updatedAt">): Promise<AgentConfirmation> {
     const now=this.now(), id=randomUUID();
@@ -80,7 +99,7 @@ export class MySQLAgentSessionRepository implements AgentSessionRepository {
   async getConfirmation(sessionId:string, confirmationId:string) {
     try { const [rows]=await this.pool.execute<ConfirmationRow[]>("SELECT * FROM agent_confirmations WHERE id=? AND session_id=? LIMIT 1",[confirmationId,sessionId]); return rows[0]?confirmation(rows[0]):null; } catch(error){ fail(error) }
   }
-  async resolveConfirmation(confirmationId:string,status:"completed"|"cancelled"|"expired",result?:unknown) {
+  async resolveConfirmation(confirmationId:string,status:"completed"|"cancelled"|"expired"|"failed",result?:unknown) {
     const now=this.now();
     try { await this.pool.execute<ResultSetHeader>("UPDATE agent_confirmations c JOIN agent_sessions s ON s.id=c.session_id SET c.status=?,c.result_json=?,c.updated_at=?,s.status='idle',s.updated_at=? WHERE c.id=? AND c.status='pending'",[status,result===undefined?null:JSON.stringify(result),now,now,confirmationId]); const [rows]=await this.pool.execute<ConfirmationRow[]>("SELECT * FROM agent_confirmations WHERE id=? LIMIT 1",[confirmationId]); if(!rows[0]) throw new AgentApplicationError("NOT_FOUND","确认记录不存在",404); return confirmation(rows[0]); } catch(error){ fail(error) }
   }

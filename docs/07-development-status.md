@@ -1,11 +1,11 @@
 # 07. 当前开发状态
 
 > 本文记录已经进入正式调用链并通过验证的能力。目标设计仍以 01～06 文档为准；本文不把后续计划描述成已实现功能。
-> 最后更新：2026-09-08。当前已完成 M1～M11 与 M12.0/M12.1；M12.2 页序与生成、M12.3 证据收口待开发。
+> 最后更新：2026-09-08。当前已完成 M1～M11 与 M12.0～M12.3 工程主链；M12.2/M12.3 已有隔离副本真实案例与浏览器证据，教学内容和互动语义仍需人工判断。
 
 ## 1. 当前结论
 
-项目已完成 **M1～M11**，并完成 **M12.0 只读对话与 M12.1 单页最小修改**。M12.2 的页面调序/新增/删除/整页生成和 M12.3 证据收口尚未实现；专业幻灯片编辑器继续后移为 MX。当前默认 mock 路径不需要模型 Key 和模型网络，正式课程仍以本机 MySQL 为唯一来源：
+项目已完成 **M1～M11**，并完成 **M12.0～M12.3 的对话式课程修订工程主链**。M12.2/M12.3 已在隔离副本上完成一轮真实 DeepSeek 结构验收，并保留了失败/澄清案例；教学内容、视觉可用性和互动语义仍需人工判断，专业幻灯片编辑器继续后移为 MX。当前默认 mock 路径不需要模型 Key 和模型网络，正式课程仍以本机 MySQL 为唯一来源：
 
 ```text
 首页填写主题、选择 4～8 个场景（默认 5 个）并可选展开高级要求
@@ -34,11 +34,11 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 本节按当前版本从新到旧列出 M12～M8；段内保留各里程碑当时的验证叙述，历史措辞不代表当前待办状态。
 
-#### M12.0/M12.1 对话式课程修订 Agent（2026-09-08，已实现）
+#### M12.0～M12.3 对话式课程修订 Agent（2026-09-08，工程主链已实现）
 
-课堂页头“对话”和调度台“修订本场”已接入同一右侧侧栏。服务端新增独立 `AgentAdapter.streamTurn()`，保持原大纲/场景 `AIAdapter.generateText()` 不变；OpenAI-compatible 适配器解析正文、DeepSeek `reasoning_content` 与分片 tool arguments。system prompt 裁剪 OpenMAIC 的“先读、最小补丁、保存后按需复读”流程，只描述本阶段实际注册的四个工具，不注册 M12.2 能力。模型未返回 reasoning 时不显示空思考卡。
+课堂页头“对话”和调度台“修订本场”已接入同一右侧侧栏。服务端新增独立 `AgentAdapter.streamTurn()`，保持原大纲/场景 `AIAdapter.generateText()` 不变；OpenAI-compatible 适配器解析正文、DeepSeek `reasoning_content` 与分片 tool arguments。system prompt 裁剪 OpenMAIC 的“先读、最小补丁、保存后按需复读”流程，并补充 `edit_deck`/`generate_scene` 的工具选择、稳定 sceneId、串行 revision 和确认语义。模型未返回 reasoning 时不显示空思考卡。
 
-迁移 005 新增 `agent_sessions/agent_messages/agent_runs/agent_confirmations`。同 session 运行互斥，超时 running 可标为 interrupted；消息保存 UI 块并能重建标准 assistant/tool/tool_call_id 历史。侧栏用 SSE 展示正文、思考和工具状态；思考卡、工具组、单工具入参/结果均默认收起，刷新后从 MySQL 恢复。浏览器实测发现并修复 session 状态更新导致 loading 提示不结束的问题。
+迁移 005 新增 `agent_sessions/agent_messages/agent_runs/agent_confirmations`，迁移 006 为 `agent_runs` 增加可选 `metrics_json`。同 session 运行互斥，GET 会话或列表时按 deadline 收尾过期 running 并标记 interrupted；消息保存 UI 块并能重建标准 assistant/tool/tool_call_id 历史。侧栏用 SSE 展示正文、思考和工具状态；思考卡、工具组、单工具入参/结果均默认收起，刷新后从 MySQL 恢复。浏览器实测发现并修复 session 状态更新导致 loading 提示不结束的问题。
 
 真实 slide 修订回归暴露出原 4,096 单轮输出预算可能被第二轮可见思考耗尽，模型在产生正文或工具调用前以长度结束，而侧栏没有呈现运行错误。当前 Agent 总输出预算已提高到 16,384，且不另设单轮思考预算；长度截断会显示明确错误。进行中的思考耗时改为前端 0.1 秒刷新，消息自动跟随只在滚动位置接近底部时启用，用户主动上滚后可以正常查看历史内容。
 
@@ -46,9 +46,15 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 M12.0 的 `list_scenes/read_stage/grep_stage` 均从 CourseRepository 读取；source 采用 12,000 字符游标分页，interactive 返回剥离平台注入后的作者 HTML，搜索采用 NFKC 不区分大小写字面量并限制 30 个命中。M12.1 的 `patch_stage` 支持 set/remove/str_replace/add_element/delete_element，路径限当前单页 `/content` 与 `/actions`；所有 operation 先作用于副本，再经身份保护、富文本净化/interactive HTML policy、SceneSchema 与 CourseSchema 一次保存。图表值数量与标签、表格行列只补充基本结构一致性。
 
-quiz 题目实际变化会冻结完整候选页并产生 confirmationId；用户确认前 Course 不变，确认后 Scene ID 保持，题目/选项 ID 重建，题目与 actions 同批保存并在现有 Repository 事务中清理旧作答。只改 quiz actions 不确认、不清作答。当前仍不含 `edit_deck/generate_scene`、页面结构修改、整页重生成、视觉截图工具和撤销历史。
+quiz 题目实际变化会冻结完整候选页并产生 confirmationId；用户确认前 Course 不变，确认后 Scene ID 保持，题目/选项 ID 重建，题目与 actions 同批保存并在现有 Repository 事务中清理旧作答。只改 quiz actions 不确认、不清作答。
 
-验证：lint、严格 TypeScript、production build 通过；29 个文件 175 项单测通过，M12 定向 11 项覆盖流式分片、读工具、读改读、原子失败与 quiz 确认；MySQL 20 项通过，新增 session 互斥/恢复与 quiz 混合补丁事务；Chromium E2E 1/1 增加侧栏、两级折叠和刷新恢复。真实 DeepSeek 使用合成空课程完成 reasoning → `list_scenes` → 第二轮中文回答，只读前后 revision 均为 0；测试课程及误建的空会话已经清理。
+M12.2 新增 `CourseDeckService` 与两个 Agent 工具：`edit_deck` 支持目录 rename、move 和一次确认 delete；`generate_scene` 支持 slide/interactive 直接整页重生成、quiz SSE 长确认重生成，以及按 `SceneOutlineSchema` 新增页面。新增页先在内存扩展并通过完整 CourseSchema，再登记 `activeOperation.purpose=insert` 租约；生成失败、取消或超时只清理自己的租约，不保存占位 outline。整页替换返回 `oldSceneId/newSceneId/outlineId`，前端按稳定身份刷新课程并在删除当前页时落到相邻页。当前不含 `duplicate_scene`、视觉截图工具和撤销历史；没有增加教学质量或固定成功率门禁。
+
+验证：lint、严格 TypeScript、production build 通过；新增 M12.3 会话/上下文/指标测试后，完整单测为 33 个文件、189 项，MySQL 20 项通过，Chromium E2E 1/1 保持侧栏、两级折叠和刷新恢复。M12.3 补上当前课程会话列表、新建/切换、运行/确认状态恢复、完整用户轮次上下文裁剪和裁剪提示，并按 run 保存模型/工具计数、耗时和可获得 token；未知 usage 保持缺失，不把字符串长度当 token。真实 DeepSeek 隔离验收已记录查询/搜索、调序、明确补丁、新增、slide/interactive/quiz 重生成、删除取消和确认状态；UI 侧验证思考/工具默认收起、展开详情、会话切换和 `.agent-drawer__messages` 的实际滚动。证据脚本与归档路径见 M12 方案；不以 Mock 结果替代人工内容质量判断。
+
+#### M12.3 真实 DeepSeek 与浏览器验收证据（2026-09-08）
+
+本轮使用 `eval/scripts/m12-3-deepseek-acceptance.mjs`，所有写入均针对新 UUID 的 MySQL 隔离副本。8 页副本完成 `list_scenes`/`grep_stage` 只读、`edit_deck` 调序、明确 `patch_stage`、slide/interactive 整页替换和 quiz 长确认；6 页副本完成 `generate_scene` 新增第 7 页；删除案例只确认后取消。模型曾先提交缺字段的新增 outline，工具返回 `INVALID_ARGUMENT` 后按 Schema 补齐并成功；8 页副本新增请求正确返回“课程最多 8 个页面”且 revision 不变。一次自然语言补丁存在“第一处正文”歧义，模型读取后请求澄清，没有误写。真实运行记录包含工具生命周期、实际 arguments/result、前后 revision、run metrics 与 session history；最终页面分别归档为 8 份和 7 份 `1280×720` MHTML。浏览器截图位于 `output/playwright/m12-3-sidebar-idle.png`、`m12-3-sidebar-scrolled-top.png`、`m12-3-sidebar-thinking-expanded.png`；DOM 检查确认消息区 `overflow-y=auto` 且 `scrollHeight > clientHeight`。这些是结构和交互证据，不等于教学内容、事实正确性或 interactive 逻辑已由机器证明。
 
 #### M11 资源包导出（2026-09-07，已实现并完成验收）
 
@@ -260,7 +266,7 @@ M6 可观测性补强回归进一步故意延迟课程创建响应，确认首�
 - 超时租约可以被下一次显式生成请求接管，但尚无后台扫描器主动恢复遗留操作；
 - 尚未在另一台机器复现部署；当前项目只承诺本机或受信任网络运行，异机交付按需扩展；
 - BrowserSpeech 的回退与控制已自动测试，实际系统音色和听感仍需目标演示机器人工确认；
-- M11 当前只在课堂页提供导出入口；互动 HTML 不承诺离线运行，`curve` 二次曲线按直线近似并提示降级，Windows 保留设备名等低概率输入不增加严格门禁；M12.2 页序与生成工具尚未实现。
+- M11 当前只在课堂页提供导出入口；互动 HTML 不承诺离线运行，`curve` 二次曲线按直线近似并提示降级，Windows 保留设备名等低概率输入不增加严格门禁；M12.2 页序与生成、M12.3 会话体验已进入工程主链，真实隔离副本验收已留档，人工内容判断仍按方案边界执行。
 
 上述项目均不阻塞当前 MVP，也不改变已经关闭的 v0.4 退出门；M11 是已完成的独立扩展，M12 按单 Agent 工具闭环分批推进，专业编辑器和论文研究问题留在 MX 单独立项。
 
@@ -315,7 +321,7 @@ M7.0 相关内容已统一收束到 `eval/`：`config/course-quality.v1.json` �
 
 2026-08-28 需求澄清后，提交 `85be4b9f` 遗留的 `slide-density.v1.json`、44 张 PNG、DOM/密度报告、`scores.json` 和独立汇总脚本被删除或收束。`report.json` 继续保存原课程、narration、quiz、生成耗时、调用、token、repair 和错误；`summary.md` 只做事实索引，`scenes/` 保存逐场景 MHTML。后续配对评分不再作为 M10 任务；M8～M10 只承诺 `1280×720` 及更大桌面视口，MHTML 仅用于固定视口视觉留档。
 
-M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7.1 已在不改写这些基线产物的前提下升级正式运行链；M8 PPT 式只读幻灯片画布、M9 多类型互动和 M10 单场景再生成及新版 slide 需求验收均已完成。M11 导出已于 2026-09-07 完成，M12.0/M12.1 已于 2026-09-08 完成，M12.2/M12.3 待开发；专业编辑器后移为 MX。完整边界见 [M7～M10 方案](stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md)和 [M12 方案](stage-plans/m12-conversational-course-revision-agent-plan.md)。
+M7.0 没有修改 Prompt v1 教学策略、Course Schema、Renderer 或 CSS。M7.1 已在不改写这些基线产物的前提下升级正式运行链；M8 PPT 式只读幻灯片画布、M9 多类型互动和 M10 单场景再生成及新版 slide 需求验收均已完成。M11 导出已于 2026-09-07 完成，M12.0～M12.3 工程主链已于 2026-09-08 完成，真实隔离副本案例与浏览器证据已归档；专业编辑器后移为 MX。完整边界见 [M7～M10 方案](stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md)和 [M12 方案](stage-plans/m12-conversational-course-revision-agent-plan.md)。
 
 ### M7.1 CourseBrief、Course v2 与 outline.v2.1
 

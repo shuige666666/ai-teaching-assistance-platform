@@ -1,7 +1,7 @@
 # 12. M12 对话式课程修订 Agent 开发方案
 
-> 文档版本：0.4（2026-09-08，补充真实修订问题回归）
-> 状态：M12.0 只读对话与 M12.1 单页最小修改已实现；M12.2/M12.3 待开发
+> 文档版本：0.8（2026-09-08，M12.3 真实案例与浏览器证据已记录）
+> 状态：M12.0～M12.3 工程主链已实现；M12.2/M12.3 已完成一轮隔离副本真实 DeepSeek 结构验收，教学内容与互动质量仍需人工判断
 > 上游依赖：M10 单场景修订（已完成）、M11 资源包导出（已完成，非技术前置）
 > 参考实现：OpenMAIC `lib/server/agent-runtime/*` 与 `components/chat/*`，仅裁剪其课程编辑主链，不复制平台级运行设施
 
@@ -29,7 +29,7 @@ M12.0/M12.1 已进入正式调用链：新增独立 AgentAdapter 流式协议、
 
 `patch_stage` 已覆盖 slide、interactive、quiz 的 `/content` 与 `/actions` 通用原子补丁，支持五种 operation；候选页一次性通过 SceneSchema/CourseSchema 后再保存。quiz 题目实际变化会冻结候选页并等待结构化确认，确认后保持 Scene ID，以现有 Repository 事务同时保存题目/actions 并清理旧作答。图表 values/labels 与表格 rows/colWidths 只增加基本结构一致性，不增加视觉评分或教学质量门禁。
 
-当前尚未注册 `edit_deck`、`generate_scene`、页面删除/调序/新增、整页重生成与视觉预览工具；这些仍属于 M12.2。真实 DeepSeek 只读冒烟使用合成空课程验证了 reasoning 流、标准 `list_scenes` 调用、第二轮回答和 revision 不变；真实模型写入任务仍留给后续固定课程验收，不以本次只读结果替代。
+M12.2 已注册 `edit_deck`、`generate_scene`：目录改名/调序立即保存，删除使用一次结构化确认；slide/interactive 整页重生成直接复用 `SceneGenerationService.revise()`，quiz 重生成通过 SSE 长确认执行；新增页只在完整候选课程校验通过后登记生成租约，成功才一次插入 outline、scene、progress，失败不留下占位页。事件已经带有受影响、删除和整页替换的定位信息，关闭侧栏仍不会取消生成。视觉预览工具仍是可选后置增强，不是 M12.2 的交付要求。自动化测试与隔离副本真实 DeepSeek 证据均已记录；证据证明调用链、结构保存和确认语义，不把模型自评或 Schema 通过替代教学质量判断。
 
 首次真实 slide 修订发现：模型完成 `list_scenes/read_stage` 后，第二轮约 1.5 万字符的可见思考耗尽原 4,096 单轮输出预算，尚未形成正文或 `patch_stage` 即以失败结束；前端当时又未展示 `run_finished.error`，用户侧表现为停在思考卡。现将 Agent 单轮总输出预算提高到 16,384，思考不设独立 token 上限，并在 Prompt 中只要求目标明确后尽快调用最小工具。侧栏进行中耗时每 0.1 秒更新；自动跟随仅在用户位于消息底部时生效，向上滚动后不再抢占滚动位置；失败结束事件会显示真实错误。
 
@@ -37,9 +37,9 @@ M12.0/M12.1 已进入正式调用链：新增独立 AgentAdapter 流式协议、
 
 ## 2. 当前实现与目标差距
 
-### 2.1 当前已经具备的能力
+### 2.1 M12 开发前的 M10 基线（历史对比）
 
-当前课堂页 `components/course/classroom-runtime.tsx` 已有“修订本场”入口。它弹出一次性表单，向 `/api/courses/[courseId]/scenes/[outlineId]/revise` 提交最多 500 字意见，再由 `SceneGenerationService.revise()` 把旧场景与意见交给现有场景生成链，得到一份完整替代场景。
+M12 开发前，课堂页 `components/course/classroom-runtime.tsx` 的“修订本场”入口弹出一次性表单，向 `/api/courses/[courseId]/scenes/[outlineId]/revise` 提交最多 500 字意见，再由 `SceneGenerationService.revise()` 把旧场景与意见交给现有场景生成链，得到一份完整替代场景。以下描述用于解释立项背景；当前侧栏和四个已实现工具以 §1.1 为准。
 
 这条链路已经具备四项必须保留的安全语义：
 
@@ -48,7 +48,7 @@ M12.0/M12.1 已进入正式调用链：新增独立 AgentAdapter 流式协议、
 - 新场景完整生成、Schema/策略校验和保存全部成功后才替换旧场景；失败、取消或冲突保留旧内容；
 - 修订 quiz 会更换题目 ID，因此必须明确确认，并在同一数据库事务中清理该场旧作答。
 
-当前缺口不在“能不能调用模型重做一页”，而在于它没有对话历史、没有工具选择、不能先查再改、不能跨页搜索、不能执行局部补丁或调整页序，也不能在多步修改后持续讨论。
+当时的缺口不在“能不能调用模型重做一页”，而在于没有对话历史和工具选择，不能先查再改、跨页搜索、局部补丁或调整页序。M12.0/M12.1 已解决前几项，剩余开发不重复建设已完成的能力。
 
 ### 2.2 M12 要增加的能力
 
@@ -134,8 +134,8 @@ Agent：已完成第 2 页的最小修改。结构校验和保存已通过；建
 | 读取课堂 | `read_stage` | 读取课程摘要、大纲、指定场景的 tree/text/source 投影 | `CourseAgentQueryService.readStage()` |
 | 搜索课堂 | `grep_stage` | 在可见文本中做大小写不敏感的字面量搜索，返回命中页和短片段 | `CourseAgentQueryService.grepStage()` |
 | 编辑课堂 | `patch_stage` | 对一个场景执行原子化有限补丁，整场复验后保存 | `CoursePatchService.patchScene()` |
-| 调整页序 | `edit_deck` | 修改标题、删除、移动页面；同步大纲和页序，新增页交给 generate_scene | `CourseDeckService.editDeck()` |
-| 生成页面 | `generate_scene` | 新增或重新生成一页，复用现有 `generateScene()` 链 | 扩展 `SceneGenerationService` |
+| 调整页序 | `edit_deck` | 修改标题、删除、移动页面；同步大纲和页序，新增页交给 generate_scene | `CourseDeckService` |
+| 生成页面 | `generate_scene` | 新增或重新生成一页，复用现有 `generateScene()` 链 | `SceneGenerationService.insert()` / `revise()` |
 
 第一版暂不实现 `duplicate_scene`，因为它可在 `edit_deck` 的插入能力稳定后小成本补充；也不实现 `generate_actions`、`generate_tts`、`set_roster`，因为当前项目的 Action 由场景装配生成，尚无 TTS 资产和角色聚合，照搬名称会制造没有真实后端能力的空工具。
 
@@ -317,7 +317,7 @@ agent_messages
 
 agent_runs
   id, session_id, status, base_course_revision,
-  final_course_revision, error_json,
+  final_course_revision, error_json, metrics_json,
   started_at, deadline_at, finished_at
 
 agent_confirmations                  # M12.1 增加
@@ -329,7 +329,7 @@ agent_confirmations                  # M12.1 增加
 
 Course 始终是课程内容真源。历史消息里出现的“第 2 页”只是当时记录；恢复会话后，Agent 必须重新 `list_scenes/read_stage`，不能把旧工具结果当作当前数据。每个工具结果记录执行前后 revision，形成可审计修改轨迹。
 
-context-builder 将规范化块转换为合法 assistant/tool 消息，保证每个 tool result 对应已有 tool_call_id，并保留同一模型 turn 的顺序。历史按完整用户轮次裁剪，再应用可配置总字符或 token 预算，不从工具调用链中间截断。中断或确认导致未闭合的调用，用真实的“未执行/等待确认/中断”结果闭合；无法完整恢复的旧轮次只以明确状态摘要进入上下文。Provider 续接所需协议字段按适配器契约处理。M12.0 实现基本历史转换，语义摘要和向量检索后置。
+context-builder 将规范化块转换为合法 assistant/tool 消息，保证每个 tool result 对应已有 tool_call_id，并保留同一模型 turn 的顺序。历史按完整用户轮次裁剪，再应用可配置总字符或 token 预算，不从工具调用链中间截断。中断或确认导致未闭合的调用，用真实的“未执行/等待确认/中断”结果闭合；无法完整恢复的旧轮次只以明确状态摘要进入上下文。Provider 续接所需协议字段按适配器契约处理。M12.3 已将上述裁剪落到完整用户轮次和 120,000 字符默认预算；GET 会话返回本轮的裁剪数量，UI 只提示较早轮次未发送给模型，不删除数据库历史。语义摘要和向量检索仍后置。
 
 ## 7. 并发、一致性与失败语义
 
@@ -526,17 +526,138 @@ M12.1 完成必须满足：典型真实模型用例能够完成 source-read → 
 
 本阶段明确不做页面调序/删除/新增、整页重新生成、视觉截图工具、版本历史/撤销、跨页原子事务、课程根级任意 JSON Patch、文件/网络/数据库操作。图表、表格、theme、actions 和合法 SVG path 已纳入单页通用补丁能力，不再列为后置开放项。
 
-### M12.2：页序与生成
+### M12.2：页序与生成（已实现，真实结构验收已记录）
 
-实现 `edit_deck` 的 rename/move/delete，以及 `generate_scene` 的重生成和新增页。所有关联数组保持一致、order 连续，页面 ID 与服务端字段由服务端生成。
+目标是让 Agent 完成“调整课程组织结构”和“确有需要时整页生成”。只增加 `edit_deck`、`generate_scene` 两个工具，不顺带建设编辑器、通用任务平台或媒体系统。以下子步骤是同一阶段的实施切片，不新增里程碑编号。
 
-验收：移动后 outlines/scenes/progress 顺序一致；删除确认与 quiz 清理正确；新增页失败不留下空 outline；重新生成失败保留原页；多步骤部分成功如实展示。
+#### M12.2-A：先补齐新工具需要的接口衔接
+
+当前 `tool-registry.ts` 的工具执行接口只有 courseId 和参数，确认结果直接依赖 `PreparedCoursePatch`；`CourseAgentService.confirm()` 也只会提交补丁。先扩展这些确实阻挡新工具的接口，不重写 AgentAdapter、历史记录或整个 Service。
+
+- 工具执行上下文由服务端传入 `signal`、runId 和 deadline；courseId 仍绑定当前路由，不能成为模型可切换的参数。调用生成 Service 时传递同一个取消信号，不通过 HTTP 调用本站 API。
+- 待确认 payload 改成带类型的联合：`patch` 保存已准备的候选页，`delete` 保存目标与删除意图，`regenerate_quiz` 保存目标与重生成指令；公共字段包含 courseId、baseRevision 和目标身份。不要把不同操作强转成补丁。
+- 保留已有补丁/删除等短确认的 JSON 返回；quiz 重生成确认采用 SSE 返回长工具生命周期，前端按响应 Content-Type 使用已有 SSE 解析器。确认接口文档和测试同步补充这一区别，不能继续对所有确认直接调用 response.json()。
+- 长确认执行创建独立 run，关联原 confirmationId/callId，复用同会话互斥、截止时间和取消；更新原工具卡，不伪造用户消息、不自动恢复原 run 未执行的模型计划。完成后下一条用户消息再继续讨论。
+
+已完成确认重复提交只返回原结果；仍 pending 的确认在执行前重新检查版本，长生成还需先取得课程 lease，阻止重复生成。取消或过期不改课程；失败不标记 completed。短确认保留现有流程，长确认执行失败后将本次确认终结为可解释的失效结果，重新执行需要用户重新提出请求，不复用旧版本意图盲目重试。
+
+Agent 主循环要在启动每个工具前检查停止信号。工具已经提交后再收到停止，不回滚，也不把该工具标成未执行。成功写工具的结果及时更新到同一条 assistant 记录，随后继续追加文本/工具；不要只等整轮结束才保存全部轨迹，也不要每个 token 写数据库。若课程已提交但轨迹保存失败，应提示“课程已保存，记录同步失败”，以重新读取的 Course 为准；不为此增加跨表长事务或后台补偿平台。
+
+#### M12.2-B：先实现 `edit_deck` 的 rename / move
+
+建议由新增 `CourseDeckService` 负责准备候选 Course 与提交，工具层只做参数解析、结果适配。一次调用执行一个页级操作，不提供任意 Course JSON Patch 或多操作事务数组。
+
+| 操作 | 模型参数（另带 expectedRevision） | 明确语义 |
+| --- | --- | --- |
+| rename | sceneId、title | 同步 Scene.title 与关联 Outline.title；不修改画布里的标题文本 |
+| move | sceneId、toPosition | toPosition 是移动完成后的 1-based 页码，范围 1..N；先移除目标再插入 |
+| delete | sceneId | 删除目标与关联 outline/progress；必须走下一节确认流程 |
+
+例如把目录标题改为“函数入门”用 rename；把页面中可见文本改名仍用 patch_stage，需要两者都改就分别调用。不要把目录标题和画布文本的同步藏在 rename 里。
+
+本阶段 edit_deck 只对无有效生成任务的 ready 课程开放。以 sceneId 找页面，不能把用户说的“第 3 页”直接当永久标识；模型先读取列表确定身份。move 后统一排列 outlines、scenes、sceneProgress，并连续重算 outline/scene.order；progress 本身没有 order 字段，只跟随 outline 顺序。rename/move 保留 sceneId、outlineId、题目/action/元素 ID 和旧作答，不改生成元数据。
+
+保留现有 CourseSchema 的 4～8 页、测验数量/位置、slide 数量和互动页排列约束，不增加教学质量门禁。不合法的移动或删除直接说明具体原因，不擅自重排其他页、补课或删除其他测验。移动到原位置、重命名为原值按 no-op 返回，revision 不增长。
+
+每次有效短修改只调用一次 Repository.save，返回操作、目标身份、前后位置/标题、beforeRevision、afterRevision 与 changed。冲突时不在工具内部自动改用新 revision 重试；由 Agent 重读并决定下一步。
+
+#### M12.2-C：删除与通用确认卡
+
+delete 准备阶段读取目标和关联数据，验证删除后的候选课程是否合法，然后展示“删除第 X 页《标题》”，quiz 额外说明将清理该页旧作答。所有页面删除均确认一次，不能把用户聊天里的“确认”当成结构化确认，也不增加第二次确认弹窗。
+
+确认保存的是目标 sceneId/outlineId 与 baseRevision，而不是易变化的页码。用户确认后重新检查课程版本与目标，删除 outline、scene、progress，同步 requestedSceneCount 并重排。quiz 作答清理与课程保存使用现有 Repository 的同一个事务；其他页作答不受影响。用户取消、确认过期、版本冲突时均不删除。
+
+前端移除目前固定的“确认并清理旧作答”按钮文案，按操作显示“确认删除”“确认修改测验”“确认重新生成测验”。确认摘要与按钮由受控操作类型生成；显示目标页名及影响，不把整份候选 Course 堆给用户。
+
+#### M12.2-D：整页重新生成，先复用现有链路
+
+`generate_scene` 使用 mode 区分操作。`regenerate` 参数为 sceneId、expectedRevision、instruction（沿用现有最多 500 字）；`add` 参数见下一节。不允许模型填写 requestId、generation、服务端时间戳或绕过确认的布尔值。
+
+regenerate 支持 ready/partial_failed 课程中已存在且 progress 为 ready 的 slide、interactive、quiz。缺失/失败的初始生成页继续走现有生成工作区，不把初始生成重试也塞进第一版工具。无有效生成 lease 才能开始。
+
+优先扩展/复用 `SceneGenerationService.revise()` 的完整替换链：旧内容作为参考、用户指令驱动整页重构，仍经 generateScene、现有 repair/校验、assembleScene 和 Repository。不要调用仅支持 interactive 的 `regenerateFailedInteractive()` 来实现通用重生成。首版不另做“忽略全部旧内容”的独立生成模式，不改变页面 type、outlineId 或互动 widgetType；改变场景类型是后置能力。
+
+slide/interactive 明确要求重做时直接执行；quiz 在发起生成模型请求之前确认，说明会更换题目并清理旧作答。确认冻结的是指令和旧版本，不是尚未生成的页面。成功后新场景与旧作答清理一起提交；失败或取消既不替换旧页，也不清理作答。
+
+保留现有整页替换会产生新 sceneId 的语义，以便重置播放器；outlineId 保持稳定。不能照搬 patch_stage 保留 sceneId 的定位假设。返回 oldSceneId、newSceneId、outlineId，并说明 content/actions 被整页替换。目录标题以已有 outline 为基准，需要改名时先调用 rename，不让生成内容无意改写课程目录。
+
+#### M12.2-E：新增页，不落库半成品
+
+add 参数为 expectedRevision、position（插入后 1-based 页码，1..N+1）、outline 和 instruction。outline 复用 SceneOutlineSchema 去掉服务端生成的 id/order：保留 type、role、title、teachingObjective、keyPoints，以及原 Schema 的可选字段；interactive 按已有规则提供 widgetType/widgetOutline。不要另造一套“标题和目标”的映射规范，也不要求模型提交整份 Course 或完整 Scene。
+
+仅 ready 且当前少于 8 页的课程支持 add。先在内存构造 outline、候选目录及进度，检查最终数量与排列规则，再登记生成 lease；不额外调用一次“大纲规划模型”。随后用候选课程上下文和新 outline 生成一页，成功后一次事务插入完整 outline、scene、ready progress，并更新 requestedSceneCount 和连续页序。旧页面 ID、内容、作答全部保留。instruction 必须进入实际生成输入，不能只出现在工具卡上。
+
+新增不能直接复用要求已有 pending outline 的 `SceneGenerationService.generate()`。在该 Service 内增加明确的插页入口，复用底层生成链和提交规则。持久化的生成中 Course 仍保留旧目录、旧数量和旧 progress；新增 outline 只在内存候选中存在，成功之前不保存占位页。
+
+lease 继续使用 activeOperation.stage=scene，并增加可选 purpose=insert 标识新增；outlineId 可记录待生成的新 ID，不意味着该 ID 已存在于持久化目录。旧记录缺省保持原语义。实现时同步处理所有读取 activeOperation 的生成入口、状态展示和过期清理，不能拿任意已有页作为插页占位目标；此兼容性扩展不另建任务表，也不要求迁移历史课程内容。
+
+生成失败、停止或超时，在仍持有 operation id 与 revision 时清理自己的 lease、恢复 ready，旧三组数组与 requestedSceneCount 不变；如果操作所有权已丢失，绝不清理别人的任务。进程异常退出由后续请求按现有租约过期规则清理，不续跑、不从半成品恢复。恢复时只释放任务状态，不凭空插页。
+
+#### M12.2-F：长工具反馈、revision 与页面定位
+
+生成沿用现有单页约 120 秒超时，Agent 总预算先沿用 300 秒。单页请求使用“单页超时与本轮剩余时限取小”的信号；总预算不足时停止新步骤并报告部分完成，不默认延长到无限等待。保持已提高的 16,384 单轮输出预算，不重新加入独立思考 token 上限。
+
+生成工具至少展示正在生成、成功或失败、真实耗时；如增加准备/校验/保存阶段，必须来自服务端实际事件，不展示模拟百分比。关闭侧栏继续运行，明确点击停止才取消；取消信号必须传至生成 Provider 和提交前检查。停止不会撤销已提交的前几个工具，也不能阻止已经开始的短事务安全收尾。
+
+注意生成登记 lease 和最终保存/失败清理都会增长 revision，因此一次生成不是固定 +1，失败也未必 revision 不变。无论成功还是已登记后的失败，都同步当前持久化 revision 给 Agent 与前端，避免下一次 patch 使用过期版本；分别返回 contentChanged 与实际 before/afterRevision，不能把 lease 变化说成内容已修改。
+
+扩展 course_updated 与工具结果的定位信息，至少包含 affectedSceneIds、removedSceneIds 以及整页替换的 oldSceneId/newSceneId/outlineId 映射。前端收到事件重新 GET Course，不能继续用 affectedSceneIds[0] 无条件跳页：当前页仍存在则保持；当前页被替换则跟随稳定 outlineId；当前页被删除则选择原位置的下一页，没有则前一页。新增默认不抢走当前页，工具卡可提供“查看新增页”。
+
+课程内容换入前停止旧 action；纯目录改名/调序不必强制把未变页面从头播放。刷新失败显示“已保存，课堂刷新失败”并提供重新加载；对话工具卡中的成功结果不改成保存失败。
+
+#### M12.2-G：Prompt、文件影响与完成标准
+
+Prompt 只追加工具选择和结果语义：局部修改用 patch，目录/位置用 edit_deck，整页重做或不存在的页用 generate；页码先解析成稳定 ID；写工具按返回 revision 串行执行；遇到确认结束本轮，其他计划标记未执行；失败说明已保存与未完成部分。不把 CourseSchema 每条规则重复写进 system prompt，也不强制每次生成后追加视觉工具调用。
+
+主要改动预计集中在 lib/agent 的 contracts/tool-registry/course-agent-service/system-prompt、新增 CourseDeckService、扩展 SceneGenerationService、activeOperation 的 Schema 与消费方、确认路由、Agent Drawer 和 classroom-runtime。复用现有 Repository 事务与场景生成 Provider 配置；除确有字段需要，不另建模型配置、任务表和生成引擎。两工具分别完成执行器和测试后才注册，不提前向模型宣传不可用能力。
+
+验收聚焦常见成功路径和真实破坏风险：rename/move 身份与作答不变；delete 取消不写入、确认后关联数据同事务删除；新增成功完整插入、失败无占位；三类页重生成成功替换、失败保留旧页；quiz 无确认不调用生成模型；重复确认、版本冲突、停止与迟到结果不重复提交；多工具部分成功及前端定位正确。用单元测试覆盖变换、MySQL 验证事务/lease、Mock E2E 串起确认和刷新，再各选一条真实模型调序、新增、重生成任务人工核对。不要把罕见故障组合、固定成功率或模型自评设成上线门禁。
+
+当前实现已完成本节 A～G 的工程主链：`CourseDeckService` 负责 rename/move/delete，`SceneGenerationService.insert()` 负责不落库半成品的新增页，`generate_scene` 复用现有场景 Prompt、repair、装配和 operation lease；删除和 quiz 重生成的确认 payload 已按操作类型区分，quiz 长确认通过 SSE 启动独立 run 并更新原工具卡。前端按 `oldSceneId/newSceneId/outlineId` 处理整页替换，删除当前页时落到原位置附近。当前仍没有 `duplicate_scene`、视觉预览、撤销历史或额外教学质量门禁；下一步只需用固定课程调用真实 DeepSeek 验收调序、新增和三类重生成，并将结果记录到 M12.3 案例证据。
 
 ### M12.3：体验与论文证据收口
 
-在 M12.0 基本历史转换、上下文预算和超时收尾之上，完善会话管理、上下文裁剪体验、token/工具耗时指标与论文证据。选择 3 门课程，每门完成“问答不修改”“单页局部修改”“跨页搜索后修改”“调序或重生成”四类任务，保存工具轨迹、revision 变化与最终页面截图。
+目标是把已有六工具闭环做成可持续使用、可解释和可复现实验的成果，不以增加工具数量为目标。以 M12.2 主流程可用为输入；M12.0/M12.1 的真实写入质量检查尚未完成的部分一起收口，不能把“只读真实冒烟成功”当作修订能力已验证。
 
-不以模型自评作为成功判定。论文可报告任务完成率、平均工具调用数、冲突拦截率、无效工具参数率、人工意图符合率和人工视觉核对结果；其中结构通过率与人工质量评分分开统计。
+#### M12.3-A：会话切换与真实运行状态
+
+复用已有 list/create/getSession 接口，提供当前课程历史会话列表、新建对话和切换。只显示当前课程会话；同一会话正在运行或提交确认时禁用切换/新建并提示先停止，避免首版同时管理多个流。关侧栏仍不停止。会话重命名、删除、全文检索、自动清理和跨课程迁移均不作为必做项。
+
+刷新浏览器后从数据库恢复完成轨迹，未完成 run 按现有 deadline 标记/收尾；明确提示刷新不会自动续跑模型。等待确认恢复为可操作确认卡，过期/取消/失败不可伪装完成。区分模型失败、工具失败、用户停止、课程冲突与“保存成功但显示刷新失败”，不为每类状态新建复杂状态机。
+
+#### M12.3-B：长对话上下文与详情可读性
+
+沿用已有 context-builder 预算裁剪，不引入向量库、LLM 摘要服务或长期记忆。UI 可提示“较早对话未全部发送给模型”，数据库中的历史记录不因此删除。裁剪按完整消息/工具调用及其结果成组进行，不能留下孤立 tool result；待确认内容不作为已执行结果。新一轮以实际 Course revision 为准，旧 source 只作历史参考，不能冒充当前版本。
+
+思考卡、工具组和入参/结果继续默认收起，只展示 Provider 明确提供的可公开内容或摘要，不尝试推导未提供的内部推理，也不伪造思考流。保留现有耗时更新与滚动行为，详情限高、可滚动；长工具结果明确截断位置及继续读取方式。工具执行后的结果摘要要比巨量原文更容易看到，但原有字段读取和通用 patch 能力不收缩。
+
+#### M12.3-C：轻量指标，不建设监控平台
+
+按 run 汇总模型调用数、工具成功/失败/等待确认次数、总耗时和可获得的 input/output tokens；逐工具保留真实耗时、操作与 revision。优先扩展现有 run 记录的可选统计字段，需要迁移时使用下一可用编号，不回写已执行迁移。没有 Provider usage 时记为未知，不填 0，也不按字符串长度伪装真实 token。
+
+Agent 对话模型与 generate_scene 内部生成调用分开统计：前者来自 AgentModelEvent.finish.usage，后者复用 Scene.generation 的 usage/upstreamCalls 等实际数据。生成失败若没有拿到 usage 就注明缺失，不从旧场景 generation 读取成本；Provider 将 reasoning 计入 output 时不要重复相加。工具等待时间包含内部生成，不再加一遍作为总运行耗时。确认等待是用户时间，与模型执行时间分开；长确认的新 run 可通过 confirmationId 关联到原任务。
+
+仅提供日志/轻量报告供开发和论文整理；不要求专门仪表盘、价格换算、分布式 tracing 或全量请求持久化。记录模型/Prompt 版本与测试标识即可，不保存密钥和 Authorization 等请求凭据。
+
+#### M12.3-D：固定案例与人工证据
+
+建议选择 3 门固定课程，每门执行问答不修改、单页局部修改、跨页搜索修改、调序或重生成四类任务，形成 12 条核心案例；另补新增页与删除确认案例覆盖两种结构变化。尽量使用隔离的测试副本，记录初始 Course、用户原话、实际工具参数/结果、前后 revision、内容 diff 和关键截图。此数量是便于毕业设计复现的推荐样本，不是每次提交都必须重跑的门禁。
+
+每条案例分别判断：执行是否完成、保存结构是否合法、是否符合用户意图、页面是否可用；code 互动页另执行语言/示例测试，普通互动页人工操作控件核对效果。结构通过不等于教学正确，模型最终说“改好了”不作为证据。失败案例同样保留，不通过临时改提示词反复重跑后只报告最佳结果。
+
+报告任务完成率时给出实际样本数、成功定义与失败原因，工具调用数/耗时可报告均值和范围。冲突拦截率只在确实构造冲突的测试集中计算，正常用例没有冲突不能填 100%；无效参数率以实际工具调用为分母。真实模型小样本只能说明工程可行性，不外推为通用能力排名，也不新增同题 A/B 或冻结历史阶段的重测要求。
+
+2026-09-08 已在两个隔离副本上执行一轮真实 DeepSeek 结构验收：8 页副本 `9fb86c2f-68cc-49f0-9da7-e4b92efcd4d0` 完成只读查询/搜索、调序（REV.0→1）、明确 `str_replace` 补丁（REV.1→2）、slide 重生成（REV.2→4）、interactive 重生成（REV.4→6）、quiz 等待确认及确认重生成（REV.6→8）；删除案例在 7 页副本 `f0776b0f-1a19-4519-a75f-4c589f230d57` 上到达确认后取消，课程保持 REV.2。新增页在 6 页容量副本上成功插入第 7 页（REV.0→2）；同一请求在 8 页副本上如实返回容量已满并未写入。每个案例保存用户原话、SSE 事件、工具参数/结果摘要、前后页序与 revision；脚本为 `eval/scripts/m12-3-deepseek-acceptance.mjs`，结构报告见 `eval/runs/m12-3-real-deepseek-*`，最终页面 MHTML 见 `eval/runs/m12-3-final-8p/` 与 `eval/runs/m12-3-final-7p-add/`。浏览器证据保存在 `output/playwright/m12-3-*.png`，覆盖会话新建/切换、默认收起详情、展开入参与结果以及消息容器滚动。一次含歧义的补丁请求被模型停下并请求澄清，保留为失败/未执行事实；这些记录只证明工程行为和当前样例结构可读，页面教学质量、视觉审美与 interactive 运行语义仍需人工判断。
+
+#### M12.3-E：交付与停止范围
+
+完成会话选择与状态恢复、上下文裁剪提示、必要统计和案例记录后，更新 docs/07 的实际验证结果、docs/06 与 README 的能力边界。对实际修改运行相关自动化测试，阶段结束再执行现有完整验证；不要求每个文案提交都跑全部数据库/E2E/构建。真实模型人工验证可以独立于日常 CI，不设成本高且波动大的固定成功率门槛。
+
+M12 收口以“可持续讨论 → 读取/搜索 → 局部修改或页级操作 → 如实反馈 → 恢复查看”为终点。删除和整页重生成目前没有撤销，确认与结果中清楚说明；不把补版本历史、视觉 Agent 或专业编辑器作为完成 M12 的前提。
+
+当前工程实现已覆盖本节 A～C 的最小主链：会话列表只按当前课程显示，侧栏支持新建/切换并在运行或等待确认时锁定切换；会话 GET 会收尾已过期 run、返回最近 run、待确认记录和上下文裁剪信息，刷新不会自动续跑模型。`context-builder` 按完整用户轮次和字符预算裁剪，工具调用与结果不会被拆开；`agent_runs.metrics_json`（迁移 006）保存模型/工具计数、总耗时和 Provider 实际提供的 token，未知 usage 保持缺失。前端继续沿用默认收起详情、流式思考计时和滚动行为，并提示裁剪与刷新状态。
+
+M12.3-D 的一轮固定副本真实 DeepSeek 调序/新增/重生成和浏览器证据已归档；推荐的多课程扩展样本与人工页面/互动质量判断仍是后续论文工作。本次工程实现不把 Mock 单测或结构 Schema 通过冒充真实内容质量证据，也未增加固定成功率门禁。
 
 ### 后置增强
 
@@ -580,10 +701,11 @@ Playwright 覆盖：打开侧栏 → 提问 → 默认收起的思考卡流式�
 
 M12 第一版明确不做多 Agent 课堂讨论、不做 LangGraph、不让 Agent 操作文件系统或数据库、不做任意代码执行、不把完整 Course 每轮传给模型、不让多个写工具并行、不实现跨工具自动回滚，也不把 OpenMAIC 的平台级 Session Worker 当作毕业设计前置。
 
-开工前还需明确两项决策：
+当前已明确的决策与剩余边界：
 
-1. 第一版是否允许删除页面；建议保留但强制确认，它能完整验证 `edit_deck`，同时风险可控；
-2. 真实模型是否支持标准 OpenAI-compatible tool calls；若当前 DeepSeek 接口不支持，则 M12.0 开工时先做一次最小 capability spike。不得用“让模型输出一段自定义 JSON 文本”长期冒充可靠工具调用协议。
+1. M12.2 保留页面删除并强制一次结构化确认，不再作为待定开工条件；页数和排列限制沿用现有 CourseSchema，不增加新的教学质量门禁。
+2. M12.0 已验证真实 DeepSeek 标准 tool calls，只读能力不必重复 spike；后续需要补充真实写入、调序和生成案例。新增 Provider 时再核对其能力，不用自定义正文 JSON 冒充 tool calls。
+3. 后续顺序为 M12.2-A 接口衔接 → B/C 页序与删除 → D 重生成 → E 新增 → F/G 联调验收；M12.3 再做会话体验和证据收口。M12.0/M12.1 章节保留其设计历史，涉及后续扩展时以本版 M12.2/M12.3 的明确规则为准。
 
 ## 13. 与 OpenMAIC 的复用边界
 

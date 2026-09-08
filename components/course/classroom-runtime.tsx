@@ -10,6 +10,7 @@ import type { EditableQuizQuestion } from "@/lib/domain/quiz-edit";
 import type { Course } from "@/lib/domain/schemas";
 import { isBrowserSpeechAvailable } from "@/lib/playback/speech-adapters";
 import { usePlaybackController } from "@/lib/playback/use-playback-controller";
+import type { AgentCourseUpdate } from "@/lib/agent/contracts";
 
 const SPEECH_PREFERENCE_KEY = "ai-teaching-browser-speech";
 
@@ -168,15 +169,24 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   }
 
   /** Agent 保存课程后按稳定 sceneId 刷新数据，避免页序或局部状态造成跳页。 */
-  async function refreshCourseAfterAgent(targetSceneId: string) {
+  async function refreshCourseAfterAgent(update: AgentCourseUpdate) {
     setContinuousPlay(false);
     playback.pause();
+    const previousScene = course.scenes[sceneIndex];
+    const previousIndex = sceneIndex;
     const response = await fetch(`/api/courses/${course.id}`, { cache: "no-store" });
     const payload = await response.json() as { course?: Course; error?: { message?: string } };
     if (!response.ok || !payload.course) throw new Error(payload.error?.message ?? "课程已保存，但课堂刷新失败");
-    const nextIndex = payload.course.scenes.findIndex((item) => item.id === targetSceneId);
+    const replacement = previousScene && update.sceneReplacements?.find((item) => item.oldSceneId === previousScene.id);
+    const preferredId = replacement?.newSceneId ?? (previousScene && !update.removedSceneIds?.includes(previousScene.id) ? previousScene.id : undefined);
+    const nextIndex = preferredId ? payload.course.scenes.findIndex((item) => item.id === preferredId) : -1;
     setCourse(payload.course);
-    setSceneIndex(nextIndex >= 0 ? nextIndex : Math.min(sceneIndex, payload.course.scenes.length - 1));
+    // 当前页仍存在时保持原页；被替换时跟随稳定 outlineId；被删除时落到原位置附近。
+    if (nextIndex >= 0) setSceneIndex(nextIndex);
+    else if (replacement) {
+      const outlineIndex = payload.course.scenes.findIndex((item) => item.outlineId === replacement.outlineId);
+      setSceneIndex(outlineIndex >= 0 ? outlineIndex : Math.min(previousIndex, payload.course.scenes.length - 1));
+    } else setSceneIndex(Math.min(previousIndex, Math.max(0, payload.course.scenes.length - 1)));
   }
 
   /** 只提交题目和选择项；正确答案由服务端从当前 Course 读取并计算。 */
