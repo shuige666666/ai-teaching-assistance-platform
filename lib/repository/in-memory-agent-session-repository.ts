@@ -1,0 +1,83 @@
+import { randomUUID } from "node:crypto";
+import { AgentApplicationError, type AgentConfirmation, type AgentContentBlock, type AgentMessage, type AgentRun, type AgentRunStatus, type AgentSession } from "@/lib/agent/contracts";
+import type { AgentSessionRepository } from "./agent-session-repository";
+
+export class InMemoryAgentSessionRepository implements AgentSessionRepository {
+  private sessions = new Map<string, AgentSession>();
+  private messages = new Map<string, AgentMessage[]>();
+  private runs = new Map<string, AgentRun>();
+  private confirmations = new Map<string, AgentConfirmation>();
+  constructor(private readonly now: () => number = Date.now) {}
+
+  async createSession(courseId: string, title: string) {
+    const now = this.now();
+    const session: AgentSession = { id: randomUUID(), courseId, title, status: "idle", createdAt: now, updatedAt: now };
+    this.sessions.set(session.id, session);
+    return structuredClone(session);
+  }
+  async listSessions(courseId: string): Promise<AgentSession[]> {
+    return [...this.sessions.values()].filter((item) => item.courseId === courseId).sort((a, b) => b.updatedAt - a.updatedAt).map((item) => structuredClone(item));
+  }
+  async getSession(courseId: string, sessionId: string) {
+    const session = this.sessions.get(sessionId);
+    return session?.courseId === courseId ? structuredClone(session) : null;
+  }
+  async listMessages(sessionId: string) { return structuredClone(this.messages.get(sessionId) ?? []); }
+  async appendMessage(sessionId: string, input: Omit<AgentMessage, "id" | "sequence" | "createdAt">) {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在", 404);
+    const items = this.messages.get(sessionId) ?? [];
+    const message: AgentMessage = { ...structuredClone(input), id: randomUUID(), sequence: items.length + 1, createdAt: this.now() };
+    items.push(message);
+    this.messages.set(sessionId, items);
+    this.sessions.set(sessionId, { ...session, updatedAt: message.createdAt });
+    return structuredClone(message);
+  }
+  async replaceAssistantBlocks(sessionId: string, callId: string, blocks: AgentContentBlock[]) {
+    const items = this.messages.get(sessionId) ?? [];
+    const message = items.find((item) => item.role === "assistant" && "blocks" in item.content && item.content.blocks.some((block) => block.type === "tool" && block.callId === callId));
+    if (!message) throw new AgentApplicationError("NOT_FOUND", "找不到待更新的工具记录", 404);
+    message.content = { blocks: structuredClone(blocks) };
+  }
+  async startRun(sessionId: string, baseRevision: number, deadlineAt: number) {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在", 404);
+    const now = this.now();
+    for (const [id, run] of this.runs) {
+      if (run.sessionId !== sessionId || run.status !== "running") continue;
+      if (run.deadlineAt > now) throw new AgentApplicationError("RUN_IN_PROGRESS", "当前对话仍有请求正在执行", 409);
+      this.runs.set(id, { ...run, status: "interrupted", finishedAt: now, error: "运行超时后已释放" });
+    }
+    const run: AgentRun = { id: randomUUID(), sessionId, status: "running", baseRevision, deadlineAt, createdAt: now };
+    this.runs.set(run.id, run);
+    this.sessions.set(sessionId, { ...session, status: "running", updatedAt: now });
+    return structuredClone(run);
+  }
+  async finishRun(runId: string, status: Exclude<AgentRunStatus, "running">, finalRevision?: number, error?: string) {
+    const run = this.runs.get(runId);
+    if (!run) return;
+    const now = this.now();
+    this.runs.set(runId, { ...run, status, finalRevision, error, finishedAt: now });
+    const session = this.sessions.get(run.sessionId);
+    if (session) this.sessions.set(session.id, { ...session, status: status === "waiting_confirmation" ? "waiting_confirmation" : "idle", updatedAt: now });
+  }
+  async createConfirmation(input: Omit<AgentConfirmation, "id" | "status" | "createdAt" | "updatedAt">) {
+    const now = this.now();
+    const confirmation: AgentConfirmation = { ...structuredClone(input), id: randomUUID(), status: "pending", createdAt: now, updatedAt: now };
+    this.confirmations.set(confirmation.id, confirmation);
+    return structuredClone(confirmation);
+  }
+  async getConfirmation(sessionId: string, confirmationId: string) {
+    const item = this.confirmations.get(confirmationId);
+    return item?.sessionId === sessionId ? structuredClone(item) : null;
+  }
+  async resolveConfirmation(confirmationId: string, status: "completed" | "cancelled" | "expired", result?: unknown) {
+    const current = this.confirmations.get(confirmationId);
+    if (!current) throw new AgentApplicationError("NOT_FOUND", "确认记录不存在", 404);
+    const next = { ...current, status, result: structuredClone(result), updatedAt: this.now() };
+    this.confirmations.set(confirmationId, next);
+    const session = this.sessions.get(current.sessionId);
+    if (session) this.sessions.set(session.id, { ...session, status: "idle", updatedAt: next.updatedAt });
+    return structuredClone(next);
+  }
+}

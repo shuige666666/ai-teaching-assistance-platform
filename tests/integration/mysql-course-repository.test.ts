@@ -11,6 +11,9 @@ import { courseRepositoryContract } from "@/tests/domain/course-repository-contr
 import { DatabaseUnavailableError, LegacyCourseUnsupportedError, StoredCourseInvalidError } from "@/lib/repository/course-repository";
 import { MySQLCourseRepository } from "@/lib/repository/mysql-course-repository";
 import { MySQLQuizAttemptRepository } from "@/lib/repository/mysql-quiz-attempt-repository";
+import { MySQLAgentSessionRepository } from "@/lib/repository/mysql-agent-session-repository";
+import { CoursePatchService } from "@/lib/application/course-patch-service";
+import { AgentApplicationError } from "@/lib/agent/contracts";
 
 const pool = getDatabasePool();
 courseRepositoryContract("MySQL", () => new MySQLCourseRepository(pool));
@@ -217,6 +220,51 @@ describe("MySQLCourseRepository integration", () => {
     cleanupIds.push(created.id);
     await pool.execute("UPDATE courses SET scenes_json = JSON_ARRAY() WHERE id = ?", [created.id]);
     await expect(repository.get(created.id)).rejects.toBeInstanceOf(StoredCourseInvalidError);
+  });
+
+  it("Agent 会话、消息和 run 可跨仓储实例恢复并互斥", async () => {
+    const courseRepository = new MySQLCourseRepository(pool);
+    const course = await courseRepository.create(materializeFixtureCourse(createFixtureCourse(`Agent 会话 ${crypto.randomUUID()}`, 4)));
+    cleanupIds.push(course.id);
+    const first = new MySQLAgentSessionRepository(pool);
+    const session = await first.createSession(course.id, "课程修订");
+    const run = await first.startRun(session.id, course.revision, Date.now() + 60_000);
+    await first.appendMessage(session.id, { sessionId: session.id, runId: run.id, role: "user", content: { text: "检查课堂", courseRevision: course.revision } });
+    await expect(new MySQLAgentSessionRepository(pool).startRun(session.id, course.revision, Date.now() + 60_000)).rejects.toBeInstanceOf(AgentApplicationError);
+    await first.finishRun(run.id, "completed", course.revision);
+    const recovered = new MySQLAgentSessionRepository(pool);
+    expect((await recovered.getSession(course.id, session.id))?.status).toBe("idle");
+    expect((await recovered.listMessages(session.id))[0].content).toMatchObject({ text: "检查课堂" });
+  });
+
+  it("Agent quiz 补丁保持 Scene ID，并在同一课程事务清理旧作答", async () => {
+    const repository = new MySQLCourseRepository(pool);
+    const course = await repository.create(materializeFixtureCourse(createFixtureCourse(`Agent quiz ${crypto.randomUUID()}`, 4)));
+    cleanupIds.push(course.id);
+    const quiz = course.scenes.find((scene) => scene.type === "quiz");
+    if (!quiz || quiz.type !== "quiz") throw new Error("fixture quiz missing");
+    const question = quiz.content.questions[0];
+    await pool.execute(
+      "INSERT INTO quiz_attempts (id, course_id, scene_id, question_id, selected_option_ids_json, correct, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [crypto.randomUUID(), course.id, quiz.id, question.id, JSON.stringify(question.correctOptionIds), true, Date.now()],
+    );
+    const service = new CoursePatchService(repository);
+    const prepared = await service.prepareScenePatch(course.id, {
+      sceneId: quiz.id,
+      expectedRevision: course.revision,
+      intent: "缩短题干并调整旁白",
+      operations: [
+        { op: "str_replace", path: "/content/questions/0/prompt", oldText: "课程内容的生成与展示", newText: "课程生成" },
+        { op: "set", path: "/actions/0/text", value: "请认真阅读调整后的题目。" },
+      ],
+    });
+    await service.commitPrepared(prepared);
+    const saved = await repository.get(course.id);
+    const savedQuiz = saved?.scenes.find((scene) => scene.id === quiz.id);
+    const [rows] = await pool.execute<Array<RowDataPacket & { count: number }>>("SELECT COUNT(*) AS count FROM quiz_attempts WHERE course_id = ? AND scene_id = ?", [course.id, quiz.id]);
+    expect(savedQuiz?.id).toBe(quiz.id);
+    expect(savedQuiz?.actions[0]).toMatchObject({ text: "请认真阅读调整后的题目。" });
+    expect(Number(rows[0].count)).toBe(0);
   });
 
   it("连接不可用时返回可诊断的 DATABASE_UNAVAILABLE", async () => {

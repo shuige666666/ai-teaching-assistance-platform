@@ -116,7 +116,11 @@ export const PPTChartElementSchema = PPTBaseElementSchema.extend({
     series: z.array(ChartSeriesSchema).min(1).max(3),
   }).strict(),
   themeColors: z.array(SlideColorSchema).min(1).max(12).optional(),
-}).strict();
+}).strict().superRefine((chart, context) => {
+  for (const [index, series] of chart.data.series.entries()) {
+    if (series.values.length !== chart.data.labels.length) context.addIssue({ code: "custom", path: ["data", "series", index, "values"], message: "图表系列数值数量必须与标签数量一致" });
+  }
+});
 
 export const PPTTableElementSchema = PPTBaseElementSchema.extend({
   type: z.literal("table"),
@@ -124,7 +128,11 @@ export const PPTTableElementSchema = PPTBaseElementSchema.extend({
   rows: z.array(z.array(z.string().max(60)).min(1)).min(2).max(7),
   header: z.boolean(),
   outline: SlideElementOutlineSchema.optional(),
-}).strict();
+}).strict().superRefine((table, context) => {
+  for (const [index, row] of table.rows.entries()) {
+    if (row.length !== table.colWidths.length) context.addIssue({ code: "custom", path: ["rows", index], message: "表格每行单元格数量必须与列宽数量一致" });
+  }
+});
 
 export const PPTElementSchema = z.discriminatedUnion("type", [
   PPTTextElementSchema,

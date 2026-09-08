@@ -3,10 +3,14 @@ import { MySQLCourseRepository } from "./mysql-course-repository";
 import { MySQLQuizAttemptRepository } from "./mysql-quiz-attempt-repository";
 import { RepositoryConfigurationError, type CourseRepository } from "./course-repository";
 import type { QuizAttemptRepository } from "./quiz-attempt-repository";
+import type { AgentSessionRepository } from "./agent-session-repository";
+import { InMemoryAgentSessionRepository } from "./in-memory-agent-session-repository";
+import { MySQLAgentSessionRepository } from "./mysql-agent-session-repository";
 
 const globalRepository = globalThis as typeof globalThis & {
   __aiTeachingCourseRepository?: CourseRepository;
   __aiTeachingQuizAttemptRepository?: QuizAttemptRepository;
+  __aiTeachingAgentSessionRepository?: AgentSessionRepository;
 };
 
 /**
@@ -32,4 +36,16 @@ export function getQuizAttemptRepository(): QuizAttemptRepository {
   return globalRepository.__aiTeachingQuizAttemptRepository;
 }
 
+/** Agent 会话与课程使用相同的运行仓储档，测试时提供进程内实现。 */
+export function getAgentSessionRepository(): AgentSessionRepository {
+  if (!globalRepository.__aiTeachingAgentSessionRepository) {
+    const repositoryType = process.env.COURSE_REPOSITORY ?? "mysql";
+    if (repositoryType === "mysql") globalRepository.__aiTeachingAgentSessionRepository = new MySQLAgentSessionRepository();
+    else if (repositoryType === "memory") globalRepository.__aiTeachingAgentSessionRepository = new InMemoryAgentSessionRepository();
+    else throw new RepositoryConfigurationError();
+  }
+  return globalRepository.__aiTeachingAgentSessionRepository!;
+}
+
 export type { CourseRepository } from "./course-repository";
+export type { AgentSessionRepository } from "./agent-session-repository";

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { CourseSchema, SceneSchema, type Course } from "@/lib/domain/schemas";
 import { EditQuizSceneInputSchema, type EditQuizSceneInput } from "@/lib/domain/quiz-edit";
+import { buildQuizQuestions } from "@/lib/domain/quiz-question-builder";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
 import { SceneApplicationError } from "./scene-generation-service";
 
@@ -28,20 +29,7 @@ export class QuizEditingService {
     const replacement = SceneSchema.parse({
       ...oldScene,
       id: randomUUID(),
-      content: {
-        type: "quiz",
-        questions: parsed.questions.map((question) => {
-          const options = question.options.map((label) => ({ id: randomUUID(), label }));
-          return {
-            id: randomUUID(),
-            type: question.type,
-            prompt: question.prompt,
-            options,
-            correctOptionIds: question.correctOptionIndexes.map((index) => options[index].id),
-            explanation: question.explanation,
-          };
-        }),
-      },
+      content: { type: "quiz", questions: buildQuizQuestions(parsed.questions) },
       createdAt: now,
       updatedAt: now,
     });

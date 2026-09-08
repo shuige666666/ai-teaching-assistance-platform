@@ -35,6 +35,12 @@ M11 资源包导出（scene-slide.v2.4 同期）使用 npm 分发的 `pptxgenjs`
 `jszip`（MIT License）打包 ZIP；PPTElement → PPTX 的映射思路参考上述提交的
 `lib/export/use-export-pptx.ts`，未复制其代码。两库通过 npm 安装，许可证文本见各自包内文件。
 
+M12 的课程工具命名、`read_stage` tree/text/source 投影和“读取目标页 → 最小原子补丁 →
+按需复读确认”提示词流程参考同一 OpenMAIC 代码库的
+`lib/server/agent-runtime/course-tools.ts`、`dsl-tools.ts` 与课程编辑工具。实现已按本项目
+Course/Scene Schema、MySQL Repository、SSE 和 quiz 作答事务重新编写；未复制其后台 Worker、
+Skills、多 Agent、媒体、TTS 或跨进程运行设施。
+
 OpenMAIC is licensed under the MIT License:
 M9 的 `scene-interactive.v2` 裁剪自上述提交的
 `packages/@openmaic/generation/templates/` 下 `diagram-content`、`simulation-content`、

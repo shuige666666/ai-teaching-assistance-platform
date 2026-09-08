@@ -10,7 +10,7 @@
 
 M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。M7～M10 不直接做论文创新，而是依次完成课程质量基础、PPT 式只读幻灯片、单一互动场景和可回退的课程修订，四个里程碑共同形成 v0.4 产品基线。M11 是不阻塞 v0.4 的 PPTX + interactive HTML 简化资源包导出，已按独立扩展完成；M12 在 M10 基础上建设对话式课程修订 Agent。专业幻灯片编辑器后移为 MX 按需候选，可度量研究问题仍在 MX 中独立选题。
 
-**当前进度：M1～M10 当前范围已完成，M11 简化资源包导出也已完成；M10 的 ready 场景修订、失败互动重生成、quiz 单选/多选、人工题目编辑和新版 slide 单人需求验收均已完成。M7.0 六题与旧版 MHTML 保持冻结并作为历史留档，不再要求同题 A/B 评分。M12 对话式课程修订 Agent 已完成方案设计、尚未实现；专业幻灯片编辑器已移出确定阶段。** 实施证据见 [07-development-status.md](07-development-status.md)。
+**当前进度：M1～M11 已完成，M12.0 只读对话与 M12.1 单页最小修改已于 2026-09-08 实现；M12.2 页序与生成、M12.3 证据收口待开发。M7.0 六题与旧版 MHTML 保持冻结并作为历史留档，不再要求同题 A/B 评分；专业幻灯片编辑器已移出确定阶段。** 实施证据见 [07-development-status.md](07-development-status.md)。
 
 ## 2. 统一完成定义
 
@@ -45,7 +45,7 @@ M1 是第一个可运行原型，M2～M6 共同组成已经完成的 v0.3 MVP。
 | M9 diagram 互动闭环（已完成） | 一个可操作、可重置、可完成且可安全失败的互动页 | 全静态场景 | 一个纵向闭环 |
 | M10 课程修订与 v0.4 验收（已完成） | ready 三类场景修订、新版 slide 单人需求验收 | 不自动重生成整课、不做 A/B 评分 | 单场事务闭环 + 固定视口视觉验收 |
 | M11 简化资源包导出（已完成） | 一个 ZIP 内含课程 PPTX 与 `interactive/*.html` | M8 slide + M9 interactive | 不阻塞 v0.4/MX |
-| M12 对话式课程修订 Agent（已设计） | 右侧持续对话通过受控工具读取、搜索、局部修改、调序和重新生成课程 | M10 单次修订 | M12.0～M12.3 分批实施 |
+| M12 对话式课程修订 Agent（M12.0/M12.1 已实现） | 右侧持续对话通过受控工具读取、搜索、局部修改、调序和重新生成课程 | M10 单次修订 | M12.2 页序与生成、M12.3 证据收口待实施 |
 | MX 后置候选（暂存） | 专业幻灯片编辑器，或基于既有数据完成一个可度量研究问题 | 无 | 仅在真实需求成立后立项 |
 
 建议投入是专注开发日。延期时先减少视觉装饰和扩展能力，不压缩 Schema、事务、错误恢复和测试。
@@ -331,11 +331,11 @@ M11 退出证据包括：`pnpm test` 通过 26 个文件、164 项测试；`pnpm
 
 可参考 OpenMAIC 的 [`lib/export/use-export-pptx.ts`](https://github.com/THU-MAIC/OpenMAIC/blob/59adbef03b63488a7ff1ea983cf0fbba51609f9f/lib/export/use-export-pptx.ts) 中 PPTElement 到 PPTX 的映射、资源包组装、标题安全化和 `interactive/` 分包方式，以及其内置 [`packages/pptxgenjs`](https://github.com/THU-MAIC/OpenMAIC/tree/59adbef03b63488a7ff1ea983cf0fbba51609f9f/packages/pptxgenjs)。固定提交按“第几个互动页”编号，本项目明确改为原始 `Scene.order`，不能原样复制该编号逻辑。本项目不复用 `.maic.zip` manifest、导入协议、视频导出或完整媒体管线。
 
-## 16. M12：对话式课程修订 Agent（已设计）
+## 16. M12：对话式课程修订 Agent（M12.0/M12.1 已实现）
 
 M12 把 M10 的一次性单场景修订升级为课堂右侧的持续对话：模型可以先讨论，再按需调用 `list_scenes/read_stage/grep_stage/patch_stage/edit_deck/generate_scene` 等受控工具读取、搜索和修改课程。模型明确返回的可见 reasoning、正文与工具生命周期通过 SSE 流式展示；思考卡和工具组默认收起，展开后可查看经净化和限长的真实入参与结果。
 
-第一版采用单 Agent、独立 MySQL 会话记录和服务端工具循环，不复制 OpenMAIC 的多 Agent Director、后台 Worker、Skills、媒体或语音系统。所有写工具继续经过 application service、完整 Schema、净化与 `expectedRevision`；生成工具复用现有 operation lease。按 M12.0 只读对话、M12.1 单页最小修改、M12.2 页序与生成、M12.3 体验和证据收口分批退出，完整方案见 [M12 对话式课程修订 Agent 开发方案](stage-plans/m12-conversational-course-revision-agent-plan.md)。
+第一版采用单 Agent、独立 MySQL 会话记录和服务端工具循环，不复制 OpenMAIC 的多 Agent Director、后台 Worker、Skills、媒体或语音系统。M12.0/M12.1 已完成 `list_scenes/read_stage/grep_stage/patch_stage`、SSE、会话恢复、quiz 确认和课程刷新；所有写入继续经过 application service、完整 Schema、净化与 `expectedRevision`。生成工具仍复用现有 operation lease，留在 M12.2。完整方案与当前实现边界见 [M12 对话式课程修订 Agent 开发方案](stage-plans/m12-conversational-course-revision-agent-plan.md)。
 
 ## 17. 共同硬边界
 
@@ -370,4 +370,4 @@ M7～M10 不加入 LangGraph、多智能体、多模态、RAG、媒体、3D/proc
 
 ## 20. 推荐的下一次开发迭代
 
-当前 M7.0 基线保持冻结，M9 多样化互动、M10 单场修订/quiz 人工题目编辑、新版 slide 单人需求验收和 M11 导出均已完成，最新实测以 docs/07 为准。新课程为 Course v5、4～8 场景；v4 按需无损升级，v1～v3 不迁移。下一步按 [M12 方案](stage-plans/m12-conversational-course-revision-agent-plan.md)先完成 M12.0 只读对话和 M12.1 单页最小修改；专业编辑器与论文延展继续留在 MX，不恢复当前范围之外的 A/B 评分体系。
+当前 M7.0 基线保持冻结，M9 多样化互动、M10 单场修订/quiz 人工题目编辑、新版 slide 单人需求验收、M11 导出和 M12.0/M12.1 均已完成，最新实测以 docs/07 为准。新课程为 Course v5、4～8 场景；v4 按需无损升级，v1～v3 不迁移。下一步按 [M12 方案](stage-plans/m12-conversational-course-revision-agent-plan.md)开发 M12.2 页序与生成工具；专业编辑器与论文延展继续留在 MX。

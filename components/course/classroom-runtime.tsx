@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { CourseAgentDrawer } from "@/components/agent/course-agent-drawer";
 import { QuizEditDialog } from "@/components/course/quiz-edit-dialog";
 import { ExportButton } from "@/components/export/export-button";
 import { SceneRenderer } from "@/components/renderers/scene-renderer";
@@ -22,6 +23,8 @@ const statusLabels = {
 
 export function ClassroomRuntime({ course: initialCourse }: { course: Course }) {
   const [course, setCourse] = useState(initialCourse);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentDraft, setAgentDraft] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const [replacementMode, setReplacementMode] = useState<"revise" | "regenerate">("revise");
   const [regenerationElapsedSeconds, setRegenerationElapsedSeconds] = useState(0);
@@ -164,6 +167,18 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
     window.localStorage.setItem(SPEECH_PREFERENCE_KEY, next ? "on" : "off");
   }
 
+  /** Agent 保存课程后按稳定 sceneId 刷新数据，避免页序或局部状态造成跳页。 */
+  async function refreshCourseAfterAgent(targetSceneId: string) {
+    setContinuousPlay(false);
+    playback.pause();
+    const response = await fetch(`/api/courses/${course.id}`, { cache: "no-store" });
+    const payload = await response.json() as { course?: Course; error?: { message?: string } };
+    if (!response.ok || !payload.course) throw new Error(payload.error?.message ?? "课程已保存，但课堂刷新失败");
+    const nextIndex = payload.course.scenes.findIndex((item) => item.id === targetSceneId);
+    setCourse(payload.course);
+    setSceneIndex(nextIndex >= 0 ? nextIndex : Math.min(sceneIndex, payload.course.scenes.length - 1));
+  }
+
   /** 只提交题目和选择项；正确答案由服务端从当前 Course 读取并计算。 */
   async function submitQuiz(questionId: string, selectedOptionIds: string[]) {
     // 6. 把用户选择的选项发送给服务端判分并保存。
@@ -192,6 +207,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
         <Link className="brand brand--inverse" href="/"><span className="brand-mark">课</span><span><strong>课序</strong><small>CLASSROOM</small></span></Link>
         <div className="classroom-course"><span>{course.title}</span><small>REV.{course.revision} · {(course.scenes[0]?.generation.provider ?? "unknown").toUpperCase()}{isPartialPreview ? " · PARTIAL PREVIEW" : ""}</small></div>
         <div className="classroom-actions">
+          <button className="classroom-agent-entry" type="button" onClick={() => { setAgentDraft(""); setAgentOpen(true); }}>对话</button>
           <ExportButton course={course} />
           <Link className="exit-link" href={`/generation/${course.id}`}>退出课堂</Link>
         </div>
@@ -249,7 +265,8 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
           <button className={`scene-regenerate-toggle${regenerating ? " is-running" : ""}`} type="button" disabled={regenerating} onClick={() => {
             setManualRegenerationError(null);
             setQuizDeletionConfirmed(false);
-            setRegenerationOpen(true);
+            setAgentDraft(`请修改当前第 ${scene.order} 页《${scene.title}》：`);
+            setAgentOpen(true);
           }}>{regenerating ? <><i className="scene-regenerate-spinner" aria-hidden="true" /><strong>后台{replacementMode === "revise" ? "修订" : "重生成"}中 · {String(Math.floor(regenerationElapsedSeconds / 60)).padStart(2, "0")}:{String(regenerationElapsedSeconds % 60).padStart(2, "0")}</strong></> : <><span>↻</span>修订本场</>}</button>
           {scene.type === "quiz" ? <button className="scene-quiz-edit-toggle" type="button" disabled={regenerating} onClick={() => setQuizEditorOpen(true)}><span>✎</span>手动调整题目</button> : null}
           {regenerating ? <p className="scene-regenerate-status" role="status">课程仍可浏览；完成后将自动刷新。</p> : null}
@@ -278,6 +295,19 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
       ) : null}
 
       {quizEditorOpen && scene.type === "quiz" ? <QuizEditDialog scene={scene} onClose={() => setQuizEditorOpen(false)} onSave={saveQuizQuestions} /> : null}
+
+      <CourseAgentDrawer
+        open={agentOpen}
+        courseId={course.id}
+        courseTitle={course.title}
+        courseRevision={course.revision}
+        currentSceneId={scene.id}
+        currentSceneLabel={`第 ${scene.order} 页《${scene.title}》`}
+        initialDraft={agentDraft}
+        onDraftChange={setAgentDraft}
+        onClose={() => setAgentOpen(false)}
+        onCourseUpdated={refreshCourseAfterAgent}
+      />
 
       <footer className="classroom-controls">
         <button className="control-button" type="button" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>

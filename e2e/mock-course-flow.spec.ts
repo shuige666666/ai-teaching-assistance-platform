@@ -77,6 +77,28 @@ test("mock 课程从创建、导出、互动、测验到刷新恢复", async ({ 
     expect(slideBox).not.toBeNull();
     expect(slideBox!.width / slideBox!.height).toBeCloseTo(16 / 9, 1);
 
+    // M12：同一侧栏完成可见思考、只读工具、两级折叠和刷新恢复。
+    await page.getByRole("button", { name: "对话", exact: true }).click();
+    await expect(page.getByRole("complementary", { name: "课程修订对话" })).toBeVisible();
+    await page.getByRole("textbox", { name: "继续讨论，或描述要修改的页面内容…" }).fill("请检查当前课堂有几页，不要修改课程。");
+    await page.getByRole("button", { name: /发送/ }).click();
+    await expect(page.getByText("已完成课堂读取；页面数量与标题以工具返回的当前结果为准。")).toBeVisible();
+    const thinkingCard = page.locator("details.agent-thinking");
+    const toolGroup = page.locator("details.agent-tool-group");
+    await expect(thinkingCard).not.toHaveAttribute("open", "");
+    await expect(toolGroup).not.toHaveAttribute("open", "");
+    await toolGroup.locator(":scope > summary").click();
+    const toolCard = toolGroup.locator("details.agent-tool");
+    await expect(toolCard).toContainText("检查当前课堂");
+    await toolCard.locator(":scope > summary").click();
+    await expect(toolCard.getByText("入参", { exact: true })).toBeVisible();
+    await expect(toolCard.getByText("结果原文", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "关闭", exact: true }).click();
+    await page.reload();
+    await page.getByRole("button", { name: "对话", exact: true }).click();
+    await expect(page.locator("details.agent-tool-group")).toHaveCount(1);
+    await page.getByRole("button", { name: "关闭", exact: true }).click();
+
     // 真实点击导出按钮，解包下载物并核对 PPTX 与互动 HTML 均已进入资源包。
     const downloadPromise = page.waitForEvent("download");
     await expect(page.getByTestId("export-button")).toBeEnabled();
