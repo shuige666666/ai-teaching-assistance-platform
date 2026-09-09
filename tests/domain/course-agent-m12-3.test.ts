@@ -26,6 +26,19 @@ describe("M12.3 会话体验与轻量上下文", () => {
     expect(context.messages.some((message) => message.role === "tool")).toBe(false);
   });
 
+  it("保留旧 not_executed 工具的原始 JSON 参数，不做二次字符串编码", () => {
+    const messages: AgentMessage[] = [
+      userMessage("s", 1, "检查后修改"),
+      { id: "a-raw", sessionId: "s", sequence: 2, role: "assistant", content: { blocks: [{
+        type: "tool", id: "b-raw", modelTurn: 0, callId: "c-raw", name: "patch_stage", label: "编辑课堂",
+        status: "not_executed", arguments: '{"sceneId":"scene-1"}', result: { reason: "前序工具等待确认" },
+      }] }, createdAt: 2 },
+    ];
+
+    const assistant = buildAgentModelContext(messages).messages.find((message) => message.role === "assistant");
+    expect(assistant?.role === "assistant" && assistant.toolCalls?.[0].arguments).toBe('{"sceneId":"scene-1"}');
+  });
+
   it("刷新时把过期运行标记为中断，并保存本轮轻量指标", async () => {
     const courses = new InMemoryCourseRepository();
     const course = materializeFixtureCourse(createFixtureCourse("M12.3 指标", 4));

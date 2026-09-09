@@ -11,7 +11,7 @@ import { buildCourseAgentSystemPrompt } from "./system-prompt";
 import { CourseAgentToolRegistry, type AgentConfirmationPayload, type PreparedQuizRegeneration } from "./tool-registry";
 import { CourseDeckService } from "@/lib/application/course-deck-service";
 import { CoursePatchService } from "@/lib/application/course-patch-service";
-import { SceneGenerationService } from "@/lib/application/scene-generation-service";
+import { recoverExpiredInsertOperation, SceneGenerationService } from "@/lib/application/scene-generation-service";
 import type { AIAdapter } from "@/lib/ai/contracts";
 
 type Emit = (event: AgentSseEvent) => void;
@@ -50,8 +50,9 @@ export class CourseAgentService {
   async run(courseId: string, sessionId: string, input: { text: string; currentSceneId?: string; courseRevision: number }, requestSignal: AbortSignal, emit: Emit) {
     const session = await this.sessions.getSession(courseId, sessionId);
     if (!session) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在或不属于当前课程", 404);
-    const course = await this.courses.get(courseId);
+    let course = await this.courses.get(courseId);
     if (!course) throw new AgentApplicationError("NOT_FOUND", "课程不存在", 404);
+    course = await recoverExpiredInsertOperation(this.courses, course, this.now());
     const startedAt = this.now();
     const deadlineAt = startedAt + this.timeoutMs;
     const run = await this.sessions.startRun(sessionId, course.revision, deadlineAt);
@@ -70,6 +71,18 @@ export class CourseAgentService {
     }
     const history = buildAgentModelContext(await this.sessions.listMessages(sessionId)).messages;
     const blocks: AgentContentBlock[] = [];
+    let persistedCallId: string | undefined;
+    // 工具完成后立即保存同一条 assistant 轨迹；后续模型调用和进程中断都能恢复已完成事实。
+    const checkpointBlocks = async () => {
+      const callId = persistedCallId ?? blocks.find((block): block is AgentToolBlock => block.type === "tool")?.callId;
+      if (!callId) return;
+      if (!persistedCallId) {
+        await this.sessions.appendMessage(sessionId, { sessionId, runId: run.id, role: "assistant", content: { blocks } });
+        persistedCallId = callId;
+      } else {
+        await this.sessions.replaceAssistantBlocks(sessionId, persistedCallId, blocks);
+      }
+    };
     const controller = new AbortController();
     const cancel = () => controller.abort(requestSignal.reason);
     requestSignal.addEventListener("abort", cancel, { once: true });
@@ -122,7 +135,8 @@ export class CourseAgentService {
               : "模型没有返回正文或工具调用";
             throw new AgentApplicationError("TOOL_EXECUTION_FAILED", message);
           }
-          await this.sessions.appendMessage(sessionId, { sessionId, runId: run.id, role: "assistant", content: { blocks } });
+          if (persistedCallId) await checkpointBlocks();
+          else await this.sessions.appendMessage(sessionId, { sessionId, runId: run.id, role: "assistant", content: { blocks } });
           await finishWithMetrics("completed", currentRevision);
           emit({ type: "run_finished", status: "completed" });
           return;
@@ -146,13 +160,14 @@ export class CourseAgentService {
               const confirmation = await this.sessions.createConfirmation({ sessionId, runId: run.id, callId: block.callId, toolName: call.name, baseRevision: outcome.payload.baseRevision, payload: outcome.payload, summary: outcome.summary, expiresAt: this.now() + 30 * 60_000 });
               Object.assign(block, { status: "waiting_confirmation", confirmationId: confirmation.id, confirmationKind: outcome.confirmationKind, result: { status: "waiting_confirmation", confirmationId: confirmation.id, summary: outcome.summary, kind: outcome.confirmationKind }, durationMs: this.now() - started });
               metrics.toolWaitingConfirmation += 1;
-              emit({ type: "confirmation_required", block: structuredClone(block), summary: outcome.summary });
               for (const remaining of toolCalls.slice(index + 1)) {
                 const skipped: AgentToolBlock = { type: "tool", id: randomUUID(), modelTurn, callId: remaining.id || randomUUID(), name: remaining.name, label: this.tools.label(remaining.name), status: "not_executed", arguments: remaining.arguments, result: { reason: "同批前序工具等待用户确认" } };
                 blocks.push(skipped); emit({ type: "tool_finished", block: structuredClone(skipped) });
               }
-              await this.sessions.appendMessage(sessionId, { sessionId, runId: run.id, role: "assistant", content: { blocks } });
+              await checkpointBlocks();
               await finishWithMetrics("waiting_confirmation", currentRevision);
+              // 先落库消息和 run 状态，再把可点击确认卡交给前端。
+              emit({ type: "confirmation_required", block: structuredClone(block), summary: outcome.summary });
               emit({ type: "run_finished", status: "waiting_confirmation" });
               return;
             }
@@ -173,11 +188,15 @@ export class CourseAgentService {
             emit({ type: "tool_finished", block: structuredClone(block) });
           }
           history.push({ role: "tool", toolCallId: block.callId, content: JSON.stringify({ status: block.status, result: block.result }) });
+          await checkpointBlocks();
         }
       }
       throw new AgentApplicationError("TOOL_EXECUTION_FAILED", "本轮模型调用次数已达到上限");
     } catch (error) {
-      if (blocks.length) await this.sessions.appendMessage(sessionId, { sessionId, runId: run.id, role: "assistant", content: { blocks } });
+      if (blocks.length) {
+        if (persistedCallId) await checkpointBlocks();
+        else await this.sessions.appendMessage(sessionId, { sessionId, runId: run.id, role: "assistant", content: { blocks } });
+      }
       const cancelled = controller.signal.aborted;
       const detail = safeError(error);
       if (cancelled) metrics.toolCancelled += 1;
@@ -222,6 +241,12 @@ export class CourseAgentService {
     const { confirmation, assistant, block } = await this.confirmationContext(courseId, sessionId, confirmationId);
     if (confirmation.status !== "pending") return confirmation;
     const payload = confirmation.payload as AgentConfirmationPayload;
+    if (payload.courseId !== courseId || payload.baseRevision !== confirmation.baseRevision) throw new AgentApplicationError("INVALID_ARGUMENT", "确认记录与当前课程不匹配");
+    if (decision === "confirm" && payload.kind === "regenerate_quiz" && confirmation.expiresAt > this.now()) throw new AgentApplicationError("CONFIRMATION_REQUIRED", "测验整页重生成需要使用流式确认请求");
+    const claim = await this.sessions.claimConfirmation(confirmation.id);
+    if (!claim.claimed) return claim.confirmation;
+    Object.assign(block, { status: "running", result: { status: "running", confirmationId } });
+    await this.sessions.replaceAssistantBlocks(sessionId, confirmation.callId, assistant.content.blocks);
     if (decision === "cancel") {
       const message = payload.kind === "delete" ? "用户取消了页面删除，课程未变化" : payload.kind === "regenerate_quiz" ? "用户取消了测验重生成，课程未变化" : "用户取消了测验修改，课程未变化";
       const result = { status: "cancelled", message };
@@ -240,7 +265,6 @@ export class CourseAgentService {
       return resolved;
     }
     if (payload.kind === "regenerate_quiz") throw new AgentApplicationError("CONFIRMATION_REQUIRED", "测验整页重生成需要使用流式确认请求");
-    if (payload.courseId !== courseId || payload.baseRevision !== confirmation.baseRevision) throw new AgentApplicationError("INVALID_ARGUMENT", "确认记录与当前课程不匹配");
     try {
       const result = payload.kind === "patch"
         ? await new CoursePatchService(this.courses).commitPrepared(payload)
@@ -276,10 +300,17 @@ export class CourseAgentService {
     const payload = confirmation.payload as PreparedQuizRegeneration;
     if (payload.kind !== "regenerate_quiz" || payload.courseId !== courseId || payload.baseRevision !== confirmation.baseRevision) throw new AgentApplicationError("INVALID_ARGUMENT", "确认记录与当前课程不匹配");
     if (!this.generationAdapter) throw new AgentApplicationError("TOOL_EXECUTION_FAILED", "当前环境未配置场景生成模型");
-    const course = await this.courses.get(courseId);
+    let course = await this.courses.get(courseId);
     if (!course) throw new AgentApplicationError("NOT_FOUND", "课程不存在", 404);
+    course = await recoverExpiredInsertOperation(this.courses, course, this.now());
     const waitingRun = await this.sessions.getLatestRun(sessionId);
     const run = await this.sessions.startRun(sessionId, course.revision, this.now() + this.timeoutMs);
+    const claim = await this.sessions.claimConfirmation(confirmation.id);
+    if (!claim.claimed) {
+      await this.sessions.finishRun(run.id, "interrupted", course.revision, "确认已由其他请求处理");
+      emit({ type: "run_finished", status: claim.confirmation.status === "completed" ? "completed" : claim.confirmation.status === "cancelled" ? "cancelled" : "failed" });
+      return;
+    }
     const controller = new AbortController();
     const cancel = () => controller.abort(requestSignal.reason);
     requestSignal.addEventListener("abort", cancel, { once: true });

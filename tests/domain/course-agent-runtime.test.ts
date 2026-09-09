@@ -45,6 +45,37 @@ describe("Agent runtime", () => {
     expect((await courses.get(course.id))?.revision).toBe(course.revision);
   });
 
+  it("完成工具后在下一次模型调用前保存轨迹检查点", async () => {
+    const courses = new InMemoryCourseRepository();
+    const course = materializeFixtureCourse(createFixtureCourse("工具检查点", 4));
+    await courses.create(course);
+    const sessions = new InMemoryAgentSessionRepository();
+    const session = await sessions.createSession(course.id, "检查点会话");
+    let turn = 0;
+    let checkpointObserved = false;
+    const adapter: AgentAdapter = {
+      async *streamTurn() {
+        if (turn++ === 0) {
+          yield { type: "tool_call_delta", index: 0, id: "checkpoint-read", name: "list_scenes", argumentsDelta: "{}" };
+          yield { type: "finish", finishReason: "tool_calls" };
+          return;
+        }
+        const messages = await sessions.listMessages(session.id);
+        checkpointObserved = messages.some((message) => message.role === "assistant" && "blocks" in message.content
+          && message.content.blocks.some((block) => block.type === "tool" && block.callId === "checkpoint-read" && block.status === "completed"));
+        yield { type: "text_delta", text: "读取完成。" };
+        yield { type: "finish", finishReason: "stop" };
+      },
+    };
+
+    await new CourseAgentService(courses, sessions, adapter).run(
+      course.id, session.id, { text: "检查课堂", courseRevision: course.revision }, new AbortController().signal, () => undefined,
+    );
+
+    expect(checkpointObserved).toBe(true);
+    expect(await sessions.listMessages(session.id)).toHaveLength(2);
+  });
+
   it("为可见思考保留较大单轮输出预算，并明确报告长度截断", async () => {
     const courses = new InMemoryCourseRepository();
     const course = materializeFixtureCourse(createFixtureCourse("输出预算", 4));
@@ -114,8 +145,12 @@ describe("Agent runtime", () => {
     expect(required?.type).toBe("confirmation_required");
     expect((await courses.get(course.id))?.revision).toBe(course.revision);
     if (!required || required.type !== "confirmation_required" || !required.block.confirmationId) throw new Error("confirmation missing");
-    const confirmation = await service.confirm(course.id, session.id, required.block.confirmationId, "confirm");
-    expect(confirmation.status).toBe("completed");
+    const confirmations = await Promise.all([
+      service.confirm(course.id, session.id, required.block.confirmationId, "confirm"),
+      service.confirm(course.id, session.id, required.block.confirmationId, "confirm"),
+    ]);
+    expect(confirmations.some((confirmation) => confirmation.status === "completed")).toBe(true);
+    expect((await sessions.getConfirmation(session.id, required.block.confirmationId))?.status).toBe("completed");
     expect((await sessions.getLatestRun(session.id))?.status).toBe("completed");
     expect((await courses.get(course.id))?.revision).toBe(course.revision + 1);
     const messages = await sessions.listMessages(session.id);

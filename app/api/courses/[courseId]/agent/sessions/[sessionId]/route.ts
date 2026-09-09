@@ -47,3 +47,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ cours
   }
 }
 
+/** 删除当前课程下的空闲 Agent 会话，子记录由数据库外键级联清理。 */
+export async function DELETE(_request: Request, context: { params: Promise<{ courseId: string; sessionId: string }> }) {
+  const { courseId, sessionId } = await context.params;
+  try {
+    await getAgentSessionRepository().deleteSession(courseId, sessionId);
+    return NextResponse.json({ success: true, data: { sessionId } });
+  } catch (error) {
+    const mapped = mapAgentError(error);
+    return NextResponse.json(mapped.body, { status: mapped.status });
+  }
+}
+

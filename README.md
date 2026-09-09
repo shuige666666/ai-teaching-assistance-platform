@@ -35,7 +35,7 @@ MVP 面向“教师或学生输入一个主题，生成并运行一门微型课�
 - 大纲与场景分阶段生成，模型输出经过 Schema 和语义校验；
 - 固定渲染器展示 slide/quiz 和只读代码块，确定性播放引擎执行 speech/pause。
 
-v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 把新生成的 slide 统一升级为只读、桌面端的 OpenMAIC 式 `Slide/PPTElement` 幻灯片，在 M9 加入 diagram/simulation/game/code 多样化互动页；不再并行建设类 Markdown/纵向讲义视图。M11 简化 ZIP 导出与 M12.0～M12.3 对话式课程修订工程主链均已完成；M12 的隔离副本真实 DeepSeek 调序、新增、补丁、重生成和确认案例已归档，人工内容/互动质量判断仍按方案执行。专业幻灯片编辑器后移为 MX 按需候选，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
+v0.3 只支持 slide 与单选 quiz，代码块可以显示 HTML/JSX/TSX 源码但始终按文本转义、不执行；不包含文档解析、联网搜索、RAG、interactive HTML、白板、PBL、多智能体、媒体生成、协同编辑和账户系统。v0.4 在 M8 把新生成的 slide 统一升级为只读、桌面端的 OpenMAIC 式 `Slide/PPTElement` 幻灯片，在 M9 加入 diagram/simulation/game/code 多样化互动页；不再并行建设类 Markdown/纵向讲义视图。M11 简化 ZIP 导出与 M12.0～M12.4 对话式课程修订工程主链均已完成；M12.4 已补齐课程/对话双栏、场景导航、会话逐项重命名与删除。M12 的隔离副本真实 DeepSeek 调序、新增、补丁、重生成和确认案例已归档，人工内容/互动质量判断仍按方案执行。专业幻灯片编辑器后移为 MX 按需候选，其余能力继续排除。完整版本边界与退出标准见 [项目范围](docs/01-scope.md)。
 
 ## 为什么不一比一照搬 OpenMAIC
 
@@ -79,7 +79,7 @@ components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
   slides/                        # [M8 已实现，v2.2 扩展] 只读 SlideCanvas 与 text/shape/line/code/chart/table Renderer
   interactive/                   # [M9 已实现] sandbox iframe 宿主与消息桥
-  agent/                         # [M12.0～12.3 已实现工程主链] 对话侧栏、会话恢复、思考/工具卡片与课程刷新协调
+  agent/                         # [M12.0～12.4 已实现] 智能修订侧栏、会话管理、思考/工具卡片与课程刷新协调
   editor/                        # [MX 按需候选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
   domain/                        # [M10 已实现] Course v5、单选/多选 Quiz、CourseBrief、Slide/PPTElement 与 fixture
@@ -100,7 +100,7 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 .github/workflows/quality.yml    # [M6 已实现] 临时 MySQL + mock CI
 ```
 
-标记为 M1～M11 的当前能力已经进入正式调用链；M12.0～M12.3 已完成持久对话、流式思考/工具过程、六个课程工具、会话切换、完整轮次上下文裁剪、运行状态恢复和轻量 run 指标。M10 旧的一次性修订服务仍保留为代码回退，但课堂入口已收口到 Agent 侧栏。真实 DeepSeek 调序、新增、补丁、重生成、确认/取消与浏览器侧栏证据已在隔离副本归档；这不替代人工页面可用性判断。MHTML 只作为固定 `1280×720` 视口的静态留档，实时课堂页面负责响应式缩放。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+标记为 M1～M11 的当前能力已经进入正式调用链；M12.0～M12.3 已完成持久对话、流式思考/工具过程、六个课程工具、会话切换、完整轮次上下文裁剪、运行状态恢复和轻量 run 指标，并补齐过期插页租约恢复、逐工具轨迹检查点与确认原子领取。M12.4 已补齐课堂/对话双栏、场景导航、会话逐项重命名与删除，桌面浏览器回归确认真实课堂画面和侧栏可以同时操作。M10 旧的一次性修订服务仍保留为代码回退，但课堂入口已收口到 Agent 侧栏。真实 DeepSeek 调序、新增、补丁、重生成、确认/取消与浏览器侧栏证据已在隔离副本归档；这不替代人工页面可用性判断。MHTML 只作为固定 `1280×720` 视口的静态留档，实时课堂页面负责响应式缩放。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
 
 专业幻灯片编辑器后移为 MX：它主要解决拖拽、缩放和精确排版，不能直接提高课程事实正确性或教学质量，而且当前已经可以导出 PPTX 后在 PowerPoint/WPS 中精修。只有当真实使用持续出现“自然语言修订无法解决的精确坐标调整”，或产品目标明确转为平台内专业课件制作时，才重新立项；届时仍复用 `Slide/PPTElement`、净化、完整 Schema 与 `expectedRevision` 保存边界，不建立第二套页面格式。
 
@@ -186,7 +186,7 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 10. **M9（已完成）**：裁剪 OpenMAIC 四类互动 Prompt，实现多样化生成、外部依赖加载、隔离运行和 fallback；
 11. **M10（当前范围已完成）**：`/revise` 根据必填意见和当前旧场景修订 ready slide/interactive/quiz；`/regenerate` 对运行失败 interactive 做不携带旧 HTML 的干净重生成；失败保留原内容，quiz 修订时事务化清理旧作答；新版 slide 已由开发者依据已确认需求完成单人验收，v0.3 仅作历史留档，不再进行 v0.3/v0.4 成对质量验收；
 12. **M11（已完成，2026-09-07）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；已补充字体/透明度、长代码文本、下载释放时序、状态播报和移动端提示适配；课堂 E2E、两门真实课程结构检查和 PowerPoint/WPS 人工核对均已通过（方案与证据见 [m11-slide-export-plan.md](docs/stage-plans/m11-slide-export-plan.md)）；
-13. **M12（M12.0～M12.3 工程主链已实现，2026-09-08）**：已完成持久对话、流式可见思考、默认收起的两级工具卡、`read_stage/list_scenes/grep_stage/patch_stage/edit_deck/generate_scene`、revision 冲突保护、页面调序/新增/删除/整页重生成、会话切换、完整轮次上下文裁剪和刷新状态恢复；隔离副本真实案例、MHTML 和浏览器侧栏证据已归档，人工内容/互动质量判断仍不冒充为工程通过；
+13. **M12（M12.0～M12.4 工程主链已实现）**：已完成持久对话、流式可见思考、默认收起的两级工具卡、`read_stage/list_scenes/grep_stage/patch_stage/edit_deck/generate_scene`、revision 冲突保护、页面调序/新增/删除/整页重生成、会话切换、完整轮次上下文裁剪和刷新状态恢复；M12.4 进一步完成课堂/对话双栏、消息场景锚点、会话逐项重命名与删除按钮原位二次点击确认。隔离副本真实案例、MHTML 和浏览器侧栏证据已归档；人工内容/互动质量判断仍不冒充为工程通过；
 14. **MX（暂时搁置）**：专业幻灯片编辑器与毕业设计 AI Search 研究选题均按真实需求另行立项，不作为 M12 前置。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。

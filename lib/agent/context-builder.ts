@@ -23,7 +23,12 @@ function assistantMessageGroups(content: { blocks: AgentContentBlock[] }): Agent
     const output: AgentModelMessage[] = [{
       role: "assistant",
       content: text || null,
-      ...(tools.length ? { toolCalls: tools.map((block) => ({ id: block.callId, name: block.name, arguments: JSON.stringify(block.arguments) })) } : {}),
+      ...(tools.length ? { toolCalls: tools.map((block) => ({
+        id: block.callId,
+        name: block.name,
+        // 旧的 not_executed 块可能保存了 Provider 原始 JSON 字符串，不能再包一层 JSON 字符串。
+        arguments: typeof block.arguments === "string" ? block.arguments : JSON.stringify(block.arguments),
+      })) } : {}),
     }];
     for (const block of tools) output.push({ role: "tool", toolCallId: block.callId, content: toolResult(block) });
     return output;

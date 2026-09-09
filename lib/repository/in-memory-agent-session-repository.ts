@@ -9,6 +9,18 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
   private confirmations = new Map<string, AgentConfirmation>();
   constructor(private readonly now: () => number = Date.now) {}
 
+  /** 根据仍在执行的 run 和确认记录刷新会话状态，避免旧操作收尾覆盖新操作。 */
+  private refreshSessionStatus(sessionId: string, now: number) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    const hasRunning = [...this.runs.values()].some((run) => run.sessionId === sessionId && run.status === "running");
+    const hasConfirmation = [...this.confirmations.values()].some((item) => item.sessionId === sessionId && ["pending", "executing"].includes(item.status));
+    const nextStatus: AgentSession["status"] = hasRunning ? "running" : hasConfirmation ? "waiting_confirmation" : "idle";
+    // 列表/详情读取会调用状态恢复；状态没有变化时不能把读取时间冒充最近活动时间。
+    if (session.status === nextStatus) return;
+    this.sessions.set(sessionId, { ...session, status: nextStatus, updatedAt: now });
+  }
+
   async createSession(courseId: string, title: string) {
     const now = this.now();
     const session: AgentSession = { id: randomUUID(), courseId, title, status: "idle", createdAt: now, updatedAt: now };
@@ -21,9 +33,24 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
     if (!current || current.courseId !== courseId) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在", 404);
     const nextTitle = title.trim();
     if (!nextTitle) throw new AgentApplicationError("INVALID_ARGUMENT", "对话名称不能为空");
-    const next = { ...current, title: nextTitle, updatedAt: this.now() };
+    // 重命名是会话元数据操作，不应把没有新消息的会话伪装成最近活跃。
+    const next = { ...current, title: nextTitle };
     this.sessions.set(sessionId, next);
     return structuredClone(next);
+  }
+  /** 删除空闲会话及其在内存仓储中的消息、运行和确认记录。 */
+  async deleteSession(courseId: string, sessionId: string) {
+    const current = this.sessions.get(sessionId);
+    if (!current || current.courseId !== courseId) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在", 404);
+    const now = this.now();
+    await this.recoverExpiredRuns(sessionId, now);
+    const hasRunning = [...this.runs.values()].some((run) => run.sessionId === sessionId && run.status === "running");
+    const hasConfirmation = [...this.confirmations.values()].some((item) => item.sessionId === sessionId && ["pending", "executing"].includes(item.status) && item.expiresAt > now);
+    if (hasRunning || hasConfirmation) throw new AgentApplicationError("RUN_IN_PROGRESS", "当前对话仍在执行或等待确认，无法删除", 409);
+    this.sessions.delete(sessionId);
+    this.messages.delete(sessionId);
+    for (const [id, run] of this.runs) if (run.sessionId === sessionId) this.runs.delete(id);
+    for (const [id, item] of this.confirmations) if (item.sessionId === sessionId) this.confirmations.delete(id);
   }
   async listSessions(courseId: string): Promise<AgentSession[]> {
     return [...this.sessions.values()].filter((item) => item.courseId === courseId).sort((a, b) => b.updatedAt - a.updatedAt).map((item) => structuredClone(item));
@@ -43,10 +70,12 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
       if (run.sessionId !== sessionId || run.status !== "running" || run.deadlineAt > now) continue;
       this.runs.set(id, { ...run, status: "interrupted", finishedAt: now, error: "运行超过截止时间，刷新时已标记为中断" });
     }
-    const session = this.sessions.get(sessionId);
-    if (session && ![...this.runs.values()].some((run) => run.sessionId === sessionId && run.status === "running")) {
-      this.sessions.set(sessionId, { ...session, status: "idle", updatedAt: now });
+    for (const [id, item] of this.confirmations) {
+      if (item.sessionId !== sessionId || item.status !== "executing" || item.expiresAt > now) continue;
+      // 进程若在领取后退出，恢复为可点击状态；真正点击时再按原确认流程标记过期并更新工具卡。
+      this.confirmations.set(id, { ...item, status: "pending", updatedAt: now });
     }
+    this.refreshSessionStatus(sessionId, now);
   }
   /** 返回仍可操作的确认记录，不暴露给其他课程会话。 */
   async listPendingConfirmations(sessionId: string) {
@@ -88,8 +117,7 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
     if (!run) return;
     const now = this.now();
     this.runs.set(runId, { ...run, status, finalRevision, error, metrics: structuredClone(metrics), finishedAt: now });
-    const session = this.sessions.get(run.sessionId);
-    if (session) this.sessions.set(session.id, { ...session, status: status === "waiting_confirmation" ? "waiting_confirmation" : "idle", updatedAt: now });
+    this.refreshSessionStatus(run.sessionId, now);
   }
   async createConfirmation(input: Omit<AgentConfirmation, "id" | "status" | "createdAt" | "updatedAt">) {
     const now = this.now();
@@ -101,13 +129,24 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
     const item = this.confirmations.get(confirmationId);
     return item?.sessionId === sessionId ? structuredClone(item) : null;
   }
+  /** 原子领取一次确认；只有 pending 到 executing 的调用者可以执行课程写入。 */
+  async claimConfirmation(confirmationId: string) {
+    const current = this.confirmations.get(confirmationId);
+    if (!current) throw new AgentApplicationError("NOT_FOUND", "确认记录不存在", 404);
+    if (current.status !== "pending") return { confirmation: structuredClone(current), claimed: false };
+    const now = this.now();
+    const next: AgentConfirmation = { ...current, status: "executing", updatedAt: now };
+    this.confirmations.set(confirmationId, next);
+    this.refreshSessionStatus(current.sessionId, now);
+    return { confirmation: structuredClone(next), claimed: true };
+  }
   async resolveConfirmation(confirmationId: string, status: "completed" | "cancelled" | "expired" | "failed", result?: unknown) {
     const current = this.confirmations.get(confirmationId);
     if (!current) throw new AgentApplicationError("NOT_FOUND", "确认记录不存在", 404);
+    if (!["pending", "executing"].includes(current.status)) return structuredClone(current);
     const next = { ...current, status, result: structuredClone(result), updatedAt: this.now() };
     this.confirmations.set(confirmationId, next);
-    const session = this.sessions.get(current.sessionId);
-    if (session) this.sessions.set(session.id, { ...session, status: "idle", updatedAt: next.updatedAt });
+    this.refreshSessionStatus(current.sessionId, next.updatedAt);
     return structuredClone(next);
   }
 }

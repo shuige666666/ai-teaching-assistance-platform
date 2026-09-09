@@ -237,6 +237,51 @@ describe("MySQLCourseRepository integration", () => {
     expect((await recovered.listMessages(session.id))[0].content).toMatchObject({ text: "检查课堂" });
   });
 
+  it("Agent 删除空闲会话时级联清理子记录，运行中会话仍被保护", async () => {
+    const courseRepository = new MySQLCourseRepository(pool);
+    const course = await courseRepository.create(materializeFixtureCourse(createFixtureCourse(`Agent 会话删除 ${crypto.randomUUID()}`, 4)));
+    cleanupIds.push(course.id);
+    const repository = new MySQLAgentSessionRepository(pool);
+    const idle = await repository.createSession(course.id, "可删除会话");
+    const completedRun = await repository.startRun(idle.id, course.revision, Date.now() + 60_000);
+    await repository.appendMessage(idle.id, { sessionId: idle.id, runId: completedRun.id, role: "user", content: { text: "保留历史后删除" } });
+    await repository.finishRun(completedRun.id, "completed", course.revision);
+    const running = await repository.createSession(course.id, "运行中会话");
+    await repository.startRun(running.id, course.revision, Date.now() + 60_000);
+
+    await expect(repository.deleteSession(course.id, running.id)).rejects.toMatchObject({ code: "RUN_IN_PROGRESS" });
+    const revisionBeforeDelete = (await courseRepository.get(course.id))?.revision;
+    await repository.deleteSession(course.id, idle.id);
+    const [sessionRows] = await pool.execute<Array<RowDataPacket & { count: number }>>("SELECT COUNT(*) AS count FROM agent_sessions WHERE id = ?", [idle.id]);
+    const [messageRows] = await pool.execute<Array<RowDataPacket & { count: number }>>("SELECT COUNT(*) AS count FROM agent_messages WHERE session_id = ?", [idle.id]);
+    const [runRows] = await pool.execute<Array<RowDataPacket & { count: number }>>("SELECT COUNT(*) AS count FROM agent_runs WHERE session_id = ?", [idle.id]);
+    expect(Number(sessionRows[0].count)).toBe(0);
+    expect(Number(messageRows[0].count)).toBe(0);
+    expect(Number(runRows[0].count)).toBe(0);
+    expect((await courseRepository.get(course.id))?.revision).toBe(revisionBeforeDelete);
+  });
+
+  it("Agent 确认只能由一个仓储实例原子领取，收尾不覆盖仍在运行的会话", async () => {
+    const courseRepository = new MySQLCourseRepository(pool);
+    const course = await courseRepository.create(materializeFixtureCourse(createFixtureCourse(`Agent 确认并发 ${crypto.randomUUID()}`, 4)));
+    cleanupIds.push(course.id);
+    const first = new MySQLAgentSessionRepository(pool);
+    const second = new MySQLAgentSessionRepository(pool);
+    const session = await first.createSession(course.id, "确认并发");
+    const run = await first.startRun(session.id, course.revision, Date.now() + 60_000);
+    const pending = await first.createConfirmation({
+      sessionId: session.id, runId: run.id, callId: "claim-once", toolName: "edit_deck", baseRevision: course.revision,
+      payload: { kind: "delete" }, summary: "删除页面", expiresAt: Date.now() + 60_000,
+    });
+
+    const claims = await Promise.all([first.claimConfirmation(pending.id), second.claimConfirmation(pending.id)]);
+    expect(claims.filter((item) => item.claimed)).toHaveLength(1);
+    await first.resolveConfirmation(pending.id, "completed", { ok: true });
+    expect((await first.getSession(course.id, session.id))?.status).toBe("running");
+    await first.finishRun(run.id, "completed", course.revision);
+    expect((await second.getSession(course.id, session.id))?.status).toBe("idle");
+  });
+
   it("Agent quiz 补丁保持 Scene ID，并在同一课程事务清理旧作答", async () => {
     const repository = new MySQLCourseRepository(pool);
     const course = await repository.create(materializeFixtureCourse(createFixtureCourse(`Agent quiz ${crypto.randomUUID()}`, 4)));

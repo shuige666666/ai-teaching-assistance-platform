@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentContentBlock, AgentContextInfo, AgentCourseUpdate, AgentMessage, AgentRun, AgentSession, AgentSseEvent, AgentToolBlock } from "@/lib/agent/contracts";
+import type { Scene } from "@/lib/domain/schemas";
+
+type AgentSceneSummary = Pick<Scene, "id" | "order" | "title" | "type">;
 
 type Props = {
   open: boolean;
@@ -9,7 +12,8 @@ type Props = {
   courseTitle: string;
   courseRevision: number;
   currentSceneId: string;
-  currentSceneLabel: string;
+  scenes: AgentSceneSummary[];
+  onSceneSelect(sceneId: string): void;
   initialDraft?: string;
   onDraftChange(value: string): void;
   onClose(): void;
@@ -42,6 +46,10 @@ function runSummary(run: AgentRun | null) {
 
 function jsonText(value: unknown) {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+function formatSessionTime(value: number) {
+  return new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function confirmationCopy(block: AgentToolBlock) {
@@ -151,16 +159,24 @@ export function CourseAgentDrawer(props: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followTail = useRef(true);
   const stoppedByUser = useRef(false);
+  const skipSessionBootstrap = useRef(false);
+  const sessionPickerRef = useRef<HTMLButtonElement | null>(null);
+  const sessionActionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const focusSessionId = useRef<string | null>(null);
   const [thinkingStarts, setThinkingStarts] = useState<Record<string, number>>({});
   const [clockMs, setClockMs] = useState(0);
   const [latestRun, setLatestRun] = useState<AgentRun | null>(null);
   const [contextInfo, setContextInfo] = useState<AgentContextInfo | null>(null);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [sessionActionsId, setSessionActionsId] = useState<string | null>(null);
   const [sessionActionPending, setSessionActionPending] = useState(false);
-  const [sessionRenameOpen, setSessionRenameOpen] = useState(false);
+  const [sessionRenameId, setSessionRenameId] = useState<string | null>(null);
   const [sessionTitleDraft, setSessionTitleDraft] = useState("");
   const [sessionRenamePending, setSessionRenamePending] = useState(false);
+  const [sessionDeleteTarget, setSessionDeleteTarget] = useState<AgentSession | null>(null);
 
+  const drawerOpen = props.open;
+  const closeDrawer = props.onClose;
   const sessionLocked = running || session?.status === "running" || session?.status === "waiting_confirmation";
 
   /** 读取当前课程的会话列表，供首次恢复和会话切换器使用。 */
@@ -200,8 +216,11 @@ export function CourseAgentDrawer(props: Props) {
       setContextInfo(null);
       setLoading(true);
       setSessionMenuOpen(false);
-      setSessionRenameOpen(false);
+      setSessionActionsId(null);
+      setSessionRenameId(null);
       setSessionTitleDraft("");
+      setSessionDeleteTarget(null);
+      skipSessionBootstrap.current = false;
     }, 0);
     return () => window.clearTimeout(reset);
   }, [props.courseId]);
@@ -210,6 +229,10 @@ export function CourseAgentDrawer(props: Props) {
   useEffect(() => () => request.current?.abort(), []);
   useEffect(() => {
     if (!props.open || session) return;
+    if (skipSessionBootstrap.current) {
+      skipSessionBootstrap.current = false;
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const listed = await loadSessionList();
@@ -234,6 +257,48 @@ export function CourseAgentDrawer(props: Props) {
     return () => { cancelled = true; };
   }, [props.open, props.courseId, props.currentSceneId, session, loadMessages, loadSessionList]);
 
+  // 浮层使用 Escape 逐层关闭；没有打开子菜单时再关闭整个侧栏。
+  useEffect(() => {
+    if (!drawerOpen) return;
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (sessionDeleteTarget) {
+        focusSessionId.current = sessionDeleteTarget.id;
+        setSessionDeleteTarget(null);
+        return;
+      }
+      if (sessionRenameId) {
+        focusSessionId.current = sessionRenameId;
+        setSessionRenameId(null);
+        setSessionTitleDraft("");
+        return;
+      }
+      if (sessionActionsId) {
+        setSessionActionsId(null);
+        return;
+      }
+      if (sessionMenuOpen) {
+        setSessionMenuOpen(false);
+        return;
+      }
+      closeDrawer();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [closeDrawer, drawerOpen, sessionActionsId, sessionDeleteTarget, sessionMenuOpen, sessionRenameId]);
+
+  // 内联操作结束后把焦点放回对应条目；最后一个会话被删掉时回到顶部选择器。
+  useEffect(() => {
+    if (!sessionMenuOpen || !focusSessionId.current) return;
+    const targetId = focusSessionId.current;
+    focusSessionId.current = null;
+    window.requestAnimationFrame(() => {
+      const target = sessionActionRefs.current[targetId];
+      if (target) target.focus();
+      else sessionPickerRef.current?.focus();
+    });
+  }, [sessionDeleteTarget, sessionMenuOpen, sessionRenameId, sessions]);
+
   useEffect(() => {
     if (!running) return;
     const timer = window.setInterval(() => setClockMs(Date.now()), 100);
@@ -246,17 +311,21 @@ export function CourseAgentDrawer(props: Props) {
   }, [messages, liveBlocks, running]);
 
   /** 创建一条当前课程的新对话，不影响已有会话和课程内容。 */
+  async function createSessionRecord() {
+    const response = await fetch(`/api/courses/${props.courseId}/agent/sessions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentSceneId: props.currentSceneId }) });
+    const payload = await response.json() as { data?: { session: AgentSession }; error?: { message?: string } };
+    if (!response.ok || !payload.data?.session) throw new Error(payload.error?.message ?? "无法创建对话会话");
+    setSessions((items) => [payload.data!.session, ...items.filter((item) => item.id !== payload.data!.session.id)]);
+    await loadMessages(payload.data.session.id);
+    setSessionMenuOpen(false);
+  }
+
   async function createSession() {
     if (sessionLocked || sessionActionPending) return;
     setSessionActionPending(true);
     setError(null);
     try {
-      const response = await fetch(`/api/courses/${props.courseId}/agent/sessions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentSceneId: props.currentSceneId }) });
-      const payload = await response.json() as { data?: { session: AgentSession }; error?: { message?: string } };
-      if (!response.ok || !payload.data?.session) throw new Error(payload.error?.message ?? "无法创建对话会话");
-      setSessions((items) => [payload.data!.session, ...items.filter((item) => item.id !== payload.data!.session.id)]);
-      await loadMessages(payload.data.session.id);
-      setSessionMenuOpen(false);
+      await createSessionRecord();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法创建对话会话");
     } finally {
@@ -279,28 +348,100 @@ export function CourseAgentDrawer(props: Props) {
     }
   }
 
-  /** 保存当前会话的显示名称，不触碰消息、运行和课程内容。 */
-  async function renameSession(event: React.FormEvent) {
+  /** 保存指定会话的显示名称，不触碰消息、运行和课程内容。 */
+  async function renameSession(event: React.FormEvent, target: AgentSession) {
     event.preventDefault();
-    if (!session || !sessionTitleDraft.trim() || sessionRenamePending) return;
+    if (!sessionTitleDraft.trim() || sessionRenamePending) return;
     setSessionRenamePending(true);
     setError(null);
     try {
-      const response = await fetch(`/api/courses/${props.courseId}/agent/sessions/${session.id}`, {
+      const response = await fetch(`/api/courses/${props.courseId}/agent/sessions/${target.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: sessionTitleDraft.trim() }),
       });
       const payload = await response.json() as { data?: { session: AgentSession }; error?: { message?: string } };
       if (!response.ok || !payload.data?.session) throw new Error(payload.error?.message ?? "无法修改对话名称");
-      setSession(payload.data.session);
+      setSession((item) => item?.id === payload.data!.session.id ? payload.data!.session : item);
       setSessions((items) => items.map((item) => item.id === payload.data!.session.id ? payload.data!.session : item));
-      setSessionRenameOpen(false);
+      setSessionRenameId(null);
+      setSessionTitleDraft("");
+      focusSessionId.current = target.id;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法修改对话名称");
     } finally {
       setSessionRenamePending(false);
     }
+  }
+
+  /** 删除指定的空闲会话；当前会话删除后恢复最近的剩余会话。 */
+  async function deleteSession() {
+    const target = sessionDeleteTarget;
+    if (!target || sessionActionPending) return;
+    setSessionActionPending(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/courses/${props.courseId}/agent/sessions/${target.id}`, { method: "DELETE" });
+      const payload = await response.json() as { data?: { sessionId: string }; error?: { message?: string } };
+      if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? "无法删除对话会话");
+      const remaining = sessions.filter((item) => item.id !== target.id);
+      const deletingCurrent = session?.id === target.id;
+      setSessions(remaining);
+      setSessionDeleteTarget(null);
+      setSessionActionsId(null);
+      if (!deletingCurrent) {
+        // 删除其他会话后仍把焦点留在当前会话条目，避免焦点落到已移除节点。
+        focusSessionId.current = session?.id ?? null;
+        return;
+      }
+
+      skipSessionBootstrap.current = true;
+      setSession(null);
+      setMessages([]);
+      setLiveBlocks([]);
+      setLatestRun(null);
+      setContextInfo(null);
+      const next = remaining[0];
+      if (next) {
+        focusSessionId.current = next.id;
+        await loadMessages(next.id);
+      } else {
+        // 删除最后一个会话后保持侧栏可继续使用，创建一个空白会话。
+        await createSessionRecord();
+        window.requestAnimationFrame(() => sessionPickerRef.current?.focus());
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法删除对话会话");
+    } finally {
+      setSessionActionPending(false);
+    }
+  }
+
+  function beginSessionRename(item: AgentSession) {
+    setSessionActionsId(null);
+    setSessionDeleteTarget(null);
+    setSessionRenameId(item.id);
+    setSessionTitleDraft(item.title);
+    setError(null);
+  }
+
+  function requestSessionDelete(item: AgentSession) {
+    if (item.status !== "idle") {
+      setError("当前对话正在执行或等待确认，暂时不能删除");
+      return;
+    }
+    setSessionDeleteTarget(item);
+    // 保持当前操作菜单打开，让原“删除”按钮原位变成第二次确认。
+    setSessionActionsId(item.id);
+    setError(null);
+  }
+
+  /** 切换会话操作菜单；离开条目时清掉未完成的原位删除确认。 */
+  function toggleSessionActions(item: AgentSession) {
+    const nextId = sessionActionsId === item.id ? null : item.id;
+    setSessionActionsId(nextId);
+    if (nextId !== item.id && sessionDeleteTarget?.id === item.id) setSessionDeleteTarget(null);
+    if (nextId === item.id && sessionDeleteTarget && sessionDeleteTarget.id !== item.id) setSessionDeleteTarget(null);
   }
 
   function applyEvent(event: AgentSseEvent) {
@@ -381,7 +522,7 @@ export function CourseAgentDrawer(props: Props) {
   }
 
   async function confirm(block: AgentToolBlock, decision: "confirm" | "cancel") {
-    if (!session || !block.confirmationId) return;
+    if (!session || !block.confirmationId || request.current) return;
     setError(null);
     const controller = new AbortController();
     request.current = controller;
@@ -436,34 +577,50 @@ export function CourseAgentDrawer(props: Props) {
       <aside className="agent-drawer" aria-label="课程修订对话">
         <header className="agent-drawer__head">
           <div className="agent-drawer__head-content">
-            <span>COURSE REVISION AGENT</span><h2>对话式修订</h2><small>当前目标 · {props.currentSceneLabel}</small>
-            <div className="agent-session-controls">
-              <button type="button" className="agent-session-picker" disabled={!session || sessionActionPending} onClick={() => setSessionMenuOpen((open) => !open)}>
-                <span>{session?.title ?? "正在加载会话"}</span><em>{session ? sessionStatus[session.status] : ""}⌄</em>
-              </button>
-              <button type="button" className="agent-session-rename" aria-label="重命名当前对话" title="重命名当前对话" disabled={!session || sessionRenamePending} onClick={() => { setSessionTitleDraft(session?.title ?? ""); setSessionRenameOpen(true); setSessionMenuOpen(false); }}>✎</button>
-              <button type="button" className="agent-session-new" disabled={sessionLocked || sessionActionPending} onClick={createSession}>新建对话</button>
-            </div>
-            {sessionRenameOpen ? (
-              <form className="agent-session-rename-form" onSubmit={renameSession}>
-                <label htmlFor="agent-session-title">对话名称</label>
-                <div>
-                  <input id="agent-session-title" value={sessionTitleDraft} maxLength={80} autoFocus onChange={(event) => setSessionTitleDraft(event.target.value)} />
-                  <button type="submit" disabled={sessionRenamePending || !sessionTitleDraft.trim()}>保存</button>
-                  <button type="button" onClick={() => setSessionRenameOpen(false)}>取消</button>
-                </div>
-              </form>
-            ) : null}
-            {sessionMenuOpen ? (
-              <div className="agent-session-menu" role="listbox" aria-label="历史对话">
-                {sessions.map((item) => (
-                  <button type="button" role="option" aria-selected={item.id === session?.id} key={item.id} disabled={sessionLocked || sessionActionPending} onClick={() => void switchSession(item)}>
-                    <span>{item.title}</span><small>{sessionStatus[item.status]} · {new Date(item.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small>
-                  </button>
-                ))}
-                {!sessions.length ? <p>暂无历史会话</p> : null}
+            <span>COURSE REVISION AGENT</span><h2>对话式修订</h2>
+            <div className="agent-session-area">
+              <div className="agent-session-controls">
+                <button ref={sessionPickerRef} type="button" className="agent-session-picker" disabled={!session || sessionActionPending} onClick={() => { setSessionMenuOpen((open) => !open); setSessionActionsId(null); setSessionDeleteTarget(null); }}>
+                  <span>{session?.title ?? "正在加载会话"}</span><em>{session ? sessionStatus[session.status] : ""}⌄</em>
+                </button>
+                <button type="button" className="agent-session-new" disabled={sessionLocked || sessionActionPending} onClick={createSession}>新建对话</button>
               </div>
-            ) : null}
+              {sessionMenuOpen ? (
+                <div className="agent-session-menu" role="list" aria-label="历史对话">
+                  {sessions.map((item) => {
+                    // 当前运行状态以侧栏实时状态为准，避免列表快照尚未刷新时误放开删除。
+                    const canDelete = item.status === "idle" && !(item.id === session?.id && sessionLocked);
+                    const pendingDelete = sessionDeleteTarget?.id === item.id;
+                    const isRenaming = sessionRenameId === item.id;
+                    return (
+                      <div className={`agent-session-row${item.id === session?.id ? " is-current" : ""}`} key={item.id}>
+                        {isRenaming ? (
+                          <form className="agent-session-row-edit" onSubmit={(event) => void renameSession(event, item)}>
+                            <input aria-label={`重命名：${item.title}`} value={sessionTitleDraft} maxLength={80} autoFocus onChange={(event) => setSessionTitleDraft(event.target.value)} />
+                            <button type="submit" disabled={sessionRenamePending || !sessionTitleDraft.trim()}>保存</button>
+                            <button type="button" disabled={sessionRenamePending} onClick={() => { focusSessionId.current = item.id; setSessionRenameId(null); setSessionTitleDraft(""); }}>取消</button>
+                          </form>
+                        ) : (
+                          <>
+                            <button type="button" className="agent-session-select" aria-current={item.id === session?.id ? "true" : undefined} disabled={sessionLocked || sessionActionPending} onClick={() => void switchSession(item)}>
+                              <span>{item.title}</span><small>{sessionStatus[item.status]} · {formatSessionTime(item.updatedAt)}</small>
+                            </button>
+                            <button ref={(node) => { sessionActionRefs.current[item.id] = node; }} type="button" className="agent-session-actions" aria-label={`管理会话：${item.title}`} aria-expanded={sessionActionsId === item.id} onClick={() => toggleSessionActions(item)}>•••</button>
+                            {sessionActionsId === item.id ? (
+                              <div className="agent-session-actions-menu" role="menu">
+                                <button type="button" role="menuitem" onClick={() => beginSessionRename(item)}>重命名</button>
+                                <button type="button" role="menuitem" className={pendingDelete ? "is-delete-confirm" : undefined} disabled={!canDelete || sessionActionPending} onClick={() => pendingDelete ? void deleteSession() : requestSessionDelete(item)}>{pendingDelete ? "确认删除" : canDelete ? "删除" : "运行中不可删除"}</button>
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {!sessions.length ? <p>暂无历史会话</p> : null}
+                </div>
+              ) : null}
+            </div>
           </div>
           <button type="button" aria-label="关闭" onClick={props.onClose}>×</button>
         </header>
@@ -477,9 +634,24 @@ export function CourseAgentDrawer(props: Props) {
           {!loading && contextInfo && contextInfo.omittedMessageCount > 0 ? <p className="agent-context-notice" role="status">较早的 {contextInfo.omittedMessageCount} 轮对话本次未发送给模型，数据库历史仍保留。</p> : null}
           {!loading && latestRun && runSummary(latestRun) ? <p className="agent-run-summary">最近运行 · {runSummary(latestRun)} · {latestRun.metrics?.totalDurationMs ? `${(latestRun.metrics.totalDurationMs / 1000).toFixed(1)}s` : "耗时未知"}</p> : null}
           {!loading && messages.length === 0 && liveBlocks.length === 0 ? <div className="agent-empty"><strong>从课程本身开始讨论</strong><p>可以询问内容，也可以要求对当前页做精确修改。Agent 会先读取真实课程，再决定是否调用工具。</p></div> : null}
-          {messages.map((message) => message.role === "user" && "text" in message.content
-            ? <div className="agent-user" key={message.id}>{message.content.text}</div>
-            : message.role === "assistant" && "blocks" in message.content ? <div className="agent-assistant" key={message.id}><AssistantBlocks blocks={message.content.blocks} onConfirm={confirm} clockMs={clockMs} thinkingStarts={thinkingStarts} /></div> : null)}
+          {messages.map((message) => {
+            if (message.role === "user" && "text" in message.content) {
+              const userContent = message.content as Extract<AgentMessage["content"], { text: string }>;
+              const anchor = userContent.currentSceneId ? props.scenes.find((item) => item.id === userContent.currentSceneId) : undefined;
+              return (
+                <div className="agent-user" key={message.id}>
+                  {userContent.currentSceneId ? (
+                    <button type="button" className="agent-user__scene" disabled={!anchor} onClick={() => anchor && props.onSceneSelect(anchor.id)}>
+                      <span>⌁</span>{anchor ? `第 ${anchor.order} 页 · ${anchor.title}` : "原场景已删除"}
+                    </button>
+                  ) : null}
+                  <div>{userContent.text}</div>
+                </div>
+              );
+            }
+            if (message.role === "assistant" && "blocks" in message.content) return <div className="agent-assistant" key={message.id}><AssistantBlocks blocks={message.content.blocks} onConfirm={confirm} clockMs={clockMs} thinkingStarts={thinkingStarts} /></div>;
+            return null;
+          })}
           {liveBlocks.length ? <div className="agent-assistant agent-assistant--live"><AssistantBlocks blocks={liveBlocks} onConfirm={confirm} clockMs={clockMs} thinkingStarts={thinkingStarts} /></div> : null}
           {error ? <p className="agent-error" role="alert">{error}</p> : null}
         </div>

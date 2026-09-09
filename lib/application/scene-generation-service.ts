@@ -25,6 +25,19 @@ function asDomainError(error: unknown): DomainError {
   return { code: "INTERNAL_ERROR", message: "场景生成过程中发生内部错误", retryable: true, stage: "scene" };
 }
 
+/** 清理进程中断后遗留的新增页租约；该租约从未写入候选页，因此只需恢复 ready 状态。 */
+export async function recoverExpiredInsertOperation(repository: CourseRepository, current: Course, now = Date.now()): Promise<Course> {
+  const operation = current.activeOperation;
+  if (current.status !== "generating" || operation?.stage !== "scene" || operation.purpose !== "insert" || operation.expiresAt > now) return current;
+  return repository.save(CourseSchema.parse({
+    ...current,
+    status: "ready",
+    activeOperation: undefined,
+    lastError: { code: "INSERT_OPERATION_EXPIRED", message: "上一次新增页面已超时，原课程内容已恢复", retryable: true, stage: "scene" },
+    updatedAt: now,
+  }), current.revision);
+}
+
 /** 只构造当前场景的修订参考；互动内容剥离平台运行注入，其他数据库字段不外发。 */
 function buildRevisionReference(scene: Scene) {
   const narration = scene.actions.filter((action) => action.type === "speech").map((action) => action.text);
@@ -75,9 +88,10 @@ export class SceneGenerationService {
 
   /** 新增页只在内存中扩展候选课程；生成成功后才一次插入目录、场景和进度。 */
   async insert(courseId: string, expectedRevision: number, requestId: string, outline: SceneOutline, position: number, instruction: string, requestSignal?: AbortSignal): Promise<Course> {
-    const current = await this.repository.get(courseId);
+    let current = await this.repository.get(courseId);
     if (!current) throw new SceneApplicationError("COURSE_NOT_FOUND", "课程不存在");
     if (current.revision !== expectedRevision) throw new CourseConflictError();
+    current = await recoverExpiredInsertOperation(this.repository, current, this.now());
     if (current.status !== "ready" || current.activeOperation) throw new SceneApplicationError("INVALID_COURSE_STATE", "只有没有生成任务的 ready 课程可以新增页面");
     if (current.outlines.length >= 8 || current.requestedSceneCount >= 8) throw new SceneApplicationError("INVALID_COURSE_STATE", "课程最多包含 8 个页面");
     if (position < 1 || position > current.outlines.length + 1) throw new SceneApplicationError("INVALID_COURSE_STATE", `新增页位置必须在 1～${current.outlines.length + 1} 之间`);
@@ -111,7 +125,7 @@ export class SceneGenerationService {
       status: "generating",
       activeOperation: { id: operationId, stage: "scene", purpose: "insert", outlineId: outline.id, startedAt, expiresAt: startedAt + this.timeoutMs + 30_000 },
       updatedAt: startedAt,
-    }), expectedRevision);
+    }), current.revision);
     const generationCourse = CourseSchema.parse({
       ...generationCourseShape,
       revision: registered.revision,
@@ -165,9 +179,10 @@ export class SceneGenerationService {
     | { kind: "regenerate"; runtimeError: string; requestSignal?: AbortSignal }
     | { kind: "revise"; instruction: string; confirmQuizAttemptDeletion?: boolean; requestSignal?: AbortSignal }
   ): Promise<Course> {
-    const current = await this.repository.get(courseId);
+    let current = await this.repository.get(courseId);
     if (!current) throw new SceneApplicationError("COURSE_NOT_FOUND", "课程不存在");
     if (current.revision !== expectedRevision) throw new CourseConflictError();
+    current = await recoverExpiredInsertOperation(this.repository, current, this.now());
     const outline = current.outlines.find((item) => item.id === outlineId);
     if (!outline) throw new SceneApplicationError("OUTLINE_NOT_FOUND", "场景大纲不存在");
     const oldScene = current.scenes.find((item) => item.outlineId === outlineId);
@@ -193,7 +208,7 @@ export class SceneGenerationService {
       sceneProgress: current.sceneProgress.map((item) => item.outlineId === outlineId ? { ...item, attempts: item.attempts + 1, lastError: undefined, updatedAt: startedAt } : item),
       activeOperation: { id: operationId, stage: "scene", outlineId, startedAt, expiresAt: startedAt + this.timeoutMs + 30_000 },
       updatedAt: startedAt,
-    }), expectedRevision);
+    }), current.revision);
     const timeout = AbortSignal.timeout(this.timeoutMs);
     const signal = options.requestSignal ? AbortSignal.any([options.requestSignal, timeout]) : timeout;
     const settledStatus = current.sceneProgress.every((item) => item.status === "ready") ? "ready" : "partial_failed";

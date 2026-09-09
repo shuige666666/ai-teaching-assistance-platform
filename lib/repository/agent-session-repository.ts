@@ -3,6 +3,7 @@ import type { AgentConfirmation, AgentContentBlock, AgentMessage, AgentRun, Agen
 export interface AgentSessionRepository {
   createSession(courseId: string, title: string): Promise<AgentSession>;
   renameSession(courseId: string, sessionId: string, title: string): Promise<AgentSession>;
+  deleteSession(courseId: string, sessionId: string): Promise<void>;
   listSessions(courseId: string): Promise<AgentSession[]>;
   getSession(courseId: string, sessionId: string): Promise<AgentSession | null>;
   getLatestRun(sessionId: string): Promise<AgentRun | null>;
@@ -15,6 +16,7 @@ export interface AgentSessionRepository {
   finishRun(runId: string, status: Exclude<AgentRunStatus, "running">, finalRevision?: number, error?: string, metrics?: AgentRunMetrics): Promise<void>;
   createConfirmation(input: Omit<AgentConfirmation, "id" | "status" | "createdAt" | "updatedAt">): Promise<AgentConfirmation>;
   getConfirmation(sessionId: string, confirmationId: string): Promise<AgentConfirmation | null>;
+  claimConfirmation(confirmationId: string): Promise<{ confirmation: AgentConfirmation; claimed: boolean }>;
   resolveConfirmation(confirmationId: string, status: "completed" | "cancelled" | "expired" | "failed", result?: unknown): Promise<AgentConfirmation>;
 }
 

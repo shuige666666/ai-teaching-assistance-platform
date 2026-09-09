@@ -82,7 +82,7 @@ export type AgentRun = {
 export type AgentContextInfo = { omittedMessageCount: number; includedTurnCount: number; usedCharacters: number; maxCharacters: number };
 export type AgentConfirmation = {
   id: string; sessionId: string; runId: string; callId: string; toolName: string;
-  status: "pending" | "completed" | "cancelled" | "expired" | "failed"; baseRevision: number; payload: unknown;
+  status: "pending" | "executing" | "completed" | "cancelled" | "expired" | "failed"; baseRevision: number; payload: unknown;
   result?: unknown; summary: string; expiresAt: number; createdAt: number; updatedAt: number;
 };
 

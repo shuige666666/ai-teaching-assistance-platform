@@ -78,7 +78,7 @@ test("mock 课程从创建、导出、互动、测验到刷新恢复", async ({ 
     expect(slideBox!.width / slideBox!.height).toBeCloseTo(16 / 9, 1);
 
     // M12：同一侧栏完成可见思考、只读工具、两级折叠和刷新恢复。
-    await page.getByRole("button", { name: "对话", exact: true }).click();
+    await page.getByRole("switch", { name: "智能修订", exact: true }).click();
     await expect(page.getByRole("complementary", { name: "课程修订对话" })).toBeVisible();
     await page.getByRole("textbox", { name: "继续讨论，或描述要修改的页面内容…" }).fill("请检查当前课堂有几页，不要修改课程。");
     await page.getByRole("button", { name: /发送/ }).click();
@@ -95,7 +95,7 @@ test("mock 课程从创建、导出、互动、测验到刷新恢复", async ({ 
     await expect(toolCard.getByText("结果原文", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "关闭", exact: true }).click();
     await page.reload();
-    await page.getByRole("button", { name: "对话", exact: true }).click();
+    await page.getByRole("switch", { name: "智能修订", exact: true }).click();
     await expect(page.locator("details.agent-tool-group")).toHaveCount(1);
     await page.getByRole("button", { name: "关闭", exact: true }).click();
 

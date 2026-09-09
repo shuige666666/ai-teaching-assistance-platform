@@ -19,6 +19,17 @@ function fail(error: unknown): never { if (error instanceof AgentApplicationErro
 
 export class MySQLAgentSessionRepository implements AgentSessionRepository {
   constructor(private readonly pool: Pool = getDatabasePool(), private readonly now: () => number = Date.now) {}
+  /** 从真实未完成记录推导会话状态，旧 run/确认收尾时不会覆盖较新的运行。 */
+  private async refreshSessionStatus(connection: PoolConnection, sessionId: string, now: number) {
+    const [sessions] = await connection.execute<Array<RowDataPacket & { status: AgentSession["status"] }>>("SELECT status FROM agent_sessions WHERE id=? FOR UPDATE", [sessionId]);
+    if (!sessions[0]) return;
+    const [runningRows] = await connection.execute<RowDataPacket[]>("SELECT 1 AS active FROM agent_runs WHERE session_id=? AND status='running' LIMIT 1", [sessionId]);
+    const [confirmationRows] = await connection.execute<RowDataPacket[]>("SELECT 1 AS active FROM agent_confirmations WHERE session_id=? AND status IN ('pending','executing') LIMIT 1", [sessionId]);
+    const nextStatus: AgentSession["status"] = runningRows[0] ? "running" : confirmationRows[0] ? "waiting_confirmation" : "idle";
+    // 列表/详情读取也会触发恢复；只有状态真正变化时才更新最近活动时间。
+    if (sessions[0].status === nextStatus) return;
+    await connection.execute("UPDATE agent_sessions SET status=?, updated_at=? WHERE id=?", [nextStatus, now, sessionId]);
+  }
   async createSession(courseId: string, title: string): Promise<AgentSession> {
     const now = this.now(); const id = randomUUID();
     try { await this.pool.execute("INSERT INTO agent_sessions (id,course_id,title,status,created_at,updated_at) VALUES (?, ?, ?, 'idle', ?, ?)", [id, courseId, title, now, now]); return { id, courseId, title, status: "idle", createdAt: now, updatedAt: now }; } catch (error) { fail(error) }
@@ -30,10 +41,28 @@ export class MySQLAgentSessionRepository implements AgentSessionRepository {
     try {
       const [rows] = await this.pool.execute<SessionRow[]>("SELECT * FROM agent_sessions WHERE id = ? AND course_id = ? LIMIT 1", [sessionId, courseId]);
       if (!rows[0]) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在", 404);
-      const updatedAt = this.now();
-      await this.pool.execute("UPDATE agent_sessions SET title = ?, updated_at = ? WHERE id = ? AND course_id = ?", [nextTitle, updatedAt, sessionId, courseId]);
-      return session({ ...rows[0], title: nextTitle, updated_at: updatedAt });
+      // 重命名只更新元数据，保留最后一条消息或运行写入的活动时间。
+      await this.pool.execute("UPDATE agent_sessions SET title = ? WHERE id = ? AND course_id = ?", [nextTitle, sessionId, courseId]);
+      return session({ ...rows[0], title: nextTitle });
     } catch (error) { fail(error) }
+  }
+  /** 在同一事务内删除空闲会话，依靠外键级联清理 Agent 子记录。 */
+  async deleteSession(courseId: string, sessionId: string) {
+    let connection: PoolConnection | undefined;
+    try {
+      connection = await this.pool.getConnection(); await connection.beginTransaction();
+      const [sessions] = await connection.execute<SessionRow[]>("SELECT * FROM agent_sessions WHERE id = ? AND course_id = ? FOR UPDATE", [sessionId, courseId]);
+      if (!sessions[0]) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在", 404);
+      const now = this.now();
+      // 先释放已经超过期限的旧记录，避免过期请求阻塞正常删除。
+      await connection.execute("UPDATE agent_runs SET status = 'interrupted', finished_at = ?, error_text = '运行超过截止时间，删除会话前已标记为中断' WHERE session_id = ? AND status = 'running' AND deadline_at <= ?", [now, sessionId, now]);
+      await connection.execute("UPDATE agent_confirmations SET status = 'expired', updated_at = ? WHERE session_id = ? AND status IN ('pending','executing') AND expires_at <= ?", [now, sessionId, now]);
+      const [activeRuns] = await connection.execute<RowDataPacket[]>("SELECT 1 AS active FROM agent_runs WHERE session_id = ? AND status = 'running' LIMIT 1", [sessionId]);
+      const [activeConfirmations] = await connection.execute<RowDataPacket[]>("SELECT 1 AS active FROM agent_confirmations WHERE session_id = ? AND status IN ('pending','executing') LIMIT 1", [sessionId]);
+      if (activeRuns[0] || activeConfirmations[0]) throw new AgentApplicationError("RUN_IN_PROGRESS", "当前对话仍在执行或等待确认，无法删除", 409);
+      await connection.execute("DELETE FROM agent_sessions WHERE id = ? AND course_id = ?", [sessionId, courseId]);
+      await connection.commit();
+    } catch (error) { if (connection) await connection.rollback(); fail(error) } finally { connection?.release() }
   }
   async listSessions(courseId: string) {
     try { const [rows] = await this.pool.execute<SessionRow[]>("SELECT * FROM agent_sessions WHERE course_id = ? ORDER BY updated_at DESC", [courseId]); return rows.map(session); } catch (error) { fail(error) }
@@ -51,7 +80,8 @@ export class MySQLAgentSessionRepository implements AgentSessionRepository {
     try {
       connection = await this.pool.getConnection(); await connection.beginTransaction();
       await connection.execute("UPDATE agent_runs SET status = 'interrupted', finished_at = ?, error_text = '运行超过截止时间，刷新时已标记为中断' WHERE session_id = ? AND status = 'running' AND deadline_at <= ?", [now, sessionId, now]);
-      await connection.execute("UPDATE agent_sessions SET status = 'idle', updated_at = ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM agent_runs WHERE session_id = ? AND status = 'running')", [now, sessionId, sessionId]);
+      await connection.execute("UPDATE agent_confirmations SET status='pending', updated_at=? WHERE session_id=? AND status='executing' AND expires_at<=?", [now, sessionId, now]);
+      await this.refreshSessionStatus(connection, sessionId, now);
       await connection.commit();
     } catch (error) { if (connection) await connection.rollback(); fail(error) } finally { connection?.release() }
   }
@@ -102,7 +132,17 @@ export class MySQLAgentSessionRepository implements AgentSessionRepository {
     throw new DatabaseUnavailableError();
   }
   async finishRun(runId: string, status: Exclude<AgentRunStatus, "running">, finalRevision?: number, error?: string, metrics?: AgentRunMetrics) {
-    try { const now = this.now(); await this.pool.execute("UPDATE agent_runs r JOIN agent_sessions s ON s.id=r.session_id SET r.status=?,r.final_revision=?,r.error_text=?,r.metrics_json=?,r.finished_at=?,s.status=?,s.updated_at=? WHERE r.id=?", [status, finalRevision ?? null, error?.slice(0,1000) ?? null, metrics === undefined ? null : JSON.stringify(metrics), now, status === "waiting_confirmation" ? "waiting_confirmation" : "idle", now, runId]); } catch (cause) { fail(cause) }
+    let connection: PoolConnection | undefined;
+    try {
+      connection = await this.pool.getConnection(); await connection.beginTransaction();
+      const [rows] = await connection.execute<RunRow[]>("SELECT * FROM agent_runs WHERE id=? FOR UPDATE", [runId]);
+      if (rows[0]) {
+        const now = this.now();
+        await connection.execute("UPDATE agent_runs SET status=?,final_revision=?,error_text=?,metrics_json=?,finished_at=? WHERE id=?", [status, finalRevision ?? null, error?.slice(0,1000) ?? null, metrics === undefined ? null : JSON.stringify(metrics), now, runId]);
+        await this.refreshSessionStatus(connection, rows[0].session_id, now);
+      }
+      await connection.commit();
+    } catch (cause) { if (connection) await connection.rollback(); fail(cause) } finally { connection?.release() }
   }
   async createConfirmation(input: Omit<AgentConfirmation, "id" | "status" | "createdAt" | "updatedAt">): Promise<AgentConfirmation> {
     const now=this.now(), id=randomUUID();
@@ -111,8 +151,39 @@ export class MySQLAgentSessionRepository implements AgentSessionRepository {
   async getConfirmation(sessionId:string, confirmationId:string) {
     try { const [rows]=await this.pool.execute<ConfirmationRow[]>("SELECT * FROM agent_confirmations WHERE id=? AND session_id=? LIMIT 1",[confirmationId,sessionId]); return rows[0]?confirmation(rows[0]):null; } catch(error){ fail(error) }
   }
+  /** 使用行锁把 pending 原子推进为 executing，防止双击确认重复执行写工具。 */
+  async claimConfirmation(confirmationId: string) {
+    let connection: PoolConnection | undefined;
+    try {
+      connection = await this.pool.getConnection(); await connection.beginTransaction();
+      const [rows] = await connection.execute<ConfirmationRow[]>("SELECT * FROM agent_confirmations WHERE id=? FOR UPDATE", [confirmationId]);
+      if (!rows[0]) throw new AgentApplicationError("NOT_FOUND", "确认记录不存在", 404);
+      if (rows[0].status !== "pending") {
+        await connection.commit();
+        return { confirmation: confirmation(rows[0]), claimed: false };
+      }
+      const now = this.now();
+      await connection.execute("UPDATE agent_confirmations SET status='executing',updated_at=? WHERE id=? AND status='pending'", [now, confirmationId]);
+      await connection.execute("UPDATE agent_sessions SET status='running',updated_at=? WHERE id=?", [now, rows[0].session_id]);
+      const claimed = confirmation({ ...rows[0], status: "executing", updated_at: now });
+      await connection.commit();
+      return { confirmation: claimed, claimed: true };
+    } catch (error) { if (connection) await connection.rollback(); fail(error) } finally { connection?.release() }
+    throw new DatabaseUnavailableError();
+  }
   async resolveConfirmation(confirmationId:string,status:"completed"|"cancelled"|"expired"|"failed",result?:unknown) {
-    const now=this.now();
-    try { await this.pool.execute<ResultSetHeader>("UPDATE agent_confirmations c JOIN agent_sessions s ON s.id=c.session_id SET c.status=?,c.result_json=?,c.updated_at=?,s.status='idle',s.updated_at=? WHERE c.id=? AND c.status='pending'",[status,result===undefined?null:JSON.stringify(result),now,now,confirmationId]); const [rows]=await this.pool.execute<ConfirmationRow[]>("SELECT * FROM agent_confirmations WHERE id=? LIMIT 1",[confirmationId]); if(!rows[0]) throw new AgentApplicationError("NOT_FOUND","确认记录不存在",404); return confirmation(rows[0]); } catch(error){ fail(error) }
+    let connection: PoolConnection | undefined;
+    try {
+      connection = await this.pool.getConnection(); await connection.beginTransaction();
+      const [rows] = await connection.execute<ConfirmationRow[]>("SELECT * FROM agent_confirmations WHERE id=? FOR UPDATE", [confirmationId]);
+      if (!rows[0]) throw new AgentApplicationError("NOT_FOUND", "确认记录不存在", 404);
+      const now = this.now();
+      await connection.execute<ResultSetHeader>("UPDATE agent_confirmations SET status=?,result_json=?,updated_at=? WHERE id=? AND status IN ('pending','executing')", [status, result===undefined?null:JSON.stringify(result), now, confirmationId]);
+      await this.refreshSessionStatus(connection, rows[0].session_id, now);
+      const [updated] = await connection.execute<ConfirmationRow[]>("SELECT * FROM agent_confirmations WHERE id=? LIMIT 1", [confirmationId]);
+      await connection.commit();
+      return confirmation(updated[0]);
+    } catch(error){ if (connection) await connection.rollback(); fail(error) } finally { connection?.release() }
+    throw new DatabaseUnavailableError();
   }
 }

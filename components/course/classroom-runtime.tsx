@@ -27,8 +27,6 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentDraft, setAgentDraft] = useState("");
   const [regenerating, setRegenerating] = useState(false);
-  const [replacementMode, setReplacementMode] = useState<"revise" | "regenerate">("revise");
-  const [regenerationElapsedSeconds, setRegenerationElapsedSeconds] = useState(0);
   const [regenerationOpen, setRegenerationOpen] = useState(false);
   const [regenerationInstruction, setRegenerationInstruction] = useState("");
   const [quizDeletionConfirmed, setQuizDeletionConfirmed] = useState(false);
@@ -50,21 +48,11 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   // 离开课堂时取消请求，避免迟到响应写入已离开的页面。
   useEffect(() => () => regenerationRequest.current?.abort(), []);
 
-  // 模型响应时间不可预测；等待层持续显示真实经过时间，不伪造完成百分比。
-  useEffect(() => {
-    if (!regenerating) return;
-    const startedAt = Date.now();
-    const interval = window.setInterval(() => setRegenerationElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
-    return () => window.clearInterval(interval);
-  }, [regenerating]);
-
   /** 两个外部入口共用等待与刷新反馈，但只向对应接口提交其所需字段。 */
   async function replaceScene(mode: "revise" | "regenerate", options: { instruction?: string; runtimeError?: string; confirmQuizAttemptDeletion?: boolean }) {
     if (regenerationRequest.current) return;
     const controller = new AbortController();
     regenerationRequest.current = controller;
-    setReplacementMode(mode);
-    setRegenerationElapsedSeconds(0);
     setRegenerating(true);
     setContinuousPlay(false);
     playback.pause();
@@ -162,6 +150,12 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
     setSceneIndex(Math.max(0, Math.min(course.scenes.length - 1, index)));
   }
 
+  /** 根据稳定 sceneId 响应 Agent 侧栏的场景导航，不让侧栏复制一份页序状态。 */
+  function moveToSceneId(sceneId: string) {
+    const index = course.scenes.findIndex((item) => item.id === sceneId);
+    if (index >= 0) moveTo(index);
+  }
+
   function toggleBrowserSpeech() {
     const next = !browserSpeechEnabled;
     setBrowserSpeechEnabled(next);
@@ -212,12 +206,22 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   }
 
   return (
-    <main className="classroom-shell">
+    <main className={`classroom-shell${agentOpen ? " classroom-shell--agent-open" : ""}`}>
       <header className="classroom-header">
         <Link className="brand brand--inverse" href="/"><span className="brand-mark">课</span><span><strong>课序</strong><small>CLASSROOM</small></span></Link>
         <div className="classroom-course"><span>{course.title}</span><small>REV.{course.revision} · {(course.scenes[0]?.generation.provider ?? "unknown").toUpperCase()}{isPartialPreview ? " · PARTIAL PREVIEW" : ""}</small></div>
         <div className="classroom-actions">
-          <button className="classroom-agent-entry" type="button" onClick={() => { setAgentDraft(""); setAgentOpen(true); }}>对话</button>
+          <button
+            className={`classroom-agent-switch${agentOpen ? " is-active" : ""}`}
+            type="button"
+            role="switch"
+            aria-checked={agentOpen}
+            aria-label="智能修订"
+            onClick={() => setAgentOpen((current) => !current)}
+          >
+            <span className="classroom-agent-switch__label">智能修订</span>
+            <span className="classroom-agent-switch__track" aria-hidden="true"><i /></span>
+          </button>
           <ExportButton course={course} />
           <Link className="exit-link" href={`/generation/${course.id}`}>退出课堂</Link>
         </div>
@@ -272,12 +276,6 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             <div><span>浏览器朗读</span><small>{browserSpeechSupported ? "可选增强 · 失败自动回退文本" : "当前浏览器不支持，使用文本计时"}</small></div>
             <button type="button" role="switch" aria-checked={browserSpeechEnabled} disabled={!browserSpeechSupported} className={browserSpeechEnabled ? "is-on" : ""} onClick={toggleBrowserSpeech}><i /></button>
           </div>
-          <button className={`scene-regenerate-toggle${regenerating ? " is-running" : ""}`} type="button" disabled={regenerating} onClick={() => {
-            setManualRegenerationError(null);
-            setQuizDeletionConfirmed(false);
-            setAgentDraft(`请修改当前第 ${scene.order} 页《${scene.title}》：`);
-            setAgentOpen(true);
-          }}>{regenerating ? <><i className="scene-regenerate-spinner" aria-hidden="true" /><strong>后台{replacementMode === "revise" ? "修订" : "重生成"}中 · {String(Math.floor(regenerationElapsedSeconds / 60)).padStart(2, "0")}:{String(regenerationElapsedSeconds % 60).padStart(2, "0")}</strong></> : <><span>↻</span>修订本场</>}</button>
           {scene.type === "quiz" ? <button className="scene-quiz-edit-toggle" type="button" disabled={regenerating} onClick={() => setQuizEditorOpen(true)}><span>✎</span>手动调整题目</button> : null}
           {regenerating ? <p className="scene-regenerate-status" role="status">课程仍可浏览；完成后将自动刷新。</p> : null}
           {!regenerating && manualRegenerationError ? <p className="scene-regenerate-status is-error" role="alert">{manualRegenerationError}</p> : null}
@@ -312,7 +310,8 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
         courseTitle={course.title}
         courseRevision={course.revision}
         currentSceneId={scene.id}
-        currentSceneLabel={`第 ${scene.order} 页《${scene.title}》`}
+        scenes={course.scenes.map(({ id, order, title, type }) => ({ id, order, title, type }))}
+        onSceneSelect={moveToSceneId}
         initialDraft={agentDraft}
         onDraftChange={setAgentDraft}
         onClose={() => setAgentOpen(false)}
