@@ -23,6 +23,18 @@ export class MySQLAgentSessionRepository implements AgentSessionRepository {
     const now = this.now(); const id = randomUUID();
     try { await this.pool.execute("INSERT INTO agent_sessions (id,course_id,title,status,created_at,updated_at) VALUES (?, ?, ?, 'idle', ?, ?)", [id, courseId, title, now, now]); return { id, courseId, title, status: "idle", createdAt: now, updatedAt: now }; } catch (error) { fail(error) }
   }
+  /** 修改会话显示名称，不改变消息、运行或课程内容。 */
+  async renameSession(courseId: string, sessionId: string, title: string) {
+    const nextTitle = title.trim();
+    if (!nextTitle) throw new AgentApplicationError("INVALID_ARGUMENT", "对话名称不能为空");
+    try {
+      const [rows] = await this.pool.execute<SessionRow[]>("SELECT * FROM agent_sessions WHERE id = ? AND course_id = ? LIMIT 1", [sessionId, courseId]);
+      if (!rows[0]) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在", 404);
+      const updatedAt = this.now();
+      await this.pool.execute("UPDATE agent_sessions SET title = ?, updated_at = ? WHERE id = ? AND course_id = ?", [nextTitle, updatedAt, sessionId, courseId]);
+      return session({ ...rows[0], title: nextTitle, updated_at: updatedAt });
+    } catch (error) { fail(error) }
+  }
   async listSessions(courseId: string) {
     try { const [rows] = await this.pool.execute<SessionRow[]>("SELECT * FROM agent_sessions WHERE course_id = ? ORDER BY updated_at DESC", [courseId]); return rows.map(session); } catch (error) { fail(error) }
   }

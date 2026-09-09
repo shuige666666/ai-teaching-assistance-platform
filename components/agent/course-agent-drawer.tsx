@@ -44,7 +44,45 @@ function jsonText(value: unknown) {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
-function ToolCard({ block, onConfirm }: { block: AgentToolBlock; onConfirm(block: AgentToolBlock, decision: "confirm" | "cancel"): void }) {
+function confirmationCopy(block: AgentToolBlock) {
+  const result = typeof block.result === "object" && block.result !== null ? block.result as { summary?: unknown } : undefined;
+  const summary = typeof result?.summary === "string" ? result.summary : "这项课程修改需要你的确认";
+  if (block.confirmationKind === "delete") return {
+    title: "即将删除课程页面",
+    summary,
+    detail: "确认后会从当前课程目录移除这一页并更新页序；取消则不会修改课程。",
+    confirmLabel: "确认删除",
+  };
+  if (block.confirmationKind === "regenerate_quiz") return {
+    title: "即将重新生成测验",
+    summary,
+    detail: "确认后会替换本页题目，并清理这页已有的作答记录。",
+    confirmLabel: "确认重新生成测验",
+  };
+  return {
+    title: "即将修改测验题目",
+    summary,
+    detail: "确认后会保存新的题目，并清理这页已有的作答记录。",
+    confirmLabel: "确认修改测验",
+  };
+}
+
+function ConfirmationCallout({ block, onConfirm }: { block: AgentToolBlock; onConfirm(block: AgentToolBlock, decision: "confirm" | "cancel"): void }) {
+  const copy = confirmationCopy(block);
+  return (
+    <div className="agent-confirmation-callout" role="alert">
+      <div className="agent-confirmation-callout__heading"><span>需要你的确认</span><strong>{copy.title}</strong></div>
+      <p>{copy.summary}</p>
+      <small>{copy.detail}</small>
+      <div className="agent-confirm-actions">
+        <button type="button" onClick={() => onConfirm(block, "cancel")}>取消</button>
+        <button type="button" onClick={() => onConfirm(block, "confirm")}>{copy.confirmLabel}</button>
+      </div>
+    </div>
+  );
+}
+
+function ToolCard({ block }: { block: AgentToolBlock }) {
   return (
     <details className={`agent-tool agent-tool--${block.status}`}>
       <summary>
@@ -57,12 +95,6 @@ function ToolCard({ block, onConfirm }: { block: AgentToolBlock; onConfirm(block
         <span>入参</span>
         <pre>{jsonText(block.arguments)}</pre>
         {block.result !== undefined ? <><span>结果原文</span><pre>{jsonText(block.result)}</pre></> : null}
-        {block.status === "waiting_confirmation" && block.confirmationId ? (
-          <div className="agent-confirm-actions">
-            <button type="button" onClick={() => onConfirm(block, "cancel")}>取消</button>
-            <button type="button" onClick={() => onConfirm(block, "confirm")}>{block.confirmationKind === "delete" ? "确认删除" : block.confirmationKind === "regenerate_quiz" ? "确认重新生成测验" : "确认修改测验"}</button>
-          </div>
-        ) : null}
       </div>
     </details>
   );
@@ -70,10 +102,14 @@ function ToolCard({ block, onConfirm }: { block: AgentToolBlock; onConfirm(block
 
 function ToolGroup({ blocks, onConfirm }: { blocks: AgentToolBlock[]; onConfirm(block: AgentToolBlock, decision: "confirm" | "cancel"): void }) {
   const completed = blocks.every((block) => block.status === "completed");
+  const pending = blocks.filter((block) => block.status === "waiting_confirmation" && block.confirmationId);
   return (
-    <details className="agent-tool-group">
-      <summary><span>•••</span><strong>{blocks.length} 个工具调用</strong><em>{completed ? "已完成" : blocks.some((block) => block.status === "waiting_confirmation") ? "等待确认" : blocks.some((block) => block.status === "running") ? "执行中" : "已结束"}</em></summary>
-      <div>{blocks.map((block) => <ToolCard key={block.id} block={block} onConfirm={onConfirm} />)}</div>
+    <details className="agent-tool-group" open={pending.length > 0 || undefined}>
+      <summary><span>•••</span><strong>{blocks.length} 个工具调用</strong><em>{completed ? "已完成" : pending.length ? "需要确认" : blocks.some((block) => block.status === "running") ? "执行中" : "已结束"}</em></summary>
+      <div className="agent-tool-group__body">
+        {pending.map((block) => <ConfirmationCallout key={`confirmation-${block.id}`} block={block} onConfirm={onConfirm} />)}
+        {blocks.map((block) => <ToolCard key={block.id} block={block} />)}
+      </div>
     </details>
   );
 }
@@ -121,6 +157,9 @@ export function CourseAgentDrawer(props: Props) {
   const [contextInfo, setContextInfo] = useState<AgentContextInfo | null>(null);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [sessionActionPending, setSessionActionPending] = useState(false);
+  const [sessionRenameOpen, setSessionRenameOpen] = useState(false);
+  const [sessionTitleDraft, setSessionTitleDraft] = useState("");
+  const [sessionRenamePending, setSessionRenamePending] = useState(false);
 
   const sessionLocked = running || session?.status === "running" || session?.status === "waiting_confirmation";
 
@@ -161,6 +200,8 @@ export function CourseAgentDrawer(props: Props) {
       setContextInfo(null);
       setLoading(true);
       setSessionMenuOpen(false);
+      setSessionRenameOpen(false);
+      setSessionTitleDraft("");
     }, 0);
     return () => window.clearTimeout(reset);
   }, [props.courseId]);
@@ -235,6 +276,30 @@ export function CourseAgentDrawer(props: Props) {
       setError(reason instanceof Error ? reason.message : "无法切换对话会话");
     } finally {
       setSessionActionPending(false);
+    }
+  }
+
+  /** 保存当前会话的显示名称，不触碰消息、运行和课程内容。 */
+  async function renameSession(event: React.FormEvent) {
+    event.preventDefault();
+    if (!session || !sessionTitleDraft.trim() || sessionRenamePending) return;
+    setSessionRenamePending(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/courses/${props.courseId}/agent/sessions/${session.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: sessionTitleDraft.trim() }),
+      });
+      const payload = await response.json() as { data?: { session: AgentSession }; error?: { message?: string } };
+      if (!response.ok || !payload.data?.session) throw new Error(payload.error?.message ?? "无法修改对话名称");
+      setSession(payload.data.session);
+      setSessions((items) => items.map((item) => item.id === payload.data!.session.id ? payload.data!.session : item));
+      setSessionRenameOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法修改对话名称");
+    } finally {
+      setSessionRenamePending(false);
     }
   }
 
@@ -376,8 +441,19 @@ export function CourseAgentDrawer(props: Props) {
               <button type="button" className="agent-session-picker" disabled={!session || sessionActionPending} onClick={() => setSessionMenuOpen((open) => !open)}>
                 <span>{session?.title ?? "正在加载会话"}</span><em>{session ? sessionStatus[session.status] : ""}⌄</em>
               </button>
+              <button type="button" className="agent-session-rename" aria-label="重命名当前对话" title="重命名当前对话" disabled={!session || sessionRenamePending} onClick={() => { setSessionTitleDraft(session?.title ?? ""); setSessionRenameOpen(true); setSessionMenuOpen(false); }}>✎</button>
               <button type="button" className="agent-session-new" disabled={sessionLocked || sessionActionPending} onClick={createSession}>新建对话</button>
             </div>
+            {sessionRenameOpen ? (
+              <form className="agent-session-rename-form" onSubmit={renameSession}>
+                <label htmlFor="agent-session-title">对话名称</label>
+                <div>
+                  <input id="agent-session-title" value={sessionTitleDraft} maxLength={80} autoFocus onChange={(event) => setSessionTitleDraft(event.target.value)} />
+                  <button type="submit" disabled={sessionRenamePending || !sessionTitleDraft.trim()}>保存</button>
+                  <button type="button" onClick={() => setSessionRenameOpen(false)}>取消</button>
+                </div>
+              </form>
+            ) : null}
             {sessionMenuOpen ? (
               <div className="agent-session-menu" role="listbox" aria-label="历史对话">
                 {sessions.map((item) => (

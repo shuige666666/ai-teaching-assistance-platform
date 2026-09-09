@@ -1,7 +1,7 @@
 # 07. 当前开发状态
 
 > 本文记录已经进入正式调用链并通过验证的能力。目标设计仍以 01～06 文档为准；本文不把后续计划描述成已实现功能。
-> 最后更新：2026-09-08。当前已完成 M1～M11 与 M12.0～M12.3 工程主链；M12.2/M12.3 已有隔离副本真实案例与浏览器证据，教学内容和互动语义仍需人工判断。
+> 最后更新：2026-09-09。当前已完成 M1～M11 与 M12.0～M12.3 工程主链；M12.2/M12.3 已有隔离副本真实案例与浏览器证据，侧栏可用性修复已同步，教学内容和互动语义仍需人工判断。
 
 ## 1. 当前结论
 
@@ -44,6 +44,8 @@ MySQL 现在是课程事实的唯一运行时来源。`InMemoryCourseRepository`
 
 侧栏关闭现在只隐藏 Drawer，不会取消进行中的 Agent Run；课堂组件保持 Drawer 实例存活，显式“停止”仍是唯一的用户取消入口。重新打开后可继续查看当前流式块，完成后按同一 Session 恢复持久历史，课程刷新仍按稳定的受影响 sceneId 协调。
 
+2026-09-09 根据人工验收反馈补充侧栏可用性修复：Drawer、会话头部和消息区限制横向溢出，窄窗口不再裁切左侧内容；删除、测验修改和测验重生成等等待确认操作在工具组中直接显示操作说明、影响范围和确认/取消按钮，原始入参与结果仍可展开查看；新会话从首条用户消息生成短标题，旧的默认课程标题按首条用户消息补齐，并提供不修改课程内容的手动重命名入口。
+
 M12.0 的 `list_scenes/read_stage/grep_stage` 均从 CourseRepository 读取；source 采用 12,000 字符游标分页，interactive 返回剥离平台注入后的作者 HTML，搜索采用 NFKC 不区分大小写字面量并限制 30 个命中。M12.1 的 `patch_stage` 支持 set/remove/str_replace/add_element/delete_element，路径限当前单页 `/content` 与 `/actions`；所有 operation 先作用于副本，再经身份保护、富文本净化/interactive HTML policy、SceneSchema 与 CourseSchema 一次保存。图表值数量与标签、表格行列只补充基本结构一致性。
 
 quiz 题目实际变化会冻结完整候选页并产生 confirmationId；用户确认前 Course 不变，确认后 Scene ID 保持，题目/选项 ID 重建，题目与 actions 同批保存并在现有 Repository 事务中清理旧作答。只改 quiz actions 不确认、不清作答。
@@ -55,6 +57,12 @@ M12.2 新增 `CourseDeckService` 与两个 Agent 工具：`edit_deck` 支持目�
 #### M12.3 真实 DeepSeek 与浏览器验收证据（2026-09-08）
 
 本轮使用 `eval/scripts/m12-3-deepseek-acceptance.mjs`，所有写入均针对新 UUID 的 MySQL 隔离副本。8 页副本完成 `list_scenes`/`grep_stage` 只读、`edit_deck` 调序、明确 `patch_stage`、slide/interactive 整页替换和 quiz 长确认；6 页副本完成 `generate_scene` 新增第 7 页；删除案例只确认后取消。模型曾先提交缺字段的新增 outline，工具返回 `INVALID_ARGUMENT` 后按 Schema 补齐并成功；8 页副本新增请求正确返回“课程最多 8 个页面”且 revision 不变。一次自然语言补丁存在“第一处正文”歧义，模型读取后请求澄清，没有误写。真实运行记录包含工具生命周期、实际 arguments/result、前后 revision、run metrics 与 session history；最终页面分别归档为 8 份和 7 份 `1280×720` MHTML。浏览器截图位于 `output/playwright/m12-3-sidebar-idle.png`、`m12-3-sidebar-scrolled-top.png`、`m12-3-sidebar-thinking-expanded.png`；DOM 检查确认消息区 `overflow-y=auto` 且 `scrollHeight > clientHeight`。这些是结构和交互证据，不等于教学内容、事实正确性或 interactive 逻辑已由机器证明。
+
+#### M12.3 侧栏可用性修复与会话标题（2026-09-09）
+
+针对人工试用反馈完成轻量 UI 与会话元数据修复：侧栏宽度使用视口上限并隐藏内部横向溢出，会话选择器、重命名控件和消息内容不再把抽屉向右撑出；等待确认不再要求用户先打开二级工具详情，工具组内直接呈现“这个操作会做什么、会影响什么”以及确认/取消动作。工具原始 arguments/result 仍保留在可展开详情中，便于需要时审阅。
+
+会话创建默认使用“新对话”，首轮用户消息写入后自动生成可辨认的短标题；历史中仍是旧默认课程标题的会话在列表或详情读取时按首条用户消息补齐。侧栏标题旁提供手动重命名，调用独立 PATCH 只更新会话元数据，不改课程 revision、页面内容或 Agent 历史。该修复不新增教学质量门禁，也不改变 M12 工具协议与确认语义。
 
 #### M11 资源包导出（2026-09-07，已实现并完成验收）
 

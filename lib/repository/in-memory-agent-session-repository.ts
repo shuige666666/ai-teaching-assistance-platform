@@ -15,6 +15,16 @@ export class InMemoryAgentSessionRepository implements AgentSessionRepository {
     this.sessions.set(session.id, session);
     return structuredClone(session);
   }
+  /** 修改会话显示名称，不改变消息、运行或课程内容。 */
+  async renameSession(courseId: string, sessionId: string, title: string) {
+    const current = this.sessions.get(sessionId);
+    if (!current || current.courseId !== courseId) throw new AgentApplicationError("NOT_FOUND", "对话会话不存在", 404);
+    const nextTitle = title.trim();
+    if (!nextTitle) throw new AgentApplicationError("INVALID_ARGUMENT", "对话名称不能为空");
+    const next = { ...current, title: nextTitle, updatedAt: this.now() };
+    this.sessions.set(sessionId, next);
+    return structuredClone(next);
+  }
   async listSessions(courseId: string): Promise<AgentSession[]> {
     return [...this.sessions.values()].filter((item) => item.courseId === courseId).sort((a, b) => b.updatedAt - a.updatedAt).map((item) => structuredClone(item));
   }

@@ -2,6 +2,7 @@ import type { AgentConfirmation, AgentContentBlock, AgentMessage, AgentRun, Agen
 
 export interface AgentSessionRepository {
   createSession(courseId: string, title: string): Promise<AgentSession>;
+  renameSession(courseId: string, sessionId: string, title: string): Promise<AgentSession>;
   listSessions(courseId: string): Promise<AgentSession[]>;
   getSession(courseId: string, sessionId: string): Promise<AgentSession | null>;
   getLatestRun(sessionId: string): Promise<AgentRun | null>;

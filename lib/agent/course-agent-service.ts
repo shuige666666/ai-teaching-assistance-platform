@@ -6,6 +6,7 @@ import type { AgentSessionRepository } from "@/lib/repository/agent-session-repo
 import type { AgentAdapter, AgentContentBlock, AgentRun, AgentRunMetrics, AgentSseEvent, AgentToolBlock } from "./contracts";
 import { AgentApplicationError } from "./contracts";
 import { buildAgentModelContext } from "./context-builder";
+import { firstUserMessageText, isDefaultAgentSessionTitle, summarizeAgentSessionTitle } from "./session-title";
 import { buildCourseAgentSystemPrompt } from "./system-prompt";
 import { CourseAgentToolRegistry, type AgentConfirmationPayload, type PreparedQuizRegeneration } from "./tool-registry";
 import { CourseDeckService } from "@/lib/application/course-deck-service";
@@ -57,7 +58,16 @@ export class CourseAgentService {
     const metrics: AgentRunMetrics = { modelCalls: 0, toolCalls: 0, toolCompleted: 0, toolFailed: 0, toolWaitingConfirmation: 0, toolCancelled: 0 };
     const finishWithMetrics = (status: Parameters<AgentSessionRepository["finishRun"]>[1], finalRevision?: number, error?: string) => this.sessions.finishRun(run.id, status, finalRevision, error, { ...metrics, totalDurationMs: Math.max(0, this.now() - startedAt) });
     emit({ type: "run_started", runId: run.id, sessionId });
+    const previousMessages = await this.sessions.listMessages(sessionId);
     await this.sessions.appendMessage(sessionId, { sessionId, runId: run.id, role: "user", content: input });
+    // 首条消息到达后自动生成短标题；已有手动标题和后续消息不再被覆盖。
+    if (!firstUserMessageText(previousMessages) && isDefaultAgentSessionTitle(session.title, course.title)) {
+      try {
+        await this.sessions.renameSession(courseId, sessionId, summarizeAgentSessionTitle(input.text));
+      } catch {
+        // 标题只是会话导航信息，命名失败不能影响本轮课程修订。
+      }
+    }
     const history = buildAgentModelContext(await this.sessions.listMessages(sessionId)).messages;
     const blocks: AgentContentBlock[] = [];
     const controller = new AbortController();

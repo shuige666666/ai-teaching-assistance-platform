@@ -7,6 +7,7 @@ export const AgentMessageInputSchema = z.object({
 }).strict();
 
 export const AgentSessionCreateInputSchema = z.object({ currentSceneId: z.string().min(1).optional() }).strict();
+export const AgentSessionRenameInputSchema = z.object({ title: z.string().trim().min(1).max(80) }).strict();
 export const AgentConfirmationInputSchema = z.object({ confirmationId: z.string().uuid(), decision: z.enum(["confirm", "cancel"]) }).strict();
 
 export type AgentToolCall = { id: string; name: string; arguments: string };
