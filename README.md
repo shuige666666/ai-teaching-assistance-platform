@@ -79,7 +79,7 @@ components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
   slides/                        # [M8 已实现，v2.2 扩展] 只读 SlideCanvas 与 text/shape/line/code/chart/table Renderer
   interactive/                   # [M9 已实现] sandbox iframe 宿主与消息桥
-  agent/                         # [M12.0～12.4 已实现] 智能修订侧栏、会话管理、思考/工具卡片与课程刷新协调
+  agent/                         # [M12.0～12.4 已实现] 可调宽智能修订侧栏、Markdown 回答、会话管理与思考/工具卡片
   editor/                        # [MX 按需候选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
   domain/                        # [M10 已实现] Course v5、单选/多选 Quiz、CourseBrief、Slide/PPTElement 与 fixture

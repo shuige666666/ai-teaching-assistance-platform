@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CourseAgentDrawer } from "@/components/agent/course-agent-drawer";
 import { QuizEditDialog } from "@/components/course/quiz-edit-dialog";
 import { ExportButton } from "@/components/export/export-button";
@@ -13,6 +13,8 @@ import { usePlaybackController } from "@/lib/playback/use-playback-controller";
 import type { AgentCourseUpdate } from "@/lib/agent/contracts";
 
 const SPEECH_PREFERENCE_KEY = "ai-teaching-browser-speech";
+const AGENT_DRAWER_WIDTH_KEY = "ai-teaching-agent-drawer-width";
+const DEFAULT_AGENT_DRAWER_WIDTH = 470;
 
 const statusLabels = {
   idle: "准备就绪",
@@ -26,6 +28,8 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   const [course, setCourse] = useState(initialCourse);
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentDraft, setAgentDraft] = useState("");
+  const [agentDrawerWidth, setAgentDrawerWidth] = useState(DEFAULT_AGENT_DRAWER_WIDTH);
+  const agentDrawerWidthLoaded = useRef(false);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerationOpen, setRegenerationOpen] = useState(false);
   const [regenerationInstruction, setRegenerationInstruction] = useState("");
@@ -47,6 +51,19 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
 
   // 离开课堂时取消请求，避免迟到响应写入已离开的页面。
   useEffect(() => () => regenerationRequest.current?.abort(), []);
+
+  // 侧栏宽度只属于当前浏览器的工作区偏好，不写入课程或会话数据。
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(AGENT_DRAWER_WIDTH_KEY));
+    const restore = window.setTimeout(() => {
+      if (Number.isFinite(stored) && stored >= 360 && stored <= 680) setAgentDrawerWidth(stored);
+      agentDrawerWidthLoaded.current = true;
+    }, 0);
+    return () => window.clearTimeout(restore);
+  }, []);
+  useEffect(() => {
+    if (agentDrawerWidthLoaded.current) window.localStorage.setItem(AGENT_DRAWER_WIDTH_KEY, String(agentDrawerWidth));
+  }, [agentDrawerWidth]);
 
   /** 两个外部入口共用等待与刷新反馈，但只向对应接口提交其所需字段。 */
   async function replaceScene(mode: "revise" | "regenerate", options: { instruction?: string; runtimeError?: string; confirmQuizAttemptDeletion?: boolean }) {
@@ -206,7 +223,10 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   }
 
   return (
-    <main className={`classroom-shell${agentOpen ? " classroom-shell--agent-open" : ""}`}>
+    <main
+      className={`classroom-shell${agentOpen ? " classroom-shell--agent-open" : ""}`}
+      style={{ "--agent-drawer-width": `${agentDrawerWidth}px` } as CSSProperties}
+    >
       <header className="classroom-header">
         <Link className="brand brand--inverse" href="/"><span className="brand-mark">课</span><span><strong>课序</strong><small>CLASSROOM</small></span></Link>
         <div className="classroom-course"><span>{course.title}</span><small>REV.{course.revision} · {(course.scenes[0]?.generation.provider ?? "unknown").toUpperCase()}{isPartialPreview ? " · PARTIAL PREVIEW" : ""}</small></div>
@@ -312,6 +332,8 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
         currentSceneId={scene.id}
         scenes={course.scenes.map(({ id, order, title, type }) => ({ id, order, title, type }))}
         onSceneSelect={moveToSceneId}
+        drawerWidth={agentDrawerWidth}
+        onDrawerWidthChange={setAgentDrawerWidth}
         initialDraft={agentDraft}
         onDraftChange={setAgentDraft}
         onClose={() => setAgentOpen(false)}

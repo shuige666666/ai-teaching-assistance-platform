@@ -79,10 +79,29 @@ test("mock 课程从创建、导出、互动、测验到刷新恢复", async ({ 
 
     // M12：同一侧栏完成可见思考、只读工具、两级折叠和刷新恢复。
     await page.getByRole("switch", { name: "智能修订", exact: true }).click();
-    await expect(page.getByRole("complementary", { name: "课程修订对话" })).toBeVisible();
+    const agentDrawer = page.getByRole("complementary", { name: "课程修订对话" });
+    await expect(agentDrawer).toBeVisible();
+    // 宽屏拖动侧栏后课堂与侧栏使用同一宽度变量，关闭重开仍保留本机偏好。
+    const drawerBefore = await agentDrawer.boundingBox();
+    const resizeHandle = page.locator(".agent-drawer-resize");
+    const handleBox = await resizeHandle.boundingBox();
+    expect(drawerBefore).not.toBeNull();
+    expect(handleBox).not.toBeNull();
+    await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + 120);
+    await page.mouse.down();
+    await page.mouse.move(handleBox!.x - 70, handleBox!.y + 120);
+    await page.mouse.up();
+    const drawerAfter = await agentDrawer.boundingBox();
+    expect(drawerAfter!.width).toBeGreaterThan(drawerBefore!.width + 50);
+    await page.getByRole("button", { name: "关闭", exact: true }).click();
+    await page.getByRole("switch", { name: "智能修订", exact: true }).click();
+    await expect.poll(async () => (await agentDrawer.boundingBox())?.width).toBeCloseTo(drawerAfter!.width, 0);
     await page.getByRole("textbox", { name: "继续讨论，或描述要修改的页面内容…" }).fill("请检查当前课堂有几页，不要修改课程。");
     await page.getByRole("button", { name: /发送/ }).click();
-    await expect(page.getByText("已完成课堂读取；页面数量与标题以工具返回的当前结果为准。")).toBeVisible();
+    const answer = page.locator(".agent-answer").last();
+    await expect(answer.getByText("已完成课堂读取", { exact: true })).toBeVisible();
+    await expect(answer.locator("strong")).toHaveText("已完成课堂读取");
+    await expect(answer.locator("table")).toContainText("页面清单");
     const thinkingCard = page.locator("details.agent-thinking");
     const toolGroup = page.locator("details.agent-tool-group");
     await expect(thinkingCard).not.toHaveAttribute("open", "");

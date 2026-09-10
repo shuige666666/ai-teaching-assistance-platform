@@ -41,6 +41,9 @@ M12 的课程工具命名、`read_stage` tree/text/source 投影和“读取目�
 Course/Scene Schema、MySQL Repository、SSE 和 quiz 作答事务重新编写；未复制其后台 Worker、
 Skills、多 Agent、媒体、TTS 或跨进程运行设施。
 
+M12.4 使用 npm 分发的 `react-markdown` 与 `remark-gfm`（均为 MIT License）渲染 Agent
+最终回答中的 Markdown 与 GFM 表格；未启用原始 HTML。许可证文本见各自包内文件。
+
 OpenMAIC is licensed under the MIT License:
 M9 的 `scene-interactive.v2` 裁剪自上述提交的
 `packages/@openmaic/generation/templates/` 下 `diagram-content`、`simulation-content`、

@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AgentContentBlock, AgentContextInfo, AgentCourseUpdate, AgentMessage, AgentRun, AgentSession, AgentSseEvent, AgentToolBlock } from "@/lib/agent/contracts";
 import type { Scene } from "@/lib/domain/schemas";
 
@@ -14,6 +16,8 @@ type Props = {
   currentSceneId: string;
   scenes: AgentSceneSummary[];
   onSceneSelect(sceneId: string): void;
+  drawerWidth: number;
+  onDrawerWidthChange(width: number): void;
   initialDraft?: string;
   onDraftChange(value: string): void;
   onClose(): void;
@@ -50,6 +54,10 @@ function jsonText(value: unknown) {
 
 function formatSessionTime(value: number) {
   return new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function MarkdownAnswer({ text }: { text: string }) {
+  return <div className="agent-answer"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>;
 }
 
 function confirmationCopy(block: AgentToolBlock) {
@@ -134,7 +142,7 @@ function AssistantBlocks({ blocks, onConfirm, clockMs, thinkingStarts }: { block
       continue;
     }
     if (block.type === "text") {
-      nodes.push(<div className="agent-answer" key={block.id}>{block.text}</div>);
+      nodes.push(<MarkdownAnswer key={block.id} text={block.text} />);
       index += 1;
       continue;
     }
@@ -174,10 +182,42 @@ export function CourseAgentDrawer(props: Props) {
   const [sessionTitleDraft, setSessionTitleDraft] = useState("");
   const [sessionRenamePending, setSessionRenamePending] = useState(false);
   const [sessionDeleteTarget, setSessionDeleteTarget] = useState<AgentSession | null>(null);
+  const drawerResize = useRef<{ pointerId: number; startX: number; startWidth: number; cursor: string; userSelect: string } | null>(null);
 
   const drawerOpen = props.open;
   const closeDrawer = props.onClose;
   const sessionLocked = running || session?.status === "running" || session?.status === "waiting_confirmation";
+
+  /** 宽屏拖动侧栏左边缘时同步调整课堂留白，并限制在可读的工作区范围内。 */
+  function beginDrawerResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (window.innerWidth < 1280) return;
+    drawerResize.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: props.drawerWidth,
+      cursor: document.body.style.cursor,
+      userSelect: document.body.style.userSelect,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }
+
+  function resizeDrawer(event: ReactPointerEvent<HTMLDivElement>) {
+    const active = drawerResize.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const maxWidth = Math.min(680, Math.max(360, window.innerWidth - 720));
+    props.onDrawerWidthChange(Math.round(Math.min(maxWidth, Math.max(360, active.startWidth + active.startX - event.clientX))));
+  }
+
+  function finishDrawerResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const active = drawerResize.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    document.body.style.cursor = active.cursor;
+    document.body.style.userSelect = active.userSelect;
+    drawerResize.current = null;
+  }
 
   /** 读取当前课程的会话列表，供首次恢复和会话切换器使用。 */
   const loadSessionList = useCallback(async () => {
@@ -575,6 +615,15 @@ export function CourseAgentDrawer(props: Props) {
     <div className="agent-drawer-layer">
       <button className="agent-drawer-scrim" type="button" aria-label="关闭课程对话" onClick={props.onClose} />
       <aside className="agent-drawer" aria-label="课程修订对话">
+        <div
+          className="agent-drawer-resize"
+          title="拖动调整侧栏宽度，双击恢复默认宽度"
+          onDoubleClick={() => props.onDrawerWidthChange(470)}
+          onPointerDown={beginDrawerResize}
+          onPointerMove={resizeDrawer}
+          onPointerUp={finishDrawerResize}
+          onPointerCancel={finishDrawerResize}
+        />
         <header className="agent-drawer__head">
           <div className="agent-drawer__head-content">
             <span>COURSE REVISION AGENT</span><h2>对话式修订</h2>

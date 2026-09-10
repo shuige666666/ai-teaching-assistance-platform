@@ -13,7 +13,7 @@ export class MockAgentAdapter implements AgentAdapter {
     const scripted = this.turns?.[Math.min(this.index++, this.turns.length - 1)];
     const lastMessage = input.messages.at(-1);
     const turn = scripted ?? (lastMessage?.role === "tool"
-      ? { text: "已完成课堂读取；页面数量与标题以工具返回的当前结果为准。" }
+      ? { text: "**已完成课堂读取**\n\n| 项目 | 结果 |\n| --- | --- |\n| 页面清单 | 以工具返回的当前数量与标题为准 |" }
       : { reasoning: "先读取当前课堂页面清单，再基于真实工具结果回答。", toolCalls: [{ name: "list_scenes", arguments: {} }] });
     if (turn.reasoning) yield { type: "reasoning_delta", text: turn.reasoning };
     if (turn.text) yield { type: "text_delta", text: turn.text };
