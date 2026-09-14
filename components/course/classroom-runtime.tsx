@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { CourseAgentDrawer } from "@/components/agent/course-agent-drawer";
 import { QuizEditDialog } from "@/components/course/quiz-edit-dialog";
 import { ExportButton } from "@/components/export/export-button";
@@ -15,6 +15,10 @@ import type { AgentCourseUpdate } from "@/lib/agent/contracts";
 const SPEECH_PREFERENCE_KEY = "ai-teaching-browser-speech";
 const AGENT_DRAWER_WIDTH_KEY = "ai-teaching-agent-drawer-width";
 const DEFAULT_AGENT_DRAWER_WIDTH = 470;
+const NARRATION_PANEL_WIDTH_KEY = "ai-teaching-narration-panel-width";
+const DEFAULT_NARRATION_PANEL_WIDTH = 290;
+const MIN_NARRATION_PANEL_WIDTH = 250;
+const MAX_NARRATION_PANEL_WIDTH = 800;
 
 const statusLabels = {
   idle: "准备就绪",
@@ -30,6 +34,9 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   const [agentDraft, setAgentDraft] = useState("");
   const [agentDrawerWidth, setAgentDrawerWidth] = useState(DEFAULT_AGENT_DRAWER_WIDTH);
   const agentDrawerWidthLoaded = useRef(false);
+  const [narrationPanelWidth, setNarrationPanelWidth] = useState(DEFAULT_NARRATION_PANEL_WIDTH);
+  const narrationPanelWidthLoaded = useRef(false);
+  const narrationResize = useRef<{ pointerId: number; startX: number; startWidth: number; cursor: string; userSelect: string } | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerationOpen, setRegenerationOpen] = useState(false);
   const [regenerationInstruction, setRegenerationInstruction] = useState("");
@@ -64,6 +71,61 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   useEffect(() => {
     if (agentDrawerWidthLoaded.current) window.localStorage.setItem(AGENT_DRAWER_WIDTH_KEY, String(agentDrawerWidth));
   }, [agentDrawerWidth]);
+
+  // 调度台宽度保存在当前浏览器，刷新或重新进入课堂后继续沿用。
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(NARRATION_PANEL_WIDTH_KEY));
+    const restore = window.setTimeout(() => {
+      if (Number.isFinite(stored) && stored >= MIN_NARRATION_PANEL_WIDTH && stored <= MAX_NARRATION_PANEL_WIDTH) setNarrationPanelWidth(stored);
+      narrationPanelWidthLoaded.current = true;
+    }, 0);
+    return () => window.clearTimeout(restore);
+  }, []);
+  useEffect(() => {
+    if (narrationPanelWidthLoaded.current) window.localStorage.setItem(NARRATION_PANEL_WIDTH_KEY, String(narrationPanelWidth));
+  }, [narrationPanelWidth]);
+
+  /** 调整右侧调度台宽度时，为中间课堂画面保留基本可读空间。 */
+  function clampNarrationPanelWidth(width: number) {
+    const agentInset = agentOpen && window.innerWidth >= 1280 ? Math.min(agentDrawerWidth, Math.max(0, window.innerWidth - 720)) : 0;
+    const availableMaximum = Math.max(MIN_NARRATION_PANEL_WIDTH, window.innerWidth - agentInset - 720);
+    return Math.round(Math.min(MAX_NARRATION_PANEL_WIDTH, availableMaximum, Math.max(MIN_NARRATION_PANEL_WIDTH, width)));
+  }
+
+  function beginNarrationResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (window.innerWidth <= 1080) return;
+    narrationResize.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: narrationPanelWidth,
+      cursor: document.body.style.cursor,
+      userSelect: document.body.style.userSelect,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }
+
+  function resizeNarrationPanel(event: ReactPointerEvent<HTMLButtonElement>) {
+    const active = narrationResize.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    setNarrationPanelWidth(clampNarrationPanelWidth(active.startWidth + active.startX - event.clientX));
+  }
+
+  function finishNarrationResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    const active = narrationResize.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    document.body.style.cursor = active.cursor;
+    document.body.style.userSelect = active.userSelect;
+    narrationResize.current = null;
+  }
+
+  function resizeNarrationWithKeyboard(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    setNarrationPanelWidth((current) => clampNarrationPanelWidth(current + (event.key === "ArrowLeft" ? 16 : -16)));
+  }
 
   /** 两个外部入口共用等待与刷新反馈，但只向对应接口提交其所需字段。 */
   async function replaceScene(mode: "revise" | "regenerate", options: { instruction?: string; runtimeError?: string; confirmQuizAttemptDeletion?: boolean }) {
@@ -225,7 +287,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   return (
     <main
       className={`classroom-shell${agentOpen ? " classroom-shell--agent-open" : ""}`}
-      style={{ "--agent-drawer-width": `${agentDrawerWidth}px` } as CSSProperties}
+      style={{ "--agent-drawer-width": `${agentDrawerWidth}px`, "--narration-panel-width": `${narrationPanelWidth}px` } as CSSProperties}
     >
       <header className="classroom-header">
         <Link className="brand brand--inverse" href="/"><span className="brand-mark">课</span><span><strong>课序</strong><small>CLASSROOM</small></span></Link>
@@ -287,6 +349,18 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
         </section>
 
         <aside className="narration-panel">
+          <button
+            className="narration-panel-resize"
+            type="button"
+            aria-label="调整课堂调度台宽度"
+            title="拖动调整调度台宽度，双击恢复默认宽度"
+            onDoubleClick={() => setNarrationPanelWidth(DEFAULT_NARRATION_PANEL_WIDTH)}
+            onKeyDown={resizeNarrationWithKeyboard}
+            onPointerDown={beginNarrationResize}
+            onPointerMove={resizeNarrationPanel}
+            onPointerUp={finishNarrationResize}
+            onPointerCancel={finishNarrationResize}
+          />
           <div className="runtime-heading"><div><p className="eyebrow">ACTION RUNTIME</p><h2>课堂调度台</h2></div><span className={`runtime-lamp runtime-lamp--${playback.state.status}`} aria-hidden="true" /></div>
           <div className="runtime-status" aria-live="polite"><span>{statusLabels[playback.state.status]}</span><small>ACTION {Math.min(playback.state.actionIndex + 1, playback.state.actionCount)} / {playback.state.actionCount}</small></div>
           {primaryControl()}
