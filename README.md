@@ -92,7 +92,7 @@ lib/
   quality/                       # [M7 历史/可选] 固定主题与离线汇总工具
   slides/                        # [M8 已实现，v2.2 扩展] Slide/PPTElement、规范化、富文本净化、主题预设与形状解析
   interactive/                   # [M9 已实现] HTML 校验、CSP patch、运行协议与布局 Prompt 骨架
-  export/                        # [M11 已实现] Slide/PPTElement → PPTX 与简单 ZIP 打包
+  export/                        # [M11 + 保真增强] Slide/PPTElement → 可编辑 PPTX 与简单 ZIP 打包
 migrations/                      # [M2 已实现] 版本化 SQL 迁移
 scripts/migrate.mjs              # [M2 已实现] 幂等迁移执行器
 e2e/                             # [M6 已实现] production mock 完整浏览器回归
@@ -101,6 +101,8 @@ eval/                            # [M7.0] 评测总说明、冻结配置、工�
 ```
 
 标记为 M1～M11 的当前能力已经进入正式调用链；M12.0～M12.3 已完成持久对话、流式思考/工具过程、六个课程工具、会话切换、完整轮次上下文裁剪、运行状态恢复和轻量 run 指标，并补齐过期插页租约恢复、逐工具轨迹检查点与确认原子领取。M12.4 已补齐课堂/对话双栏、场景导航、会话逐项重命名与删除，桌面浏览器回归确认真实课堂画面和侧栏可以同时操作。M10 旧的一次性修订服务仍保留为代码回退，但课堂入口已收口到 Agent 侧栏。真实 DeepSeek 调序、新增、补丁、重生成、确认/取消与浏览器侧栏证据已在隔离副本归档；这不替代人工页面可用性判断。MHTML 只作为固定 `1280×720` 视口的静态留档，实时课堂页面负责响应式缩放。fixture 只保留给领域和仓储测试，不属于运行时生成路由。关键决策、组件图、时序图和恢复规则见 [系统架构设计](docs/03-architecture.md)。
+
+2026-09-14 已完成独立的 [PPT 可编辑保真优化](docs/stage-plans/pptx-editable-fidelity-optimization-plan.md)：统一逻辑画布到 PPTX 的字号、线宽、文本内边距和段距换算，普通 SVG path 与曲线改为可编辑自由形状，并收口原生表格/图表的核心样式。完整单测、生产构建、两门真实课程结构检查和 Microsoft PowerPoint PNG 渲染冒烟已通过；用户进一步检查输出样例并自行下载、打开多门课程，确认新版整体观感较旧版明显更和谐，本项工作已完成人工验收。该结论不代表网页与 PPT 逐像素一致。
 
 专业幻灯片编辑器后移为 MX：它主要解决拖拽、缩放和精确排版，不能直接提高课程事实正确性或教学质量，而且当前已经可以导出 PPTX 后在 PowerPoint/WPS 中精修。只有当真实使用持续出现“自然语言修订无法解决的精确坐标调整”，或产品目标明确转为平台内专业课件制作时，才重新立项；届时仍复用 `Slide/PPTElement`、净化、完整 Schema 与 `expectedRevision` 保存边界，不建立第二套页面格式。
 
@@ -185,7 +187,7 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 9. **M8（已完成）**：裁剪 OpenMAIC 的 `slide-content Prompt → 带坐标 PPTElement → normalize → Slide → SlideCanvas` 纵向链，升级 Course v3，并用 3 个真实主题和 4 份 MHTML 完成桌面校准；
 10. **M9（已完成）**：裁剪 OpenMAIC 四类互动 Prompt，实现多样化生成、外部依赖加载、隔离运行和 fallback；
 11. **M10（当前范围已完成）**：`/revise` 根据必填意见和当前旧场景修订 ready slide/interactive/quiz；`/regenerate` 对运行失败 interactive 做不携带旧 HTML 的干净重生成；失败保留原内容，quiz 修订时事务化清理旧作答；新版 slide 已由开发者依据已确认需求完成单人验收，v0.3 仅作历史留档，不再进行 v0.3/v0.4 成对质量验收；
-12. **M11（已完成，2026-09-07）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；已补充字体/透明度、长代码文本、下载释放时序、状态播报和移动端提示适配；课堂 E2E、两门真实课程结构检查和 PowerPoint/WPS 人工核对均已通过（方案与证据见 [m11-slide-export-plan.md](docs/stage-plans/m11-slide-export-plan.md)）；
+12. **M11（已完成，2026-09-07）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；已补充字体/透明度、长代码文本、下载释放时序、状态播报和移动端提示适配。2026-09-14 的独立保真增强进一步统一文字尺度并支持 SVG path/曲线可编辑导出，结构、PowerPoint 渲染与用户多课程主观验收均已通过（见 [M11 方案](docs/stage-plans/m11-slide-export-plan.md)与[保真优化方案](docs/stage-plans/pptx-editable-fidelity-optimization-plan.md)）；
 13. **M12（M12.0～M12.4 工程主链已实现）**：已完成持久对话、流式可见思考、默认收起的两级工具卡、`read_stage/list_scenes/grep_stage/patch_stage/edit_deck/generate_scene`、revision 冲突保护、页面调序/新增/删除/整页重生成、会话切换、完整轮次上下文裁剪和刷新状态恢复；M12.4 进一步完成课堂/对话双栏、消息场景锚点、会话逐项重命名与删除按钮原位二次点击确认。隔离副本真实案例、MHTML 和浏览器侧栏证据已归档；人工内容/互动质量判断仍不冒充为工程通过；
 14. **MX（暂时搁置）**：专业幻灯片编辑器与毕业设计 AI Search 研究选题均按真实需求另行立项，不作为 M12 前置。
 

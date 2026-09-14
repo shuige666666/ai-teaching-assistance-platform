@@ -5,8 +5,10 @@ import type { Course } from "@/lib/domain/schemas";
 import type { PPTShapeElement } from "@/lib/domain/slide-schemas";
 import { buildCoursePackage } from "@/lib/export/build-course-package";
 import { safeFilename, sceneHtmlFileName } from "@/lib/export/filename";
-import { resolveBackground, resolveChart, resolveLineGeometry, resolveShape, resolveTable, resolveTextRuns } from "@/lib/export/pptx-mapping";
+import { resolveBackground, resolveChart, resolveCurvedLineGeometry, resolveLineGeometry, resolveShape, resolveTable, resolveTextRuns } from "@/lib/export/pptx-mapping";
 import { parseRichTextRuns } from "@/lib/export/rich-text-runs";
+import { svgPathToPptxPoints } from "@/lib/export/svg-path-points";
+import { resolveTextLayout } from "@/lib/slides/resolve-text-layout";
 
 function shapeElement(overrides: Record<string, unknown>): PPTShapeElement {
   return {
@@ -30,7 +32,7 @@ describe("rich text runs", () => {
   it("解析段落、字号、颜色与加粗", () => {
     const runs = parseRichTextRuns('<p style="font-size:32px;font-weight:bold;color:#143F59">标题</p>');
     expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({ text: "标题", bold: true, color: "143F59", fontSize: 24, paragraphEnd: true });
+    expect(runs[0]).toMatchObject({ text: "标题", bold: true, color: "143F59", fontSize: 30.7, paragraphEnd: true });
   });
 
   it("strong/span 产生多 run 且样式只作用于作用域", () => {
@@ -53,6 +55,12 @@ describe("rich text runs", () => {
     expect(runs[1].text).toBe("C");
     expect(runs[1].paragraphEnd).toBe(true);
   });
+
+  it("保留白名单内的段内字体", () => {
+    const runs = parseRichTextRuns('<p><span style="font-family:Microsoft YaHei">中文</span>正文</p>');
+    expect(runs[0].fontFace).toBe("Microsoft YaHei");
+    expect(runs[1].fontFace).toBeUndefined();
+  });
 });
 
 describe("pptx element mapping", () => {
@@ -62,10 +70,10 @@ describe("pptx element mapping", () => {
       type: "gradient",
       gradient: { type: "linear", rotate: 90, colors: [{ pos: 0, color: "#FFFFFF" }, { pos: 100, color: "#E4FAF7" }] },
     });
-    expect(gradient).toEqual({ color: "FFFFFF", degraded: true });
+    expect(gradient).toEqual({ color: "F2FDFB", degraded: true });
   });
 
-  it("形状：pathFormula 优先，历史 path 反推预设，未知 path 跳过", () => {
+  it("形状：pathFormula 优先，历史 path 反推预设，未知 path 转自由形状", () => {
     expect(resolveShape(shapeElement({ pathFormula: "roundRect" }))).toEqual({ kind: "preset", preset: "roundRect" });
     expect(resolveShape(shapeElement({
       path: "M 14 0 L 266 0 A 14 14 0 0 1 280 14 L 280 226 A 14 14 0 0 1 266 240 L 14 240 A 14 14 0 0 1 0 226 L 0 14 A 14 14 0 0 1 14 0 Z",
@@ -73,7 +81,20 @@ describe("pptx element mapping", () => {
     expect(resolveShape(shapeElement({ path: "M 0 0 L 1 0 L 1 1 L 0 1 Z", viewBox: [1, 1] }))).toEqual({ kind: "preset", preset: "rect" });
     expect(resolveShape(shapeElement({ path: "M 1 0.5 A 0.5 0.5 0 1 1 0 0.5 A 0.5 0.5 0 1 1 1 0.5 Z", viewBox: [1, 1] }))).toEqual({ kind: "preset", preset: "ellipse" });
     expect(resolveShape(shapeElement({ path: "M 140 0 L 280 120 L 0 120 Z", viewBox: [280, 120] }))).toEqual({ kind: "preset", preset: "triangle" });
-    expect(resolveShape(shapeElement({ path: "M 3 1 C 3 2, 2 3, 0 2 Z", viewBox: [3, 3] }))).toEqual({ kind: "skip", reason: "手写 SVG path 暂不支持导出" });
+    const custom = resolveShape(shapeElement({ path: "M 3 1 C 3 2, 2 3, 0 2 Z", viewBox: [3, 3] }));
+    expect(custom.kind).toBe("custom");
+    if (custom.kind === "custom") expect(custom.points.some((point) => "curve" in point)).toBe(true);
+  });
+
+  it("SVG path：相对命令与圆弧转换为可编辑贝塞尔控制点", () => {
+    const result = svgPathToPptxPoints("m 10 50 a 40 40 0 1 1 80 0 z", {
+      width: 200, height: 100, viewBox: [100, 100], fixedRatio: true,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.points.some((point) => "curve" in point && point.curve.type === "cubic")).toBe(true);
+      expect(result.points.at(-1)).toEqual({ close: true });
+    }
   });
 
   it("线段：水平/垂直/斜线方向与包围盒", () => {
@@ -83,6 +104,15 @@ describe("pptx element mapping", () => {
     expect(vertical).toMatchObject({ kind: "vertical", h: 60 / 75, w: 0 });
     const diagonal = resolveLineGeometry({ type: "line", id: "l3", left: 100, top: 100, width: 3, start: [100, 0], end: [0, 60], style: "solid", color: "#000", points: ["", "arrow"] });
     expect(diagonal).toMatchObject({ kind: "diagonal", flipH: true, flipV: false });
+  });
+
+  it("曲线：保留二次贝塞尔控制点", () => {
+    const curved = resolveCurvedLineGeometry({
+      type: "line", id: "l4", left: 100, top: 80, width: 3,
+      start: [0, 20], end: [120, 20], curve: [60, 80], style: "solid", color: "#000", points: ["", "arrow"],
+    });
+    expect(curved).not.toBeNull();
+    expect(curved?.points[1]).toMatchObject({ curve: { type: "quadratic", x1: 0.8, y1: 0.8 } });
   });
 
   it("图表映射：柱状方向、饼图裁剪为单系列、主题色转十六进制", () => {
@@ -110,17 +140,19 @@ describe("pptx element mapping", () => {
     expect(spec.rows[1].every((cell) => !cell.header)).toBe(true);
   });
 
-  it("文本：字号回退为 18px 的 point 值", () => {
+  it("文本：网页与 PPTX 共用布局默认值和逻辑画布换算", () => {
     const element = {
       type: "text", id: "x", left: 0, top: 0, width: 700, height: 68, rotate: 0, content: "<p>正文</p>",
       defaultFontName: "Microsoft YaHei", defaultColor: "#333333", textType: "content",
     } as unknown as Parameters<typeof resolveTextRuns>[0];
-    expect(resolveTextRuns(element).defaultFontSize).toBe(13.5);
+    const resolved = resolveTextRuns(element);
+    expect(resolveTextLayout(element)).toMatchObject({ fontSizePx: 18, lineHeight: 1.2, paddingPx: [10, 10, 10, 10], paragraphSpacingPx: 7 });
+    expect(resolved.defaultFontSize).toBe(17.3);
   });
 });
 
 describe("build course package", () => {
-  it("线条降级统计只记录曲线，不把斜线误报为降级", async () => {
+  it("曲线导出为 custGeom，不再按直线降级", async () => {
     const course: Course = materializeFixtureCourse(createFixtureCourse("线条导出", 3));
     const slide = course.scenes.find((scene) => scene.type === "slide");
     if (!slide || slide.type !== "slide") throw new Error("fixture 缺少 slide 场景");
@@ -128,11 +160,21 @@ describe("build course package", () => {
     if (!line || line.type !== "line") throw new Error("fixture 缺少 line 元素");
     line.end = [64, 48];
     line.curve = [32, 72];
+    slide.content.canvas.elements.push(shapeElement({
+      id: "custom-shape", left: 720, top: 400, width: 120, height: 80,
+      path: "M 3 1 C 3 2, 2 3, 0 2 Z", viewBox: [3, 3], fill: "#EAF6F8",
+    }));
 
     const pkg = await buildCoursePackage(course, "nodebuffer");
 
-    expect(pkg.degraded).toContainEqual({ kind: "曲线按直线近似", count: 1 });
+    expect(pkg.degraded.some(({ kind }) => kind === "曲线按直线近似")).toBe(false);
     expect(pkg.degraded.some(({ kind }) => kind === "斜线按直线近似")).toBe(false);
+    const zip = await JSZip.loadAsync(pkg.zip);
+    const pptx = await JSZip.loadAsync(await zip.file("线条导出：从概念到实践.pptx")!.async("nodebuffer"));
+    const slideXml = await pptx.file("ppt/slides/slide1.xml")!.async("string");
+    expect(slideXml).toContain("<a:custGeom>");
+    expect(slideXml).toContain("<a:quadBezTo>");
+    expect(slideXml).toContain("<a:cubicBezTo>");
   });
 
   it("fixture 课程打包为 ZIP：一个 PPTX、quiz 不进导出物", async () => {
@@ -168,6 +210,7 @@ describe("build course package", () => {
     }
     text.defaultFontName = "Aptos";
     text.opacity = 0.5;
+    text.content = '<p style="font-size:20px;font-family:Microsoft YaHei">第一段</p><p>第二段</p>';
     code.lines[0].content += " // " + "x".repeat(180);
 
     const pkg = await buildCoursePackage(course, "nodebuffer");
@@ -177,7 +220,11 @@ describe("build course package", () => {
     const slide2 = await pptx.file("ppt/slides/slide2.xml")!.async("string");
 
     expect(slide1).toContain('typeface="Aptos"');
+    expect(slide1).toContain('typeface="Microsoft YaHei"');
     expect(slide1).toContain('<a:alpha val="50000"/>');
+    expect(slide1).toContain('lIns="121920"');
+    expect(slide1).toContain('<a:spcAft><a:spcPts val="670"/></a:spcAft>');
+    expect(slide1).toContain('<a:spcPct val="120000"/>');
     expect(slide2).toContain("<a:normAutofit/>");
   });
 

@@ -1,8 +1,10 @@
 /**
  * 把净化后的幻灯片富文本（白名单标签 + 白名单内联样式）解析为 PPTX 文本 runs。
- * 输入边界由 sanitizeSlideText 保证：只有 p/span/strong/b/em/i/u/br 和六种样式属性，
+ * 输入边界由 sanitizeSlideText 保证：只有 p/span/strong/b/em/i/u/br 和有限的排版样式，
  * 因此这里使用约束态解析器而不引入 DOM 依赖，可在 Node 单测中直接运行。
  */
+
+import { PT_PER_PX } from "./pptx-units";
 
 export type RichTextRun = {
   text: string;
@@ -11,18 +13,22 @@ export type RichTextRun = {
   underline: boolean;
   /** 无 # 前缀的十六进制色；未显式指定时由映射层回填元素默认色。 */
   color?: string;
-  /** PPT point（CSS px × 0.75）。 */
+  /** PPT point（逻辑画布单位按 75 unit/in 换算）。 */
   fontSize?: number;
+  /** 段内显式字体；未指定时沿用文本元素默认字体。 */
+  fontFace?: string;
   /** 段落属性只挂在段落首 run 上。 */
   align?: "left" | "center" | "right";
   lineSpacingMultiple?: number;
+  /** PPT point；由共享文本布局在映射阶段补齐。 */
+  paraSpaceAfter?: number;
   /** 该 run 是否结束当前段落（对应 </p>）。 */
   paragraphEnd: boolean;
   /** 该 run 之前有 <br> 软换行。 */
   softBreakBefore: boolean;
 };
 
-type Format = { bold: boolean; italic: boolean; underline: boolean; color?: string; fontSize?: number };
+type Format = { bold: boolean; italic: boolean; underline: boolean; color?: string; fontSize?: number; fontFace?: string };
 
 const TAG_RE = /<(\/?)(p|span|strong|b|em|i|u|br)\b([^>]*)>/gi;
 const STYLE_RE = /([\w-]+)\s*:\s*([^;"]+)/g;
@@ -47,7 +53,10 @@ function parseStyle(style: string): Partial<Format> {
       if (/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([0-9a-fA-F]{2})?$/.test(color)) next.color = color.toUpperCase();
     } else if (property === "font-size") {
       const px = Number(value.replace(/px/i, ""));
-      if (Number.isFinite(px) && px > 0) next.fontSize = Math.round(px * 0.75 * 10) / 10;
+      if (Number.isFinite(px) && px > 0) next.fontSize = Math.round(px * PT_PER_PX * 10) / 10;
+    } else if (property === "font-family") {
+      const fontFace = value.replace(/^['"]|['"]$/g, "").trim();
+      if (fontFace) next.fontFace = fontFace;
     } else if (property === "font-weight") {
       if (value === "bold" || value === "600" || value === "700" || value === "800") next.bold = true;
     } else if (property === "font-style") {
@@ -106,7 +115,7 @@ export function parseRichTextRuns(content: string): RichTextRun[] {
       runs.push({
         text: decodeEntities(textSegment),
         bold: format.bold, italic: format.italic, underline: format.underline,
-        color: format.color, fontSize: format.fontSize,
+        color: format.color, fontSize: format.fontSize, fontFace: format.fontFace,
         ...(runs.length === 0 || runs[runs.length - 1].paragraphEnd ? { align: paragraphAlign, lineSpacingMultiple: paragraphLineSpacing } : {}),
         softBreakBefore,
         paragraphEnd: false,
@@ -166,7 +175,7 @@ export function parseRichTextRuns(content: string): RichTextRun[] {
   if (tail) {
     runs.push({
       text: decodeEntities(tail), bold: format.bold, italic: format.italic, underline: format.underline,
-      color: format.color, fontSize: format.fontSize,
+      color: format.color, fontSize: format.fontSize, fontFace: format.fontFace,
       ...(runs.length === 0 || runs[runs.length - 1]?.paragraphEnd ? { align: paragraphAlign, lineSpacingMultiple: paragraphLineSpacing } : {}),
       softBreakBefore, paragraphEnd: false,
     });

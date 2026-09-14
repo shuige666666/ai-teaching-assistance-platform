@@ -154,6 +154,7 @@ export function sanitizeSlideText(value: string): string {
     allowedStyles: {
       "*": {
         "font-size": [/^(?:1[6-9]|[2-5][0-9]|60)px$/],
+        "font-family": [/^[a-zA-Z0-9\u3400-\u9fff _.-]{1,80}$/],
         color: [/^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?(?:[0-9a-fA-F]{2})?$/],
         "text-align": [/^(?:left|center|right)$/],
         "line-height": [/^(?:0\.[89]|[12](?:\.\d)?|3)$/],

@@ -35,6 +35,11 @@ M11 资源包导出（scene-slide.v2.4 同期）使用 npm 分发的 `pptxgenjs`
 `jszip`（MIT License）打包 ZIP；PPTElement → PPTX 的映射思路参考上述提交的
 `lib/export/use-export-pptx.ts`，未复制其代码。两库通过 npm 安装，许可证文本见各自包内文件。
 
+2026-09-14 的 PPT 可编辑保真优化使用 npm 分发的 `svg-pathdata 6.0.3`（MIT License）解析、
+规范化 SVG path 并把圆弧转换为贝塞尔曲线，再由 `pptxgenjs` 输出可编辑 `custGeom`。
+实现思路参考 OpenMAIC `f50a25644c9c3893503cf0727ccf613c0ce1e748` 的路径导出链，
+未复制其解析器源码，也未引入或修改 OpenMAIC 内置的 PptxGenJS 分支。许可证文本见 npm 包内文件。
+
 M12 的课程工具命名、`read_stage` tree/text/source 投影和“读取目标页 → 最小原子补丁 →
 按需复读确认”提示词流程参考同一 OpenMAIC 代码库的
 `lib/server/agent-runtime/course-tools.ts`、`dsl-tools.ts` 与课程编辑工具。实现已按本项目

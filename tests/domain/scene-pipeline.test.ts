@@ -97,7 +97,7 @@ describe("scene generation boundary", () => {
     const output = validateSceneOutput({
       ...validSlide,
       content: { ...validSlide.content, elements: [
-        { ...validSlide.content.elements[0], content: "<p onclick=\"bad()\" style=\"font-size:32px;position:fixed\"><strong>安全标题</strong><script>bad()</script></p>" },
+        { ...validSlide.content.elements[0], content: "<p onclick=\"bad()\" style=\"font-size:32px;font-family:Microsoft YaHei;position:fixed\"><strong>安全标题</strong><script>bad()</script></p>" },
         { type: "code", left: 80, top: 170, width: 840, height: 260, language: "tsx", lines: ["export function App() { return <main><h1>Hello</h1></main>; }"] },
       ] },
     }, course.outlines[0]);
@@ -106,6 +106,7 @@ describe("scene generation boundary", () => {
     const text = output.content.elements.find((element) => element.type === "text");
     const code = output.content.elements.find((element) => element.type === "code");
     expect(text?.type === "text" && text.content).toContain("<strong>安全标题</strong>");
+    expect(text?.type === "text" && text.content).toContain("font-family:Microsoft YaHei");
     expect(text?.type === "text" && text.content).not.toContain("onclick");
     expect(text?.type === "text" && text.content).not.toContain("position");
     expect(code).toMatchObject({ type: "code", language: "tsx" });

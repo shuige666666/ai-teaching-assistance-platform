@@ -6,6 +6,8 @@ import {
   PT_PER_PX,
   resolveBackground,
   resolveChart,
+  resolveCurvedLineGeometry,
+  resolveGradientRepresentativeColor,
   resolveLineGeometry,
   resolveShape,
   resolveTable,
@@ -46,6 +48,8 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
   const zip = new JSZip();
 
   const pptx = new PptxGenJS();
+  // 4.0.1 运行时已提供 custGeom，但发布包的 ShapeType 声明遗漏了该枚举成员。
+  const customGeometryShape = "custGeom" as (typeof pptx.ShapeType)[keyof typeof pptx.ShapeType];
   pptx.defineLayout({ name: "SLIDE169", width: 1000 / 75, height: 562.5 / 75 });
   pptx.layout = "SLIDE169";
   const themeFontName = courseTitle(course);
@@ -64,24 +68,28 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
 
     for (const element of canvas.elements) {
       if (element.type === "line") {
-        const geometry = resolveLineGeometry(element);
-        // PPTX 原生直线支持任意角度；只有 SVG 二次曲线需要按直线近似。
-        if (element.curve) countDegraded(degradations, "曲线按直线近似");
-        slide.addShape(pptx.ShapeType.line, {
-          x: geometry.x, y: geometry.y, w: geometry.w, h: geometry.h,
-          flipH: geometry.flipH || undefined, flipV: geometry.flipV || undefined,
-          line: {
-            color: hex(element.color), width: element.width * PT_PER_PX,
-            dashType: element.style === "dashed" ? "dash" : element.style === "dotted" ? "sysDot" : "solid",
-            beginArrowType: element.points[0] === "arrow" ? "triangle" : element.points[0] === "dot" ? "oval" : undefined,
-            endArrowType: element.points[1] === "arrow" ? "triangle" : element.points[1] === "dot" ? "oval" : undefined,
-          },
-        });
+        const line = {
+          color: hex(element.color), width: element.width * PT_PER_PX,
+          dashType: element.style === "dashed" ? "dash" as const : element.style === "dotted" ? "sysDot" as const : "solid" as const,
+          beginArrowType: element.points[0] === "arrow" ? "triangle" as const : element.points[0] === "dot" ? "oval" as const : undefined,
+          endArrowType: element.points[1] === "arrow" ? "triangle" as const : element.points[1] === "dot" ? "oval" as const : undefined,
+        };
+        const curve = resolveCurvedLineGeometry(element);
+        if (curve) {
+          slide.addShape(customGeometryShape, { ...curve, points: curve.points, line });
+        } else {
+          const geometry = resolveLineGeometry(element);
+          slide.addShape(pptx.ShapeType.line, {
+            x: geometry.x, y: geometry.y, w: geometry.w, h: geometry.h,
+            flipH: geometry.flipH || undefined, flipV: geometry.flipV || undefined,
+            line,
+          });
+        }
         continue;
       }
       const box = { x: inches(element.left), y: inches(element.top), w: inches(element.width), h: inches(element.height) };
       if (element.type === "text") {
-        const { runs, defaultFontSize } = resolveTextRuns(element);
+        const { runs, defaultFontSize, layout } = resolveTextRuns(element);
         const transparency = pptxTransparency(element.opacity);
         slide.addText(
           runs.map((run) => ({
@@ -91,21 +99,22 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
               italic: run.italic || undefined,
               underline: run.underline ? { style: "sng" as const } : undefined,
               color: run.color ?? hex(element.defaultColor),
-              fontFace: element.defaultFontName,
+              fontFace: run.fontFace ?? layout.fontFamily,
               fontSize: run.fontSize ?? defaultFontSize,
               transparency,
               align: run.align,
-              lineSpacingMultiple: run.lineSpacingMultiple,
+              lineSpacingMultiple: run.lineSpacingMultiple ?? layout.lineHeight,
+              paraSpaceAfter: run.paraSpaceAfter,
               breakLine: run.paragraphEnd || undefined,
               softBreakBefore: run.softBreakBefore || undefined,
             },
           })),
           {
-            ...box, valign: element.vAlign ?? "top", rotate: element.rotate || undefined,
-            fontFace: element.defaultFontName, fontSize: defaultFontSize, color: hex(element.defaultColor),
+            ...box, valign: layout.verticalAlign, rotate: element.rotate || undefined,
+            fontFace: layout.fontFamily, fontSize: defaultFontSize, color: hex(layout.color),
             transparency,
             fill: element.fill ? { color: hex(element.fill), transparency } : undefined,
-            margin: 0, isTextBox: true,
+            margin: layout.paddingPx[0] * PT_PER_PX, isTextBox: true,
           },
         );
         continue;
@@ -118,13 +127,13 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
         }
         let fill = hex(element.fill);
         if (element.gradient) {
-          const stops = [...element.gradient.colors].sort((a, b) => a.pos - b.pos);
-          fill = hex(stops[0]?.color ?? element.fill);
+          fill = resolveGradientRepresentativeColor(element.gradient.colors);
           countDegraded(degradations, "形状渐变降级纯色");
         }
-        slide.addShape(pptx.ShapeType[spec.preset as keyof typeof pptx.ShapeType], {
+        slide.addShape(spec.kind === "preset" ? pptx.ShapeType[spec.preset as keyof typeof pptx.ShapeType] : customGeometryShape, {
           ...box, fill: { color: fill }, rotate: element.rotate || undefined,
-          rectRadius: spec.preset === "roundRect" ? inches(Math.min(14, element.width / 2, element.height / 2)) : undefined,
+          points: spec.kind === "custom" ? spec.points : undefined,
+          rectRadius: spec.kind === "preset" && spec.preset === "roundRect" ? inches(Math.min(14, element.width / 2, element.height / 2)) : undefined,
           line: element.outline && element.outline.width > 0
             ? { color: hex(element.outline.color), width: element.outline.width * PT_PER_PX, dashType: element.outline.style === "dashed" ? "dash" : element.outline.style === "dotted" ? "sysDot" : "solid" }
             : { type: "none" },
@@ -150,10 +159,12 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
         const spec = resolveChart(element);
         slide.addChart(spec.type, spec.data, {
           ...box, chartColors: spec.chartColors, barDir: spec.barDir,
-          showLegend: spec.showLegend, legendPos: spec.legendPos, legendFontSize: 10,
+          showLegend: spec.showLegend, legendPos: spec.legendPos, legendFontSize: 11 * PT_PER_PX,
           catAxisLabelColor: "64748B", valAxisLabelColor: "64748B",
-          catAxisLabelFontSize: 10, valAxisLabelFontSize: 10,
+          catAxisLabelFontSize: 11 * PT_PER_PX, valAxisLabelFontSize: 11 * PT_PER_PX,
           catAxisLabelFontFace: canvas.theme.fontName, valAxisLabelFontFace: canvas.theme.fontName,
+          catAxisLineColor: "CBD5E1", valAxisLineColor: "CBD5E1",
+          valGridLine: { color: "E2E8F0", size: 0.75 },
         });
         continue;
       }
@@ -163,13 +174,19 @@ export async function buildCoursePackage(course: Course, outputType: PackageOutp
           spec.rows.map((row) => row.map((cell) => ({
             text: cell.text,
             options: cell.header
-              ? { bold: true, fill: { color: "F1F5F9" } }
-              : {},
+              ? { bold: true, fill: { color: "EAF6F8" }, color: "143F59" }
+              : { fill: { color: "F7FBFC" } },
           }))),
           {
-            ...box, colW: spec.colWidths, fontFace: canvas.theme.fontName, fontSize: 12,
+            ...box, colW: spec.colWidths,
+            rowH: Array.from({ length: Math.max(1, spec.rows.length) }, () => inches(element.height / Math.max(1, spec.rows.length))),
+            fontFace: canvas.theme.fontName, fontSize: 14 * PT_PER_PX,
             color: hex(canvas.theme.fontColor), valign: "middle",
-            border: { pt: 0.5, color: "CBD5E1" }, margin: 0.06,
+            border: {
+              pt: element.outline && element.outline.width > 0 ? element.outline.width * PT_PER_PX : 0.75,
+              color: element.outline && element.outline.width > 0 ? hex(element.outline.color) : "B7D0D7",
+            },
+            margin: [7 * PT_PER_PX, 12 * PT_PER_PX, 7 * PT_PER_PX, 12 * PT_PER_PX],
           },
         );
       }

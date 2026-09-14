@@ -7,26 +7,32 @@ import type {
   PPTTextElement,
   SlideTheme,
 } from "@/lib/domain/slide-schemas";
+import type { CSSProperties } from "react";
+import { resolveTextLayout } from "@/lib/slides/resolve-text-layout";
 import { SlideChart } from "./slide-chart";
 import styles from "./slide-canvas.module.css";
 
 function TextElement({ element }: { element: PPTTextElement }) {
-  const alignmentClass = element.vAlign === "middle"
+  const layout = resolveTextLayout(element);
+  const alignmentClass = layout.verticalAlign === "middle"
     ? styles.textMiddle
-    : element.vAlign === "bottom"
+    : layout.verticalAlign === "bottom"
       ? styles.textBottom
       : styles.textTop;
+  const textStyle: CSSProperties & { "--slide-paragraph-spacing": string } = {
+    left: element.left, top: element.top, width: element.width, height: element.height,
+    transform: `rotate(${element.rotate}deg)`, color: layout.color,
+    backgroundColor: element.fill, opacity: element.opacity,
+    fontFamily: layout.fontFamily, fontSize: layout.fontSizePx, lineHeight: layout.lineHeight,
+    padding: layout.paddingPx.map((value) => `${value}px`).join(" "),
+    "--slide-paragraph-spacing": `${layout.paragraphSpacingPx}px`,
+  };
   return (
     <div
       className={`${styles.box} ${styles.text} ${alignmentClass}`}
       data-element-type="text"
       data-text-type={element.textType}
-      style={{
-        left: element.left, top: element.top, width: element.width, height: element.height,
-        transform: `rotate(${element.rotate}deg)`, color: element.defaultColor,
-        backgroundColor: element.fill, opacity: element.opacity,
-        fontFamily: element.defaultFontName, lineHeight: element.lineHeight,
-      }}
+      style={textStyle}
     >
       <div className={styles.richText} dangerouslySetInnerHTML={{ __html: element.content }} />
     </div>

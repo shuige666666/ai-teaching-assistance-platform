@@ -1,7 +1,7 @@
 # 07. 当前开发状态
 
 > 本文记录已经进入正式调用链并通过验证的能力。目标设计仍以 01～06 文档为准；本文不把后续计划描述成已实现功能。
-> 最后更新：2026-09-10。当前已完成 M1～M11 与 M12.0～M12.4 工程主链；M12.4 课程工作台与会话管理体验补强已完成实现和核心回归。M12 恢复、轨迹检查点与确认并发语义已加固，隔离副本真实案例与浏览器证据已归档，教学内容和互动语义仍需人工判断。
+> 最后更新：2026-09-14。当前已完成 M1～M11 与 M12.0～M12.4 工程主链；PPT 可编辑保真优化已完成工程、结构、PowerPoint 渲染和用户主观验收。M12 恢复、轨迹检查点与确认并发语义已加固，隔离副本真实案例与浏览器证据已归档，教学内容和互动语义仍需人工判断。
 
 ## 1. 当前结论
 
@@ -78,13 +78,21 @@ M12.2 新增 `CourseDeckService` 与两个 Agent 工具：`edit_deck` 支持目�
 
 2026-09-10 继续做轻量体验收口：宽屏侧栏左边缘可拖动，默认 470px、范围 360～680px，并在保证课堂约 720px 最小空间的前提下把宽度保存在浏览器本地；中等屏和窄屏仍沿用原覆盖布局。Agent 最终回答改为安全 Markdown/GFM 渲染，支持标题、列表、代码块和表格，思考过程及工具入参/结果仍显示原始文本且不开放原始 HTML。会话删除继续使用现有“删除 → 确认删除”原位二次点击，不增加额外说明；本轮不新增无障碍适配。`pnpm lint`、无增量 TypeScript 检查、M12.4 核心单测、production build 和包含侧栏拖动/Markdown 表格的 Chromium E2E 1/1 均通过。
 
-#### M11 资源包导出（2026-09-07，已实现并完成验收）
+#### M11 原始资源包导出基线（2026-09-07，已实现并完成验收）
 
-按 [M11 导出方案](stage-plans/m11-slide-export-plan.md)完成 M11 导出：课堂页头部新增“导出资源包”（ready/partial 可用、draft 禁用），客户端以 pptxgenjs + jszip 生成 ZIP（课程 PPTX + `interactive/<序号>_<安全标题>.html`）。六类元素均已建立导出映射：chart → PPTX 原生图表（数据无损）、shape pathFormula → PPTX 预设几何（历史手写 path 按坐标反推，识别不了跳过计数）、table → addTable、text 富文本解析为 runs（段级内联样式作为整段基础格式，并支持元素级默认字体与透明度）、code → 等宽文本并对长内容启用收缩适配、line → 直线及箭头/虚线；PPTX 原生直线支持任意角度，只有 `curve` 二次曲线按端点直线近似并计入“曲线按直线近似”。渐变类（页面背景/形状）当前取首个色标降级为纯色，并在完成提示中按类计数。导出为只读操作，不写库、不改 revision。下载对象 URL 延迟释放，完成提示具备状态播报语义，移动端较长提示放在导出按钮下方。schema 侧 shape 新增可选 `pathFormula` 字段（规范化阶段保留，渲染器不受影响）。新增依赖 pptxgenjs 4.0.1、jszip 3.10.1（均已登记 THIRD_PARTY_NOTICES）。Windows 保留设备名未纳入本次低概率场景门禁。
+按 [M11 导出方案](stage-plans/m11-slide-export-plan.md)完成 M11 导出：课堂页头部新增“导出资源包”（ready/partial 可用、draft 禁用），客户端以 pptxgenjs + jszip 生成 ZIP（课程 PPTX + `interactive/<序号>_<安全标题>.html`）。以下记录保留 2026-09-07 的原始基线：chart → PPTX 原生图表（数据无损）、shape pathFormula → PPTX 预设几何（历史手写 path 当时识别不了会跳过）、table → addTable、text → 富文本 runs、code → 等宽文本并对长内容启用收缩、line → 直线及箭头/虚线；当时 `curve` 按端点直线近似，渐变取首色。2026-09-14 的后续保真优化已经替换 path、curve、渐变代表色和文本尺度行为，当前事实以下一小节为准。导出始终是只读操作，不写库、不改 revision。
 
 配套模块：`lib/export/{filename,rich-text-runs,pptx-mapping,build-course-package,use-export-zip}`、`components/export/export-button`，工具 `scripts/archive-course-to-eval.mjs`（数据库课程 → eval/runs MHTML 归档）与 `export-structure-check`/`export-browser-check` 两个自检脚本。`pnpm check:export` 已作为正式命令接入；结构检查通过 `jiti` 复用 TypeScript 导出实现，并对 API 响应、ZIP 条目、PPTX 页数和互动 HTML 做失败即退出的断言。
 
 验收：14 个 M11 相关单元测试（文件名安全化、runs 解析、六类映射含主要降级分支、字体/透明度/长代码文本、打包结构）+ 全量 164 单测、tsc、lint、build、e2e 回归全部通过。两门真实课程结构自检通过：v2.4《TCP 拥塞控制》3 页、v2.3《后端语言选型》4 页，页数一致、表格进入 PPTX、原生图表部件（barChart）生成、文本中文内容完整；浏览器 E2E 已覆盖点击下载、解包、完成提示状态播报和刷新恢复，ZIP 样例留存 `output/export-check/`。AC-E02（PowerPoint/WPS 人工打开核对）已由用户于 2026-09-07 人工核对通过。
+
+#### PPT 可编辑保真优化（2026-09-14，已完成）
+
+该工作是 M11 之后的独立质量增强，不改 ZIP 结构、数据库或课程 revision。实现确认课程字号与线宽属于 1000×562.5 逻辑画布单位，因此 PPTX point 换算由普通 CSS 的 `0.75` 修正为 `72/75 = 0.96`；文本框的 10 unit 内边距、7 unit 段后间距、默认行高、字体和垂直对齐由 `resolveTextLayout` 同时供网页与 PPTX 使用。富文本新增白名单内 `font-family` 的 run 级映射，普通文本框仍固定宽高且不默认自动扩框。
+
+新增 `svg-pathdata 6.0.3`：可靠 `pathFormula` 继续走 PowerPoint 预设形状，其余合法 M/L/H/V/C/S/Q/T/A/Z path 规范化后写入可编辑 `<a:custGeom>`；A 圆弧转为三次贝塞尔，`curve` 线条保留二次贝塞尔控制点，不再按端点直线近似。该版本保持项目 Node 20.9+ 部署边界。当前表格契约补齐 14 unit 字号、7×12 unit 单元格边距、等分行高、填充和边框，图表补齐轴标签、图例、轴线和网格线的核心样式。渐变仍降级为可编辑纯色，但改用 50% 位置插值代表色并继续计数；字体仍不嵌入。
+
+验证：`pnpm lint`、`pnpm build`、完整 `pnpm test`（34 个文件、197 项）通过；核心 XML 用例确认 `custGeom`、`quadBezTo`、文本 margin、行距和段后距进入 PPTX。`EXPORT_BASE_URL=http://localhost:3000 pnpm check:export` 对两门真实 ready 课程通过，分别生成 3 页与 4 页 PPTX，表格和原生柱状图未回归，样例留存在 `output/export-check/`。本机 Microsoft PowerPoint 已只读打开 TCP 样例并成功导出 3 张 `1600×900` PNG，未见文字截断或元素越界；空白表格列经 API 核对来自课程 JSON。用户随后检查输出样例并自行下载多门课程进行主观验收，确认新版效果较旧版明显更和谐，本项工作已收口。完整边界见 [PPT 可编辑保真优化方案](stage-plans/pptx-editable-fidelity-optimization-plan.md)。
 
 #### M8 slide 视觉升级 v2.2：图表、表格、主题与量化排版（2026-09-05）
 
@@ -232,11 +240,11 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 
 ### 3.1 最新自动化检查
 
-以当前工作树（含 M11 后续收尾修正）为准，当前已完成以下检查：
+以当前工作树（含 PPT 可编辑保真优化）为准，当前已完成以下检查：
 
 - `pnpm lint`：通过；
-- `pnpm test`：26 个测试文件、164 项通过；
-- `node node_modules/typescript/bin/tsc --noEmit --incremental false`：通过；
+- `pnpm test`：34 个测试文件、197 项通过；
+- TypeScript：由 `pnpm build` 的严格类型阶段通过；
 - `pnpm build`：production build 通过；
 - `pnpm test:e2e`：1/1 通过，覆盖 mock 课程创建、导出下载与解包、互动、测验和刷新恢复流程；
 - `scripts/export-browser-check.mjs`：真实课堂点击、下载、解包和完成提示链路通过；
@@ -249,7 +257,7 @@ Quiz 已升级为 Course v5 / `scene-quiz.v2`：AI 可按教学需要生成 sing
 | AC-E01：真实 ready 课程导出并校验 ZIP 结构 | ✅ 两门真实课程通过，PPTX 页数和互动页命名符合预期 |
 | AC-E02：PowerPoint/WPS 人工打开核对 | ✅ 用户人工核对通过 |
 | AC-E03：chart 导出为 PPTX 原生图表 | ✅ 生成 `barChart` 部件，数据无损 |
-| AC-E04：降级元素在完成提示中分组计数 | ✅ 浏览器链路显示渐变降级提示；曲线近似由单测确认计数，斜线不再误报 |
+| AC-E04：降级元素在完成提示中分组计数 | ✅ 浏览器链路显示渐变降级提示；曲线已改为可编辑自由路径，斜线不误报 |
 | AC-E05：导出不写库、不改 revision | ✅ 客户端纯只读转换 |
 
 ### 3.3 历史验证记录（M1～M6）
@@ -288,7 +296,7 @@ M6 可观测性补强回归进一步故意延迟课程创建响应，确认首�
 - 超时租约可以被下一次显式生成请求接管，但尚无后台扫描器主动恢复遗留操作；
 - 尚未在另一台机器复现部署；当前项目只承诺本机或受信任网络运行，异机交付按需扩展；
 - BrowserSpeech 的回退与控制已自动测试，实际系统音色和听感仍需目标演示机器人工确认；
-- M11 当前只在课堂页提供导出入口；互动 HTML 不承诺离线运行，`curve` 二次曲线按直线近似并提示降级，Windows 保留设备名等低概率输入不增加严格门禁；M12.2 页序与生成、M12.3 会话体验已进入工程主链，真实隔离副本验收已留档，人工内容判断仍按方案边界执行。
+- M11 当前只在课堂页提供导出入口；互动 HTML 不承诺离线运行，PPTX 渐变仍以 50% 插值代表色降级为纯色，字体文件不嵌入，Windows 保留设备名等低概率输入不增加严格门禁；M12.2 页序与生成、M12.3 会话体验已进入工程主链，真实隔离副本验收已留档，人工内容判断仍按方案边界执行。
 
 上述项目均不阻塞当前 MVP，也不改变已经关闭的 v0.4 退出门；M11 是已完成的独立扩展，M12 按单 Agent 工具闭环分批推进，专业编辑器和论文研究问题留在 MX 单独立项。
 
@@ -298,7 +306,7 @@ M6 可观测性补强回归进一步故意延迟课程创建响应，确认首�
 
 - 当前自动化门禁主要保证 JSON/Schema、领域结构、运行状态、持久化和恢复链路，不等于事实正确性、教学深度、案例价值或互动教学质量；
 - Slide、Interactive 和 PPTX 导出均已有真实样例验证，但单个或少量课程不能证明平均内容质量，也不能据此作出统计意义上的版本优越性结论；
-- MHTML 是固定视口的视觉留档，PPTX/WPS 人工核对通过只说明当前验收样例可读，不代表所有未来生成课程都没有内容、排版或字体替换问题；
+- MHTML 是固定视口的视觉留档；本次用户主观验收只证明已检查样例和自行下载的多门课程较旧版更和谐，不代表逐像素一致，也不代表所有未来课程都没有排版或字体替换问题；
 - 互动 HTML 的运行质量仍需按具体场景进行课堂验收；导出后的 HTML 可能依赖外部资源，且不再处于课堂 iframe 的完整运行边界内。
 
 ### 5.2 历史记录：M6 阶段质量差距
