@@ -14,6 +14,7 @@ import { MySQLQuizAttemptRepository } from "@/lib/repository/mysql-quiz-attempt-
 import { MySQLAgentSessionRepository } from "@/lib/repository/mysql-agent-session-repository";
 import { CoursePatchService } from "@/lib/application/course-patch-service";
 import { AgentApplicationError } from "@/lib/agent/contracts";
+import { MySQLGenerationRunRepository } from "@/lib/repository/mysql-generation-run-repository";
 
 const pool = getDatabasePool();
 courseRepositoryContract("MySQL", () => new MySQLCourseRepository(pool));
@@ -319,5 +320,31 @@ describe("MySQLCourseRepository integration", () => {
     } finally {
       await unavailablePool.end();
     }
+  });
+
+  it("生成运行可以原子累计、查询，并随课程删除级联清理", async () => {
+    const courses = new MySQLCourseRepository(pool);
+    const course = await courses.create(createCourseDraft(`运行指标 ${crypto.randomUUID()}`, 4));
+    const runs = new MySQLGenerationRunRepository(pool);
+    const now = Date.now();
+    const run = await runs.create({
+      courseId: course.id,
+      runType: "course_generation",
+      status: "running",
+      baseRevision: course.revision,
+      requestedSceneCount: 4,
+      rootRequestId: "mysql-generation-run",
+      startedAt: now,
+      updatedAt: now,
+    });
+    await Promise.all([
+      runs.appendMetrics(run.id, { succeededSceneCount: 1, modelCalls: 1, inputTokens: 10, outputTokens: 5, usageStatus: "complete", activeDurationMs: 40, updatedAt: now + 1 }),
+      runs.appendMetrics(run.id, { failedSceneCount: 1, modelCalls: 2, usageStatus: "unavailable", activeDurationMs: 60, updatedAt: now + 2 }),
+    ]);
+    const accumulated = await runs.get(run.id);
+    expect(accumulated).toMatchObject({ succeededSceneCount: 1, failedSceneCount: 1, modelCalls: 3, inputTokens: 10, outputTokens: 5, usageStatus: "partial", activeDurationMs: 100 });
+    expect((await runs.listForUsage(now - 1))[0]).toMatchObject({ id: run.id, courseTitle: course.title });
+    await courses.delete(course.id);
+    expect(await runs.get(run.id)).toBeNull();
   });
 });

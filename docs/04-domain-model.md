@@ -1025,3 +1025,11 @@ QuizAttempt 同样统一为 `selectedOptionIds: string[]`。服务端先验证�
 人工编辑接口只接受 1～3 道无 ID 题目、2～4 个选项、答案下标和解析，不接受客户端提供 question/option/correct ID。服务端重新生成 Scene、Question 和 Option ID，使用 expectedRevision 保存，并在同一 MySQL 事务中清理旧 sceneId 作答。该路径不调用模型，保留原场景的生成来源元数据，`updatedAt` 与新 Scene ID 表示人工替换发生。
 
 Course 截止线升级为 schemaVersion 5。由于 v4 与 v5 的课程内容差异仅为单选题的 `correctOptionId` 标量改成 `correctOptionIds` 数组，Repository 在读取 v4 时执行这一项无损转换，并以 v5 对象交给业务层；列表同时展示 v4/v5，课程下次发生正常保存时写回 v5。该策略不批量改库，也不修改 Scene、Question 或 Option ID。v1～v3 仍不迁移、不删除，由列表过滤并在按 ID 读取时明确返回旧契约不支持。
+
+## 18. GenerationRun 独立运行事实（已实现）
+
+`GenerationRun` 不属于 Course 聚合。Course 表示“课程现在是什么”，GenerationRun 表示“某一次生成发生了什么”。因此当前大纲和场景仍在 `GenerationMetadata` 保存自己的 Provider、模型和 Prompt 来源；运行表只保存跨 outline/scenes 的聚合值，不复制课程正文、页面元素、Action、Prompt 或模型原文。
+
+运行类型为 `course_generation | scene_batch | scene_retry`；运行状态为 `running | awaiting_review | awaiting_generation | completed | partial_failed | failed | cancelled | interrupted | superseded`。终态记录冻结，计数、token 与耗时不能再次累计。`usageStatus=complete | partial | unavailable` 用于区分完整 token、部分已知和 Provider 未返回，未知值不能用 0 代替。
+
+首次整课运行以开始时的 `requestedSceneCount` 为快照，用 `succeededSceneCount + failedSceneCount` 判断是否完成首次尝试；失败场景后来成功只完成新的 `scene_retry`。`activeDurationMs` 是各模型管线实际执行时间之和，不等于 `finishedAt - startedAt`，后者包含人工审核和页面停留。MySQL 迁移 007 通过 `course_id` 外键关联 Course 并在课程删除时级联清理。

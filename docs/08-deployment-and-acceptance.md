@@ -1,6 +1,6 @@
 # 08. 部署、恢复与验收手册
 
-> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M12 及 PPT 可编辑保真优化的增量验收。当前版本没有账户与权限系统，不允许直接暴露到公网。
+> 适用范围：第 1～7 节记录已完成的 M6/M6.5 本机或受信任网络交付；第 8 节持续记录 M7～M12、PPT 可编辑保真优化及生成运行指标/用量面板的增量验收。当前版本没有账户与权限系统，不允许直接暴露到公网。
 
 ## 1. 最小生产启动
 
@@ -266,3 +266,17 @@ M12.4 已完成桌面端课堂/对话双栏、窄屏覆盖布局、消息场景�
 - `$env:EXPORT_BASE_URL='http://localhost:3000'; pnpm check:export`：两门真实 ready 课程通过，分别生成 3 页和 4 页 PPTX，原生表格、文本与 `barChart` 未回归；当前只报告预期的“形状渐变降级纯色”。
 
 以上证明对象仍以 PPTX 原生文本框、预设形状、自由形状、表格和图表写入。本机 Microsoft PowerPoint 已只读打开 TCP 样例并导出 3 张 `1600×900` PNG，标题、卡片、表格和底部结论未见截断或越界；空白表格列经 API 核对来自保存的四列课程数据。2026-09-14，用户进一步检查 `output/export-check/` 中的样例，并自行下载、打开多门课程进行主观验收，确认新版整体观感较旧版明显更和谐，本项工作据此完成收口。该结论不代表网页与 PPT 逐像素一致；细微字宽、字体缺失回退、渐变纯色近似和原生图表内部间距仍属于已知边界。
+
+### 8.11 生成运行指标与用量面板验收（2026-09-14）
+
+先执行 `pnpm db:migrate`，迁移输出应显示 `applied 007_generation_runs.sql` 或已登记后的 `skip`。`generation_runs` 必须与 `courses` 分表，课程删除后通过外键级联清理；现有课程不回填伪造运行历史。`GET /api/usage?range=7d|30d|all` 应返回稳定 envelope，非法 range 返回 400；设置页空数据必须显示“暂无数据/未返回”，不能把 unknown token 当作 0。
+
+本轮验证结果：
+
+- `pnpm lint`、无增量 TypeScript 检查和 `pnpm build` 通过，构建包含静态 `/settings` 与动态 `/api/usage`；
+- `pnpm test` 为 35 个文件、200 项通过；`pnpm test:db` 为 23 项通过；
+- MySQL 用例验证两次并发增量没有丢计数，complete 与 unavailable 合并为 partial，并验证 course title 查询和课程删除级联；
+- 独立 mock production server 创建一门临时 4 场景课程，最终 `ready / REV.10`。用量 API 和页面显示 1 次 completed、5 次模型调用、4/4 场景、complete usage；ECharts、模型汇总和最近运行均出现对应数据，浏览器控制台 0 错误；
+- 390×844 空数据页没有页面级横向溢出。临时课程和关联运行记录已删除，临时服务与浏览器会话已关闭。
+
+本轮没有调用真实 DeepSeek。原因是该增强不修改 Prompt、Provider 请求、响应解码或课程生成结果，只在既有 metadata/error 后旁路记录；mock 完整纵向链、真实 MySQL 和 production 浏览器已经直接覆盖新增职责。后续真实生成会自然写入 Provider 返回的 token；若 Provider 不返回，则保持 partial/unavailable，不构成失败或额外门禁。

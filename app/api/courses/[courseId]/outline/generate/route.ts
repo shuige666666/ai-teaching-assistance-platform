@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAIAdapter } from "@/lib/ai/factory";
 import { GenerateOutlineInputSchema, mapOutlineError, readLimitedJson } from "@/lib/application/outline-api";
 import { OutlineGenerationService } from "@/lib/application/outline-generation-service";
-import { getCourseRepository } from "@/lib/repository";
+import { getCourseRepository, getGenerationRunTracker } from "@/lib/repository";
 import { resolveRequestId, startServerOperation } from "@/lib/observability/server-log";
 
 type RouteContext = { params: Promise<{ courseId: string }> };
@@ -23,7 +23,7 @@ export async function POST(request: Request, context: RouteContext) {
     // 6. 调用 generate()：读取课程、生成大纲、校验内容，然后保存到 MySQL。
     // 这里 OutlineGenerationService 的括号里面的参数主要是用于创建一个 OutlineGenerationService 对象，并把它依赖的工具传进去
     // generate 后面的括号里的参数就是常规的方法调用要携带的参数
-    const course = await new OutlineGenerationService(getCourseRepository(), adapter, timeoutMs).generate(
+    const course = await new OutlineGenerationService(getCourseRepository(), adapter, timeoutMs, Date.now, getGenerationRunTracker()).generate(
       courseId,
       input.expectedRevision,
       requestId,

@@ -149,8 +149,9 @@ export function HomeWorkspace({
             <small>COURSE COMPOSER</small>
           </span>
         </Link>
-        <div className="header-status">
-          <span className="status-dot" /> M11 · COURSE WORKSPACE
+        <div className="home-header-actions">
+          <div className="header-status"><span className="status-dot" /> M12.4 · COURSE WORKSPACE</div>
+          <Link className="settings-link" href="/settings">用量统计</Link>
         </div>
       </header>
 

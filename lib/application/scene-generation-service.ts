@@ -4,6 +4,7 @@ import { CourseSchema, type Course, type DomainError, type Scene, type SceneOutl
 import { generateScene, SceneGenerationError } from "@/lib/generation/scene-pipeline";
 import { extractInteractiveAuthorHtml } from "@/lib/interactive/html-policy";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
+import type { GenerationRunTracker, SceneRunContext } from "./generation-run-tracker";
 
 export class SceneApplicationError extends Error {
   constructor(public readonly code: "COURSE_NOT_FOUND" | "OUTLINE_NOT_FOUND" | "INVALID_COURSE_STATE", message: string) {
@@ -58,6 +59,7 @@ export class SceneGenerationService {
     private readonly adapter: AIAdapter,
     private readonly timeoutMs = 120_000,
     private readonly now: () => number = Date.now,
+    private readonly generationRuns?: GenerationRunTracker,
   ) {}
 
   /** 运行失败的互动采用干净重生成，只发送错误背景，不向模型发送旧 HTML。 */
@@ -288,13 +290,21 @@ export class SceneGenerationService {
       activeOperation: { id: operationId, stage: "scene", outlineId, startedAt, expiresAt: startedAt + this.timeoutMs + 30_000 },
       updatedAt: startedAt,
     }), expectedRevision);
+    const generationRunContext = await this.generationRuns?.startSceneAttempt(
+      current,
+      progress.status as "pending" | "failed" | "generating",
+      requestId,
+      startedAt,
+    );
 
     // 5. 设置模型请求的取消和超时条件。
     const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
     const signal = requestSignal ? AbortSignal.any([requestSignal, timeoutSignal]) : timeoutSignal;
+    let attemptMetadata: Scene["generation"] | undefined;
     try {
       // 6. 调用 generateScene()，让模型生成这一场的内容和 Action。
       const scene = await generateScene(this.adapter, { course: registered, outline, requestId, signal });
+      attemptMetadata = scene.generation;
       // 7. 再次读取课程，确认这次操作仍然有效。
       const latest = await this.repository.get(courseId);
       if (!latest || latest.revision !== registered.revision || latest.activeOperation?.id !== operationId) throw new CourseConflictError();
@@ -305,7 +315,7 @@ export class SceneGenerationService {
       const allReady = nextProgress.every((item) => item.status === "ready");
       const hasFailure = nextProgress.some((item) => item.status === "failed");
       // 9. 如果全部场景都完成，课程状态改为 ready；否则保持生成中或部分失败。
-      return await this.repository.save(CourseSchema.parse({
+      const saved = await this.repository.save(CourseSchema.parse({
         ...latest,
         status: allReady ? "ready" : hasFailure ? "partial_failed" : "generating",
         scenes: nextScenes,
@@ -314,19 +324,32 @@ export class SceneGenerationService {
         lastError: hasFailure ? latest.lastError : undefined,
         updatedAt: now,
       }), latest.revision);
+      await this.generationRuns?.recordSceneSuccess(generationRunContext, saved, scene.generation);
+      return saved;
     } catch (error) {
       // 10. 如果本次操作仍有效，就把这一场标记为失败并保存错误原因。
       const latest = await this.repository.get(courseId);
-      if (latest?.revision === registered.revision && latest.activeOperation?.id === operationId) {
-        const failure = asDomainError(error);
-        await this.repository.save(CourseSchema.parse({
-          ...latest,
-          status: "partial_failed",
-          sceneProgress: latest.sceneProgress.map((item) => item.outlineId === outlineId ? { ...item, status: "failed" as const, lastError: failure, updatedAt: this.now() } : item),
-          activeOperation: undefined,
-          lastError: failure,
-          updatedAt: this.now(),
-        }), latest.revision);
+      let failedCourse = latest;
+      try {
+        if (latest?.revision === registered.revision && latest.activeOperation?.id === operationId) {
+          const failure = asDomainError(error);
+          failedCourse = await this.repository.save(CourseSchema.parse({
+            ...latest,
+            status: "partial_failed",
+            sceneProgress: latest.sceneProgress.map((item) => item.outlineId === outlineId ? { ...item, status: "failed" as const, lastError: failure, updatedAt: this.now() } : item),
+            activeOperation: undefined,
+            lastError: failure,
+            updatedAt: this.now(),
+          }), latest.revision);
+        }
+      } finally {
+        await this.generationRuns?.recordSceneFailure(
+          generationRunContext as SceneRunContext | undefined,
+          failedCourse,
+          error,
+          this.now() - startedAt,
+          attemptMetadata,
+        );
       }
       throw error;
     }

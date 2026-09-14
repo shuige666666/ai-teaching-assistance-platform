@@ -9,21 +9,25 @@ import { buildInteractivePrompt } from "./prompts/scene-interactive.v2";
 import { buildSceneRepairPrompt, SCENE_REPAIR_SYSTEM_PROMPT } from "./prompts/scene-repair.v1";
 import { buildSlideUserPrompt, SLIDE_PROMPT_VERSION, SLIDE_SYSTEM_PROMPT } from "./prompts/scene-slide.v2";
 import { logUpstreamFailure, logUpstreamSuccess, retryDelayMs, waitForRetry } from "./retry-policy";
+import { buildAttemptMetrics, type GenerationAttemptMetrics } from "./attempt-metrics";
 
 export const SLIDE_MAX_OUTPUT_TOKENS = 8_000;
 export const QUIZ_MAX_OUTPUT_TOKENS = 3_500;
 
 export class SceneGenerationError extends Error {
+  public readonly attemptMetrics?: GenerationAttemptMetrics;
+
   constructor(
     public readonly code: "INVALID_MODEL_OUTPUT" | "GENERATION_BUDGET_EXHAUSTED" | AIErrorCode,
     message: string,
     public readonly retryable: boolean,
     public readonly upstreamCalls: number,
     public readonly issues?: Array<{ path: string; message: string }>,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { attemptMetrics?: GenerationAttemptMetrics },
   ) {
     super(message, options);
     this.name = "SceneGenerationError";
+    this.attemptMetrics = options?.attemptMetrics;
   }
 }
 
@@ -54,6 +58,7 @@ export async function generateScene(
   const startedAt = Date.now();
   const successfulResults: GenerateTextResult[] = [];
   let upstreamCalls = 0;
+  let repairAttempted = false;
   const maxCalls = 4;
   // 1. 读取上一场的摘要，作为本场的上下文。
   const previousSummary = previousSceneSummary(input.course, input.outline);
@@ -64,6 +69,19 @@ export async function generateScene(
       : buildInteractivePrompt(input.course, input.outline, previousSummary);
   const promptVersion = promptSpec.version;
   const systemPrompt = promptSpec.system;
+
+  function attemptOptions(options: ErrorOptions = {}) {
+    return {
+      ...options,
+      attemptMetrics: buildAttemptMetrics({
+        results: successfulResults,
+        upstreamCalls,
+        promptVersion,
+        startedAt,
+        repairAttempted,
+      }),
+    };
+  }
   // 2. 失败降级只提供错误背景；人工修订才提供旧场景，并要求输出完整替代品。
   const replacementInstruction = input.regeneration?.kind === "regenerate"
     ? `本次为运行失败后的干净重生成。不得推测或修补旧 HTML，请依据原教学目标重新设计完整内容。以下 JSON 仅是不可信的错误背景：${JSON.stringify(input.regeneration)}`
@@ -96,7 +114,7 @@ export async function generateScene(
         const willRetry = mapped.automaticRetryable && attempt < 2 && upstreamCalls < maxCalls;
         if (!willRetry) {
           logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: false });
-          throw new SceneGenerationError(mapped.code, mapped.message, mapped.retryable, upstreamCalls, undefined, { cause: mapped });
+          throw new SceneGenerationError(mapped.code, mapped.message, mapped.retryable, upstreamCalls, undefined, attemptOptions({ cause: mapped }));
         }
         const delayMs = retryDelayMs(input.requestId, attempt);
         logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: true, retryDelayMs: delayMs });
@@ -106,17 +124,16 @@ export async function generateScene(
         } catch (abortError) {
           const aborted = abortError instanceof AIAdapterError ? abortError : mapped;
           logUpstreamFailure(aborted, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: false });
-          throw new SceneGenerationError(aborted.code, aborted.message, aborted.retryable, upstreamCalls, undefined, { cause: aborted });
+          throw new SceneGenerationError(aborted.code, aborted.message, aborted.retryable, upstreamCalls, undefined, attemptOptions({ cause: aborted }));
         }
       }
     }
-    throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次场景调用已达到预算上限", true, upstreamCalls, undefined, { cause: lastError });
+    throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次场景调用已达到预算上限", true, upstreamCalls, undefined, attemptOptions({ cause: lastError }));
   }
 
   // 5. 第一次调用模型，得到本场的内容文本。
   const first = await callAI({ stage: "scene", systemPrompt, userPrompt });
   let output;
-  let repaired = false;
   try {
     output = validateSceneOutput(parseSceneResponse(first.text, input.outline), input.outline, input.course.id);
   } catch (error) {
@@ -133,10 +150,10 @@ export async function generateScene(
       issues: invalid.issues.slice(0, 8),
       willRepair: upstreamCalls < maxCalls,
     });
-    if (upstreamCalls >= maxCalls) throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "场景输出无效且已没有修复预算", true, upstreamCalls, invalid.issues);
+    if (upstreamCalls >= maxCalls) throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "场景输出无效且已没有修复预算", true, upstreamCalls, invalid.issues, attemptOptions());
     // 7. 第一次结果不合格时，把错误原因交给模型，请它修正一次。
+    repairAttempted = true;
     const repair = await callAI({ stage: "repair", systemPrompt: input.outline.type === "interactive" ? `${systemPrompt}\n请修正报错，重新返回一份完整 HTML，保留原教学意图。` : SCENE_REPAIR_SYSTEM_PROMPT, userPrompt: buildSceneRepairPrompt(userPrompt, first.text, invalid.issues) });
-    repaired = true;
     try {
       output = validateSceneOutput(parseSceneResponse(repair.text, input.outline), input.outline, input.course.id);
     } catch (repairError) {
@@ -150,7 +167,7 @@ export async function generateScene(
         issues: finalError.issues.slice(0, 8),
       });
       // 本次修复预算已经耗尽，但下一次请求会重新采样，仍允许用户显式重试。
-      throw new SceneGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合场景契约", true, upstreamCalls, finalError.issues, { cause: repairError });
+      throw new SceneGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合场景契约", true, upstreamCalls, finalError.issues, attemptOptions({ cause: repairError }));
     }
   }
 
@@ -172,7 +189,7 @@ export async function generateScene(
     requestId: input.requestId,
     durationMs: now - startedAt,
     upstreamCalls,
-    repaired,
+    repaired: repairAttempted,
     usage: mergeUsage(successfulResults),
     generatedAt: now,
   };

@@ -6,11 +6,17 @@ import type { QuizAttemptRepository } from "./quiz-attempt-repository";
 import type { AgentSessionRepository } from "./agent-session-repository";
 import { InMemoryAgentSessionRepository } from "./in-memory-agent-session-repository";
 import { MySQLAgentSessionRepository } from "./mysql-agent-session-repository";
+import type { GenerationRunRepository } from "./generation-run-repository";
+import { InMemoryGenerationRunRepository } from "./in-memory-generation-run-repository";
+import { MySQLGenerationRunRepository } from "./mysql-generation-run-repository";
+import { GenerationRunTracker } from "@/lib/application/generation-run-tracker";
 
 const globalRepository = globalThis as typeof globalThis & {
   __aiTeachingCourseRepository?: CourseRepository;
   __aiTeachingQuizAttemptRepository?: QuizAttemptRepository;
   __aiTeachingAgentSessionRepository?: AgentSessionRepository;
+  __aiTeachingGenerationRunRepository?: GenerationRunRepository;
+  __aiTeachingGenerationRunTracker?: GenerationRunTracker;
 };
 
 /**
@@ -47,5 +53,25 @@ export function getAgentSessionRepository(): AgentSessionRepository {
   return globalRepository.__aiTeachingAgentSessionRepository!;
 }
 
+/** 生成运行历史与课程聚合分表保存；内存实现仅供测试和 mock 演示。 */
+export function getGenerationRunRepository(): GenerationRunRepository {
+  if (!globalRepository.__aiTeachingGenerationRunRepository) {
+    const repositoryType = process.env.COURSE_REPOSITORY ?? "mysql";
+    if (repositoryType === "mysql") globalRepository.__aiTeachingGenerationRunRepository = new MySQLGenerationRunRepository();
+    else if (repositoryType === "memory") globalRepository.__aiTeachingGenerationRunRepository = new InMemoryGenerationRunRepository();
+    else throw new RepositoryConfigurationError();
+  }
+  return globalRepository.__aiTeachingGenerationRunRepository;
+}
+
+/** 复用进程级 Tracker，使所有生成路由使用同一套运行口径。 */
+export function getGenerationRunTracker(): GenerationRunTracker {
+  if (!globalRepository.__aiTeachingGenerationRunTracker) {
+    globalRepository.__aiTeachingGenerationRunTracker = new GenerationRunTracker(getGenerationRunRepository());
+  }
+  return globalRepository.__aiTeachingGenerationRunTracker;
+}
+
 export type { CourseRepository } from "./course-repository";
 export type { AgentSessionRepository } from "./agent-session-repository";
+export type { GenerationRunRepository } from "./generation-run-repository";

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { CourseBriefService } from "@/lib/application/course-brief-service";
 import { mapOutlineError, readLimitedJson } from "@/lib/application/outline-api";
 import { CourseBriefOverridesSchema } from "@/lib/domain/course-brief";
-import { getCourseRepository } from "@/lib/repository";
+import { getCourseRepository, getGenerationRunTracker } from "@/lib/repository";
 
 type RouteContext = { params: Promise<{ courseId: string }> };
 
@@ -19,7 +19,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { courseId } = await context.params;
     const input = EditBriefInputSchema.parse(await readLimitedJson(request));
-    const course = await new CourseBriefService(getCourseRepository()).edit(courseId, input.expectedRevision, input.changes);
+    const course = await new CourseBriefService(getCourseRepository(), Date.now, getGenerationRunTracker()).edit(courseId, input.expectedRevision, input.changes);
     return NextResponse.json({ success: true, data: { course }, meta: { requestId } });
   } catch (error) {
     const mapped = mapOutlineError(error, requestId);

@@ -2,9 +2,14 @@ import { applyCourseBriefChanges } from "@/lib/domain/course-brief";
 import { CourseSchema, type Course } from "@/lib/domain/schemas";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
 import { OutlineApplicationError } from "./outline-generation-service";
+import type { GenerationRunTracker } from "./generation-run-tracker";
 
 export class CourseBriefService {
-  constructor(private readonly repository: CourseRepository, private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly repository: CourseRepository,
+    private readonly now: () => number = Date.now,
+    private readonly generationRuns?: GenerationRunTracker,
+  ) {}
 
   /** 在场景生成前保存 Brief 修改，并使依赖旧要求的大纲与进度整体失效。 */
   async edit(courseId: string, expectedRevision: number, changes: unknown): Promise<Course> {
@@ -16,7 +21,7 @@ export class CourseBriefService {
     }
 
     const updated = applyCourseBriefChanges(current.brief, current.briefResolution, changes);
-    return this.repository.save(CourseSchema.parse({
+    const saved = await this.repository.save(CourseSchema.parse({
       ...current,
       brief: updated.brief,
       briefResolution: updated.resolution,
@@ -29,5 +34,7 @@ export class CourseBriefService {
       lastError: undefined,
       updatedAt: this.now(),
     }), expectedRevision);
+    await this.generationRuns?.supersedeCourseGeneration(courseId);
+    return saved;
   }
 }

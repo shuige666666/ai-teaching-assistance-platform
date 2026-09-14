@@ -691,3 +691,11 @@ M10 当前范围已经完成；不在此阶段增加 A/B 评分、编辑器、�
 ## 16. MX 研究接口
 
 M7～M10 不为尚未确定的论文方向预建策略接口。MX 可以从实际数据中选择错误感知修复、质量—成本约束模型路由、教学策略 Prompt 对比或互动运行错误修复中的一个问题，再按该问题增加最小实验代码。实验必须与固定模型、固定 Prompt 版本和明确调用预算的基线比较；LangGraph、多智能体或多模态只有在成为该单一问题的必要变量时才评估。
+
+## 17. 生成运行统计旁路（已实现）
+
+大纲和首次场景管线在原有课程提交边界外增加运行统计。大纲登记成功后创建 `course_generation/running`；大纲结果保存后累计 metadata 并进入 `awaiting_review`。人工修改大纲不产生模型调用，也不累计耗时；开始生成 pending 场景时恢复同一开放运行，每次只在 Course 成功提交后累计成功数。失败路径累计已经发生的调用、repair、耗时和可获得 token，再根据首次请求快照进入 `awaiting_generation` 或 `partial_failed`。
+
+管线错误额外携带安全的 `attemptMetrics`，只包括 Provider、模型、Prompt 版本、调用次数、repair 是否发生、耗时和 token 汇总，不包含 Prompt、响应正文或 cause。完整输出仍由既有 Schema 和语义门决定；运行统计不增加模型调用、repair 次数、内容校验或生成门禁。
+
+failed 场景的显式重试创建独立 `scene_retry`，pending 场景在没有开放首次运行时进入 `scene_batch`。过期 operation 恢复会把无法可靠还原的旧运行冻结为 `interrupted`，新请求另起批次。`GET /api/usage` 只读取这些运行事实并按 7 天、30 天或全部聚合，设置页 GET 不隐式收尾或修改运行状态。

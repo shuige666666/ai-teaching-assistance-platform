@@ -4,6 +4,7 @@ import { CourseSchema, type Course, type DomainError, type SceneOutline } from "
 import { generateOutline, OutlineGenerationError } from "@/lib/generation/outline-pipeline";
 import { validateEditedOutline } from "@/lib/generation/outline-schema";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
+import type { GenerationRunTracker } from "./generation-run-tracker";
 
 export class OutlineApplicationError extends Error {
   constructor(public readonly code: "COURSE_NOT_FOUND" | "INVALID_COURSE_STATE", message: string) {
@@ -36,6 +37,7 @@ export class OutlineGenerationService {
     private readonly adapter: AIAdapter,
     private readonly timeoutMs = 90_000,
     private readonly now: () => number = Date.now,
+    private readonly generationRuns?: GenerationRunTracker,
   ) {}
 
   /** 用两个短事务包围模型调用，并用 operation id 与 revision 阻止迟到结果覆盖新状态。 */
@@ -60,6 +62,7 @@ export class OutlineGenerationService {
       lastError: undefined,
       updatedAt: startedAt,
     }), expectedRevision);
+    const generationRunId = await this.generationRuns?.startCourseGeneration(registered, requestId, startedAt);
 
     // 4. 设置模型请求的取消和超时条件。
     const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
@@ -79,7 +82,7 @@ export class OutlineGenerationService {
       if (!latest || latest.revision !== registered.revision || latest.activeOperation?.id !== operationId) throw new CourseConflictError();
       const now = this.now();
       // 7. 保存课程标题、大纲和每一项的 pending 生成进度。
-      return await this.repository.save(CourseSchema.parse({
+      const saved = await this.repository.save(CourseSchema.parse({
         ...latest,
         title: generated.courseTitle,
         brief: generated.brief,
@@ -93,17 +96,24 @@ export class OutlineGenerationService {
         lastError: undefined,
         updatedAt: now,
       }), latest.revision);
+      await this.generationRuns?.recordOutlineSuccess(generationRunId, saved, generated.metadata);
+      return saved;
     } catch (error) {
       // 8. 如果本次操作仍有效，就把课程标记为生成失败并保存错误原因。
       const latest = await this.repository.get(courseId);
-      if (latest?.activeOperation?.id === operationId && latest.revision === registered.revision) {
-        await this.repository.save(CourseSchema.parse({
-          ...latest,
-          status: "failed",
-          activeOperation: undefined,
-          lastError: asDomainError(error, requestId),
-          updatedAt: this.now(),
-        }), latest.revision);
+      let failedCourse = latest;
+      try {
+        if (latest?.activeOperation?.id === operationId && latest.revision === registered.revision) {
+          failedCourse = await this.repository.save(CourseSchema.parse({
+            ...latest,
+            status: "failed",
+            activeOperation: undefined,
+            lastError: asDomainError(error, requestId),
+            updatedAt: this.now(),
+          }), latest.revision);
+        }
+      } finally {
+        await this.generationRuns?.recordOutlineFailure(generationRunId, failedCourse, error, this.now() - startedAt);
       }
       throw error;
     }

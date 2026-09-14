@@ -491,3 +491,17 @@ M7～M10 已选择 CourseBrief/outline v2、PPT 式只读幻灯片、多样化�
 - 专业幻灯片编辑器：只有自然语言修订无法解决的精确排版成为持续真实需求，或产品目标转为平台内专业课件制作时重新立项。
 
 任何扩展都必须保持旧 schemaVersion 的读取策略，并单独定义验收与实验指标。M7～M10 的完整依赖、顺序和止损规则见 [M7～M10 方案](stage-plans/m7-m10-v0.4-quality-and-interaction-plan.md)；M11 与 M12 分别见 [M11 导出方案](stage-plans/m11-slide-export-plan.md)和 [M12 对话式修订 Agent 方案](stage-plans/m12-conversational-course-revision-agent-plan.md)。
+
+## 14. 生成运行指标与设置页增量（已实现）
+
+生成运行采用旁路观测架构：`OutlineGenerationService` 与首次 `SceneGenerationService.generate()` 在课程事务成功后把安全增量交给 `GenerationRunTracker`，Tracker 再写入独立 `GenerationRunRepository`。模型调用仍不进入数据库事务，指标写入失败只输出 `generation.metrics.write_failed` 脱敏日志，不改变课程成功或失败响应。M10/M12 的 ready 场景修订、Agent 工具、导出和播放不写入这张表。
+
+```text
+Outline / initial Scene Service
+  ├─ CourseRepository → courses（当前课程事实，主结果）
+  └─ GenerationRunTracker → GenerationRunRepository → generation_runs（运行历史，best-effort）
+
+/settings → GET /api/usage → generation_runs JOIN courses.title → UsageDashboard
+```
+
+`course_generation` 覆盖大纲、人工审核后的首次 pending 场景；审核等待不计入 `active_duration_ms`。`scene_batch` 记录首次运行之外的 pending 批次，`scene_retry` 记录 failed 场景重试。开放运行通过 courseId 从 MySQL 恢复，不依赖浏览器 runId；首次失败结果不会被后来成功重试覆盖。课程删除由外键级联清理在线运行历史，论文评价仍保存在脱敏 `eval/runs`。

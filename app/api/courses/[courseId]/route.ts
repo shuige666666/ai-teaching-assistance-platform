@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCourseRepository } from "@/lib/repository";
+import { getCourseRepository, getGenerationRunTracker } from "@/lib/repository";
 import { createApiError, mapRepositoryError } from "@/lib/repository/error-response";
 
 type RouteContext = { params: Promise<{ courseId: string }> };
@@ -20,6 +20,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const { courseId } = await context.params;
     await getCourseRepository().delete(courseId);
+    // MySQL 由外键级联；内存演示仓储通过同一入口清理运行历史。
+    await getGenerationRunTracker().deleteCourseRuns(courseId);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     const mapped = mapRepositoryError(error);

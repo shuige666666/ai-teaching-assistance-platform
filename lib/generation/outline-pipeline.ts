@@ -8,9 +8,11 @@ import { assembleSceneOutlines, InvalidOutlineError, validateAndNormalizeOutline
 import { buildOutlineUserPrompt, OUTLINE_PROMPT_VERSION, OUTLINE_SYSTEM_PROMPT } from "./prompts/outline.v2";
 import { buildRepairUserPrompt, REPAIR_SYSTEM_PROMPT } from "./prompts/repair.v1";
 import { logUpstreamFailure, logUpstreamSuccess, retryDelayMs, waitForRetry } from "./retry-policy";
+import { buildAttemptMetrics, type GenerationAttemptMetrics } from "./attempt-metrics";
 
 export class OutlineGenerationError extends Error {
   public readonly validationKind?: OutlineValidationKind;
+  public readonly attemptMetrics?: GenerationAttemptMetrics;
 
   constructor(
     public readonly code: "INVALID_MODEL_OUTPUT" | "GENERATION_BUDGET_EXHAUSTED" | AIErrorCode,
@@ -18,11 +20,12 @@ export class OutlineGenerationError extends Error {
     public readonly retryable: boolean,
     public readonly upstreamCalls: number,
     public readonly issues?: Array<{ path: string; message: string }>,
-    options?: ErrorOptions & { validationKind?: OutlineValidationKind },
+    options?: ErrorOptions & { validationKind?: OutlineValidationKind; attemptMetrics?: GenerationAttemptMetrics },
   ) {
     super(message, options);
     this.name = "OutlineGenerationError";
     this.validationKind = options?.validationKind;
+    this.attemptMetrics = options?.attemptMetrics;
   }
 }
 
@@ -58,9 +61,23 @@ export async function generateOutline(
   const startedAt = Date.now();
   const successfulResults: GenerateTextResult[] = [];
   let upstreamCalls = 0;
+  let repairAttempted = false;
   const maxCalls = 4;
   // 1. 用课程主题和场景数量拼出发给模型的提示词。
   const userPrompt = buildOutlineUserPrompt(input);
+
+  function attemptOptions(options: ErrorOptions & { validationKind?: OutlineValidationKind } = {}) {
+    return {
+      ...options,
+      attemptMetrics: buildAttemptMetrics({
+        results: successfulResults,
+        upstreamCalls,
+        promptVersion: OUTLINE_PROMPT_VERSION,
+        startedAt,
+        repairAttempted,
+      }),
+    };
+  }
 
   /**
    * 校验并规范化模型大纲，并由服务端根据 detectedBrief 生成最终 CourseBrief。
@@ -98,7 +115,7 @@ export async function generateOutline(
         const willRetry = mapped.automaticRetryable && attempt < 2 && upstreamCalls < maxCalls;
         if (!willRetry) {
           logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: false });
-          throw new OutlineGenerationError(mapped.code, mapped.message, mapped.retryable, upstreamCalls, undefined, { cause: mapped });
+          throw new OutlineGenerationError(mapped.code, mapped.message, mapped.retryable, upstreamCalls, undefined, attemptOptions({ cause: mapped }));
         }
         const delayMs = retryDelayMs(input.requestId, attempt);
         logUpstreamFailure(mapped, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: true, retryDelayMs: delayMs });
@@ -108,17 +125,16 @@ export async function generateOutline(
         } catch (abortError) {
           const aborted = abortError instanceof AIAdapterError ? abortError : mapped;
           logUpstreamFailure(aborted, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls, willRetry: false });
-          throw new OutlineGenerationError(aborted.code, aborted.message, aborted.retryable, upstreamCalls, undefined, { cause: aborted });
+          throw new OutlineGenerationError(aborted.code, aborted.message, aborted.retryable, upstreamCalls, undefined, attemptOptions({ cause: aborted }));
         }
       }
     }
-    throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次模型调用已达到预算上限", true, upstreamCalls, undefined, { cause: lastError });
+    throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "本次模型调用已达到预算上限", true, upstreamCalls, undefined, attemptOptions({ cause: lastError }));
   }
 
   // 2. 第一次调用模型，得到大纲文本。
   const first = await callAI({ stage: "outline", systemPrompt: OUTLINE_SYSTEM_PROMPT, userPrompt });
   let validated;
-  let repaired = false;
   try {
     // 3. 解析模型文本，并校验大纲结构、数量和课程级约束。
     validated = validateResponse(parseModelJson(first.text));
@@ -136,11 +152,11 @@ export async function generateOutline(
       willRepair,
     });
     if (!willRepair) {
-      throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "模型输出无效且已没有修复预算", true, upstreamCalls, invalid.issues, { validationKind: invalid.validationKind });
+      throw new OutlineGenerationError("GENERATION_BUDGET_EXHAUSTED", "模型输出无效且已没有修复预算", true, upstreamCalls, invalid.issues, attemptOptions({ validationKind: invalid.validationKind }));
     }
     // 5. 把首次结果和具体校验问题交给模型，请它修正一次。
+    repairAttempted = true;
     const repair = await callAI({ stage: "repair", systemPrompt: REPAIR_SYSTEM_PROMPT, userPrompt: buildRepairUserPrompt(userPrompt, first.text, invalid.issues) });
-    repaired = true;
     try {
       // 6. 修复结果仍需经过与首次结果相同的解析和校验流程。
       validated = validateResponse(parseModelJson(repair.text));
@@ -155,10 +171,10 @@ export async function generateOutline(
         issues: finalError.issues.slice(0, 5),
       });
       // 本次修复预算已经耗尽，但下一次请求会重新采样，仍允许用户显式重试。
-      throw new OutlineGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合课程大纲契约", true, upstreamCalls, finalError.issues, {
+      throw new OutlineGenerationError("INVALID_MODEL_OUTPUT", "模型输出修复后仍不符合课程大纲契约", true, upstreamCalls, finalError.issues, attemptOptions({
         cause: repairError,
         validationKind: finalError.validationKind,
-      });
+      }));
     }
   }
   // 7. 记录本次生成使用的模型、耗时和调用次数。
@@ -177,7 +193,7 @@ export async function generateOutline(
       requestId: input.requestId,
       durationMs: now - startedAt,
       upstreamCalls,
-      repaired,
+      repaired: repairAttempted,
       usage: mergeUsage(successfulResults),
       generatedAt: now,
     },

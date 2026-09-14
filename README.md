@@ -27,6 +27,8 @@ M6.5 已补齐 DeepSeek 返回 2xx 但空体、非 JSON、异常 envelope 或空
 
 **M7.0、M7.1、M8、M9 与 M10 当前范围已完成**：6 个公开主题及 Prompt v1 输入、报告和 28 份逐场景 MHTML 保持冻结，不因本次升级重新生成。新课程统一使用 Course schema v5 和 `scene-quiz.v2`；v4 课程在读取时把单个正确答案无损转换为数组，并在下次保存时自然升级为 v5。v1～v3 数据行仍保留但隐藏，按旧 ID 访问返回 `LEGACY_COURSE_UNSUPPORTED`。新版 PPT 式 slide 已按已确认的课堂页面需求完成单人验收，v0.3 仅作为历史参考，不再要求 A/B 配对评分；MHTML 只用于固定视口留档。CourseBrief、PPT 式 slide 和互动数量规则保持不变；请运行 `pnpm db:migrate` 应用 004 作答数组迁移。
 
+2026-09-14 已完成整课生成运行指标与简易用量面板。迁移 007 使用独立 `generation_runs` 保存一次 outline + 首次 scenes、继续批次和失败场景重试的运行事实；`courses` 仍只负责当前课程与当前产物来源。首页可进入 `/settings` 查看运行数、场景完成、模型调用、repair、可获得 token、有效生成耗时、每日趋势、模型分组和最近运行。未知 token 不按 0 解释，人工审核等待不计入有效耗时，产品用量不冒充课程质量或论文算法指标。
+
 ## v0.3 MVP 已实现什么
 
 MVP 面向“教师或学生输入一个主题，生成并运行一门微型课程”的场景，保留 OpenMAIC 最有代表性的三个抽象：
@@ -59,6 +61,7 @@ OpenMAIC 是一个约两千个前端/服务端源码文件、包含六个主要 
 | [10. M6.5 远端响应韧性与可观测性开发方案](docs/stage-plans/m6.5-remote-response-resilience-plan.md) | DeepSeek 响应分类、受限重试、安全日志和验收证据 |
 | [11. M11 资源包导出开发方案](docs/stage-plans/m11-slide-export-plan.md) | M11 PPTX + HTML 资源包映射表、保真度决策与验收证据 |
 | [12. M12 对话式课程修订 Agent 开发方案](docs/stage-plans/m12-conversational-course-revision-agent-plan.md) | 右侧对话侧栏、课程工具、流式思考、并发保护与分阶段验收 |
+| [13. 整课生成运行指标与简易用量面板](docs/stage-plans/generation-run-metrics-and-usage-dashboard-plan.md) | `generation_runs` 职责、运行生命周期、用量 API、设置页与研究指标边界 |
 
 01～06 是跨版本设计基线，07 是随开发维护的实现快照，08 是交付与验收手册，stage-plans 中分别保存 M6.5、M7～M10、M11 和 M12 的可执行开发方案。开发过程中若要扩大范围，应先修改范围和需求，再调整架构与路线图，避免代码和设计长期分叉。
 
@@ -75,15 +78,18 @@ app/
   api/courses/[courseId]/        # [M7.1 已实现] CRUD、Brief、outline.v2、场景与 quiz_attempts 接口
   api/health/database/           # [M2 已实现] 无敏感信息的数据库健康检查
   api/health/config/             # [M6 已实现] 当前 AI 档位的无密钥配置检查
+  api/usage/                     # [运行指标增强] 7d/30d/all 只读聚合
+  settings/                      # [运行指标增强] 简易用量面板
 components/
   renderers/                     # [M1 已实现] slide / quiz / code 固定渲染器
   slides/                        # [M8 已实现，v2.2 扩展] 只读 SlideCanvas 与 text/shape/line/code/chart/table Renderer
   interactive/                   # [M9 已实现] sandbox iframe 宿主与消息桥
   agent/                         # [M12.0～12.4 已实现] 可调宽智能修订侧栏、Markdown 回答、会话管理与思考/工具卡片
+  settings/                      # [运行指标增强] 用量摘要、趋势、模型与最近运行
   editor/                        # [MX 按需候选] 在 SlideCanvas 上叠加 PPT 式编辑交互
 lib/
   domain/                        # [M10 已实现] Course v5、单选/多选 Quiz、CourseBrief、Slide/PPTElement 与 fixture
-  repository/                    # [M7.1 已实现] v2 InMemory / MySQL 仓储、旧行隔离与错误映射
+  repository/                    # Course、Agent 与 generation_runs 的 InMemory/MySQL 仓储
   db/                            # [M2 已实现] MySQL 配置、连接池和健康检查
   application/                   # [M7.1 已实现] Brief、大纲/场景生成用例与服务端测验判分
   ai/                            # [M3/M6.5 已实现] mock、OpenAI-compatible 适配器与响应诊断
@@ -189,7 +195,8 @@ DATABASE_URL=mysql://user:password@127.0.0.1:3306/ai_teaching
 11. **M10（当前范围已完成）**：`/revise` 根据必填意见和当前旧场景修订 ready slide/interactive/quiz；`/regenerate` 对运行失败 interactive 做不携带旧 HTML 的干净重生成；失败保留原内容，quiz 修订时事务化清理旧作答；新版 slide 已由开发者依据已确认需求完成单人验收，v0.3 仅作历史留档，不再进行 v0.3/v0.4 成对质量验收；
 12. **M11（已完成，2026-09-07）**：把 slide 导出为 PPTX，并把互动场景导出为 `interactive/<顺序>_<标题>.html`，最终只打包为一个简单 ZIP；已补充字体/透明度、长代码文本、下载释放时序、状态播报和移动端提示适配。2026-09-14 的独立保真增强进一步统一文字尺度并支持 SVG path/曲线可编辑导出，结构、PowerPoint 渲染与用户多课程主观验收均已通过（见 [M11 方案](docs/stage-plans/m11-slide-export-plan.md)与[保真优化方案](docs/stage-plans/pptx-editable-fidelity-optimization-plan.md)）；
 13. **M12（M12.0～M12.4 工程主链已实现）**：已完成持久对话、流式可见思考、默认收起的两级工具卡、`read_stage/list_scenes/grep_stage/patch_stage/edit_deck/generate_scene`、revision 冲突保护、页面调序/新增/删除/整页重生成、会话切换、完整轮次上下文裁剪和刷新状态恢复；M12.4 进一步完成课堂/对话双栏、消息场景锚点、会话逐项重命名与删除按钮原位二次点击确认。隔离副本真实案例、MHTML 和浏览器侧栏证据已归档；人工内容/互动质量判断仍不冒充为工程通过；
-14. **MX（暂时搁置）**：专业幻灯片编辑器与毕业设计 AI Search 研究选题均按真实需求另行立项，不作为 M12 前置。
+14. **生成运行指标与用量面板（已完成）**：新增独立 `generation_runs`、运行生命周期、失败/重试统计、`GET /api/usage` 和 `/settings`；不继续扩张 `courses`，也不把运行指标变成质量门；
+15. **MX（暂时搁置）**：专业幻灯片编辑器与毕业设计 AI Search 研究选题均按真实需求另行立项，不作为 M12 前置。
 
 每一步的任务、测试和退出门见 [复刻实施路线图](docs/06-roadmap.md)。
 

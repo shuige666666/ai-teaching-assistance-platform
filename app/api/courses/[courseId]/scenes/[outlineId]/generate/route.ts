@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAIAdapter } from "@/lib/ai/factory";
 import { GenerateSceneInputSchema, mapOutlineError, readLimitedJson } from "@/lib/application/outline-api";
 import { SceneGenerationService } from "@/lib/application/scene-generation-service";
-import { getCourseRepository } from "@/lib/repository";
+import { getCourseRepository, getGenerationRunTracker } from "@/lib/repository";
 import { resolveRequestId, startServerOperation } from "@/lib/observability/server-log";
 
 type RouteContext = { params: Promise<{ courseId: string; outlineId: string }> };
@@ -21,7 +21,7 @@ export async function POST(request: Request, context: RouteContext) {
     // 5. 创建模型调用对象。
     const { adapter, sceneTimeoutMs } = createAIAdapter();
     // 6. 调用 generate()：生成这一场内容并保存到课程中。
-    const course = await new SceneGenerationService(getCourseRepository(), adapter, sceneTimeoutMs).generate(
+    const course = await new SceneGenerationService(getCourseRepository(), adapter, sceneTimeoutMs, Date.now, getGenerationRunTracker()).generate(
       courseId,
       outlineId,
       input.expectedRevision,
