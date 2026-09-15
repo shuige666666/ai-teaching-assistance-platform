@@ -1033,3 +1033,11 @@ Course 截止线升级为 schemaVersion 5。由于 v4 与 v5 的课程内容差�
 运行类型为 `course_generation | scene_batch | scene_retry`；运行状态为 `running | awaiting_review | awaiting_generation | completed | partial_failed | failed | cancelled | interrupted | superseded`。终态记录冻结，计数、token 与耗时不能再次累计。`usageStatus=complete | partial | unavailable` 用于区分完整 token、部分已知和 Provider 未返回，未知值不能用 0 代替。
 
 首次整课运行以开始时的 `requestedSceneCount` 为快照，用 `succeededSceneCount + failedSceneCount` 判断是否完成首次尝试；失败场景后来成功只完成新的 `scene_retry`。`activeDurationMs` 是各模型管线实际执行时间之和，不等于 `finishedAt - startedAt`，后者包含人工审核和页面停留。MySQL 迁移 007 通过 `course_id` 外键关联 Course 并在课程删除时级联清理。
+
+## 19. CourseFolder 与课程归属（已实现）
+
+`CourseFolder` 是独立的课程库组织实体，不嵌入 Course JSON，也不参与课程 schemaVersion。当前字段为 `id`、`name`、`order`、`createdAt` 和 `updatedAt`；名称在保存前去除首尾空白，限制为 1～80 个字符，并在当前单用户库内唯一。
+
+`CourseFolderMembership` 只保存 `courseId`、`folderId` 与 `movedAt`。以 `course_id` 为主键表达“一个课程最多属于一个文件夹”；不存在归属行表示未分类。移动使用 upsert，因此从一个文件夹移到另一个文件夹不会产生历史多重归属。本表是当前视图状态，不承担移动历史审计。
+
+删除文件夹必须带有明确语义：`unfile` 只级联删除 membership，Course 保留并成为未分类；`delete_courses` 则在一个数据库事务中删除文件夹和当前归属其中的 Course，其他课程关联表按既有外键级联清理。文件夹移动不会推进课程 revision，因为课程教学内容和元数据均未改变。课程名称仍属于 Course 元数据，改名通过 `expectedRevision` 保存并推进 revision，避免覆盖同时发生的课程修订。

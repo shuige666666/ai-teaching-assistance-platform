@@ -10,6 +10,9 @@ import type { GenerationRunRepository } from "./generation-run-repository";
 import { InMemoryGenerationRunRepository } from "./in-memory-generation-run-repository";
 import { MySQLGenerationRunRepository } from "./mysql-generation-run-repository";
 import { GenerationRunTracker } from "@/lib/application/generation-run-tracker";
+import type { CourseFolderRepository } from "./course-folder-repository";
+import { InMemoryCourseFolderRepository } from "./in-memory-course-folder-repository";
+import { MySQLCourseFolderRepository } from "./mysql-course-folder-repository";
 
 const globalRepository = globalThis as typeof globalThis & {
   __aiTeachingCourseRepository?: CourseRepository;
@@ -17,6 +20,7 @@ const globalRepository = globalThis as typeof globalThis & {
   __aiTeachingAgentSessionRepository?: AgentSessionRepository;
   __aiTeachingGenerationRunRepository?: GenerationRunRepository;
   __aiTeachingGenerationRunTracker?: GenerationRunTracker;
+  __aiTeachingCourseFolderRepository?: CourseFolderRepository;
 };
 
 /**
@@ -72,6 +76,18 @@ export function getGenerationRunTracker(): GenerationRunTracker {
   return globalRepository.__aiTeachingGenerationRunTracker;
 }
 
+/** 课程文件夹只管理首页分组，不进入 Course 内容聚合。 */
+export function getCourseFolderRepository(): CourseFolderRepository {
+  if (!globalRepository.__aiTeachingCourseFolderRepository) {
+    const repositoryType = process.env.COURSE_REPOSITORY ?? "mysql";
+    if (repositoryType === "mysql") globalRepository.__aiTeachingCourseFolderRepository = new MySQLCourseFolderRepository();
+    else if (repositoryType === "memory") globalRepository.__aiTeachingCourseFolderRepository = new InMemoryCourseFolderRepository(getCourseRepository());
+    else throw new RepositoryConfigurationError();
+  }
+  return globalRepository.__aiTeachingCourseFolderRepository;
+}
+
 export type { CourseRepository } from "./course-repository";
 export type { AgentSessionRepository } from "./agent-session-repository";
 export type { GenerationRunRepository } from "./generation-run-repository";
+export type { CourseFolderRepository } from "./course-folder-repository";

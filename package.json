@@ -26,6 +26,7 @@
   "dependencies": {
     "echarts": "^6.1.0",
     "jszip": "^3.10.1",
+    "lucide-react": "^1.45.0",
     "mysql2": "^3.23.4",
     "next": "16.3.2",
     "pptxgenjs": "^4.0.1",

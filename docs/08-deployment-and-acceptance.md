@@ -280,3 +280,16 @@ M12.4 已完成桌面端课堂/对话双栏、窄屏覆盖布局、消息场景�
 - 390×844 空数据页没有页面级横向溢出。临时课程和关联运行记录已删除，临时服务与浏览器会话已关闭。
 
 本轮没有调用真实 DeepSeek。原因是该增强不修改 Prompt、Provider 请求、响应解码或课程生成结果，只在既有 metadata/error 后旁路记录；mock 完整纵向链、真实 MySQL 和 production 浏览器已经直接覆盖新增职责。后续真实生成会自然写入 Provider 返回的 token；若 Provider 不返回，则保持 partial/unavailable，不构成失败或额外门禁。
+
+### 8.12 轻量课程库管理验收（2026-09-15）
+
+先执行 `pnpm db:migrate`，迁移输出应显示 `applied 008_course_folders.sql` 或已登记后的 `skip`。数据库应存在 `course_folders` 与 `course_folder_memberships`；`unfile` 删除后课程必须继续存在并成为未分类，`delete_courses` 则必须在同一事务中删除文件夹和其中课程。移动课程不应推进 Course revision 或 `updated_at`，课程改名则必须携带 `expectedRevision` 并推进 revision。
+
+本轮验证结果：
+
+- `pnpm lint`、无增量 TypeScript 检查和 `pnpm build` 通过；本轮增量运行 CourseFolder 单测 3 项及 MySQL 事务集成用例 1 项通过；
+- Repository 单测覆盖创建、移动、回到未分类、文件夹改名和两种删除模式；MySQL 用例额外确认移动不改变课程 revision/更新时间、保留模式不删除课程、危险模式连同课程删除；
+- 1699×780 Chromium 视口实测课程区为四个 319.5px 列，长文件夹名确认发生单行省略；非空文件夹菜单显示“仅删除文件夹”和带课程数的红色危险选项，危险确认面板显示永久删除说明。点击取消后数据保持不变，浏览器控制台 0 warning/error；
+- 临时文件夹已通过 UI 删除。临时课程 `02e18742-2ae5-4830-9093-d16958f80514` 保留为草稿，名称为“课程库验收已改名 0fefcb73”；出于不可逆操作保护，自动验收未执行第二次永久删除点击，可由项目负责人确认后在首页删除。
+
+本轮没有调用真实 DeepSeek，因为课程库只修改确定性的数据库组织关系、Course 标题接口和首页交互，不涉及 Prompt、模型响应或生成质量。当前验收不增加拖拽、批量管理、权限或内容质量门禁。

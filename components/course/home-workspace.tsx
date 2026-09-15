@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Folder, FolderInput, Pencil, Trash2 } from "lucide-react";
 import type { CourseBriefOverrides } from "@/lib/domain/course-brief";
+import type { CourseFolder, CourseFolderMembership } from "@/lib/domain/course-folder";
 import type { CourseSummary } from "@/lib/domain/schemas";
 
 type CreationProgress = {
@@ -28,9 +30,13 @@ const statusLabels: Record<CourseSummary["status"], string> = {
 
 export function HomeWorkspace({
   initialCourses,
+  initialFolders,
+  initialMemberships,
   initialError = null,
 }: {
   initialCourses: CourseSummary[];
+  initialFolders: CourseFolder[];
+  initialMemberships: CourseFolderMembership[];
   initialError?: string | null;
 }) {
   const router = useRouter();
@@ -48,13 +54,51 @@ export function HomeWorkspace({
   const [creationProgress, setCreationProgress] = useState<CreationProgress | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
   const [courses, setCourses] = useState(initialCourses);
+  const [folders, setFolders] = useState(initialFolders);
+  const [memberships, setMemberships] = useState(initialMemberships);
+  const [activeFolder, setActiveFolder] = useState<"all" | "unfiled" | string>("all");
+  const [folderEditor, setFolderEditor] = useState<{ mode: "create" | "rename"; value: string; folderId?: string; moveCourseId?: string } | null>(null);
+  const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
+  const [folderDeleteConfirm, setFolderDeleteConfirm] = useState<{ folderId: string; mode: "unfile" | "delete_courses" } | null>(null);
+  const [courseMoveMenuId, setCourseMoveMenuId] = useState<string | null>(null);
+  const [courseRename, setCourseRename] = useState<{ courseId: string; value: string } | null>(null);
+  const [courseDeleteConfirmId, setCourseDeleteConfirmId] = useState<string | null>(null);
+  const [libraryPending, setLibraryPending] = useState(false);
+  const folderMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const membershipByCourse = useMemo(() => new Map(memberships.map((membership) => [membership.courseId, membership.folderId])), [memberships]);
+  const visibleCourses = useMemo(() => courses.filter((course) => {
+    const folderId = membershipByCourse.get(course.id);
+    if (activeFolder === "all") return true;
+    if (activeFolder === "unfiled") return folderId === undefined;
+    return folderId === activeFolder;
+  }), [activeFolder, courses, membershipByCourse]);
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const membership of memberships) counts.set(membership.folderId, (counts.get(membership.folderId) ?? 0) + 1);
+    return counts;
+  }, [memberships]);
 
   useEffect(() => {
     if (!creationProgress) return;
     const timer = window.setInterval(() => setElapsedMs(Date.now() - creationProgress.startedAt), 250);
     return () => window.clearInterval(timer);
   }, [creationProgress]);
+
+  useEffect(() => {
+    if (!folderMenuId) return;
+    /** 点击当前文件夹菜单之外的区域时，同时退出删除选择和确认状态。 */
+    function closeFolderMenu(event: PointerEvent) {
+      if (event.target instanceof Node && !folderMenuRef.current?.contains(event.target)) {
+        setFolderMenuId(null);
+        setFolderDeleteConfirm(null);
+      }
+    }
+    document.addEventListener("pointerdown", closeFolderMenu, true);
+    return () => document.removeEventListener("pointerdown", closeFolderMenu, true);
+  }, [folderMenuId]);
 
   // 2. 业务逻辑
   /** 创建成功后只携带 courseId 跳转，生成页从仓储重新读取课程事实。 */
@@ -120,11 +164,10 @@ export function HomeWorkspace({
     }
   }
 
-  /** 显式确认后删除课程；成功响应后再从当前列表移除。 */
+  /** 第二次点击确认后删除课程；成功响应后再从当前列表移除。 */
   async function deleteCourse(course: CourseSummary) {
-    // 删除课程
-    if (!window.confirm(`确认删除“${course.title}”吗？该操作会同时删除相关测验记录。`)) return;
-    setError(null);
+    setLibraryError(null);
+    setLibraryPending(true);
     try {
       const response = await fetch(`/api/courses/${course.id}`, { method: "DELETE" });
       if (!response.ok) {
@@ -132,9 +175,112 @@ export function HomeWorkspace({
         throw new Error(apiErrorMessage(payload, "删除课程失败"));
       }
       setCourses((current) => current.filter((item) => item.id !== course.id));
+      setMemberships((current) => current.filter((item) => item.courseId !== course.id));
+      setCourseDeleteConfirmId(null);
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "删除课程失败");
+      setLibraryError(caught instanceof Error ? caught.message : "删除课程失败");
+    } finally {
+      setLibraryPending(false);
+    }
+  }
+
+  /** 创建或重命名文件夹；从移动菜单创建时，创建成功后继续完成归类。 */
+  async function saveFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!folderEditor) return;
+    setLibraryError(null);
+    setLibraryPending(true);
+    try {
+      const endpoint = folderEditor.mode === "create" ? "/api/course-folders" : `/api/course-folders/${folderEditor.folderId}`;
+      const response = await fetch(endpoint, {
+        method: folderEditor.mode === "create" ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: folderEditor.value }),
+      });
+      const payload = await response.json() as { data?: { folder: CourseFolder }; error?: { message?: string } };
+      if (!response.ok || !payload.data?.folder) throw new Error(apiErrorMessage(payload, "文件夹保存失败"));
+      const saved = payload.data.folder;
+      if (folderEditor.mode === "create") setFolders((current) => [...current, saved]);
+      else setFolders((current) => current.map((folder) => folder.id === saved.id ? saved : folder));
+      if (folderEditor.moveCourseId) await moveCourse(folderEditor.moveCourseId, saved.id);
+      setFolderEditor(null);
+      setFolderMenuId(null);
+    } catch (caught) {
+      setLibraryError(caught instanceof Error ? caught.message : "文件夹保存失败");
+    } finally {
+      setLibraryPending(false);
+    }
+  }
+
+  /** 删除文件夹时由用户明确选择保留课程或连同课程一起删除。 */
+  async function deleteFolder(folderId: string, mode: "unfile" | "delete_courses") {
+    setLibraryError(null);
+    setLibraryPending(true);
+    try {
+      const response = await fetch(`/api/course-folders/${folderId}?mode=${mode}`, { method: "DELETE" });
+      const payload = await response.json() as { data?: { deletedCourseIds: string[] }; error?: { message?: string } };
+      if (!response.ok) throw new Error(apiErrorMessage(payload, "删除文件夹失败"));
+      const deletedCourseIds = new Set(payload.data?.deletedCourseIds ?? []);
+      setFolders((current) => current.filter((folder) => folder.id !== folderId));
+      setMemberships((current) => current.filter((membership) => membership.folderId !== folderId));
+      if (deletedCourseIds.size > 0) setCourses((current) => current.filter((course) => !deletedCourseIds.has(course.id)));
+      if (activeFolder === folderId) setActiveFolder(mode === "unfile" ? "unfiled" : "all");
+      setFolderMenuId(null);
+      setFolderDeleteConfirm(null);
+    } catch (caught) {
+      setLibraryError(caught instanceof Error ? caught.message : "删除文件夹失败");
+    } finally {
+      setLibraryPending(false);
+    }
+  }
+
+  /** 将课程归入一个文件夹，folderId 为空时移回未分类。 */
+  async function moveCourse(courseId: string, folderId: string | null) {
+    setLibraryError(null);
+    setLibraryPending(true);
+    try {
+      const response = await fetch(`/api/courses/${courseId}/folder`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId }),
+      });
+      const payload = await response.json() as { data?: { folderId: string | null }; error?: { message?: string } };
+      if (!response.ok || !payload.data) throw new Error(apiErrorMessage(payload, "移动课程失败"));
+      setMemberships((current) => {
+        const rest = current.filter((membership) => membership.courseId !== courseId);
+        return folderId ? [...rest, { courseId, folderId, movedAt: Date.now() }] : rest;
+      });
+      setCourseMoveMenuId(null);
+      return true;
+    } catch (caught) {
+      setLibraryError(caught instanceof Error ? caught.message : "移动课程失败");
+      return false;
+    } finally {
+      setLibraryPending(false);
+    }
+  }
+
+  /** 课程改名继续使用 Course revision，避免覆盖同时发生的 Agent 修改。 */
+  async function renameCourse(event: FormEvent<HTMLFormElement>, course: CourseSummary) {
+    event.preventDefault();
+    if (!courseRename) return;
+    setLibraryError(null);
+    setLibraryPending(true);
+    try {
+      const response = await fetch(`/api/courses/${course.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: courseRename.value, expectedRevision: course.revision }),
+      });
+      const payload = await response.json() as { course?: { title: string; revision: number; updatedAt: number }; error?: { message?: string } };
+      if (!response.ok || !payload.course) throw new Error(apiErrorMessage(payload, "课程改名失败"));
+      setCourses((current) => current.map((item) => item.id === course.id ? { ...item, ...payload.course } : item));
+      setCourseRename(null);
+    } catch (caught) {
+      setLibraryError(caught instanceof Error ? caught.message : "课程改名失败");
+    } finally {
+      setLibraryPending(false);
     }
   }
 
@@ -335,24 +481,96 @@ export function HomeWorkspace({
             <p className="eyebrow">MYSQL WORKSPACE</p>
             <h2>最近课程</h2>
           </div>
-          <span>{courses.length.toString().padStart(2, "0")} ITEMS</span>
+          <div className="library-heading-actions">
+            <span>{courses.length.toString().padStart(2, "0")} ITEMS</span>
+            <button type="button" disabled={libraryPending} onClick={() => setFolderEditor({ mode: "create", value: "" })}>＋ 新建文件夹</button>
+          </div>
         </div>
+        <nav className="course-folder-bar" aria-label="课程文件夹">
+          <button className={activeFolder === "all" ? "is-active" : ""} type="button" onClick={() => setActiveFolder("all")}>全部课程 <small>{courses.length}</small></button>
+          <button className={activeFolder === "unfiled" ? "is-active" : ""} type="button" onClick={() => setActiveFolder("unfiled")}>未分类 <small>{courses.length - memberships.length}</small></button>
+          {folders.map((folder) => (
+            <div
+              className={`course-folder-filter${activeFolder === folder.id ? " is-active" : ""}`}
+              key={folder.id}
+              ref={folderMenuId === folder.id ? folderMenuRef : undefined}
+            >
+              <button className="course-folder-name" type="button" title={folder.name} onClick={() => setActiveFolder(folder.id)}>
+                <span>{folder.name}</span><small>{folderCounts.get(folder.id) ?? 0}</small>
+              </button>
+              <button
+                className="course-folder-more"
+                type="button"
+                aria-label={`管理文件夹：${folder.name}`}
+                onClick={() => { setFolderMenuId((current) => current === folder.id ? null : folder.id); setFolderDeleteConfirm(null); }}
+              >···</button>
+              {folderMenuId === folder.id ? (
+                <div className="course-folder-menu" role="menu">
+                  {folderDeleteConfirm?.folderId === folder.id ? (
+                    <div className="course-folder-delete-confirm" role="alertdialog" aria-modal="true">
+                      <strong>{folderDeleteConfirm.mode === "delete_courses" ? `删除文件夹和 ${folderCounts.get(folder.id) ?? 0} 门课程？` : "删除空文件夹？"}</strong>
+                      <p>{folderDeleteConfirm.mode === "delete_courses" ? "课程内容和关联记录将被永久删除。" : "该文件夹删除后无法恢复。"}</p>
+                      <div>
+                        <button type="button" disabled={libraryPending} onClick={() => setFolderDeleteConfirm(null)}>取消</button>
+                        <button className="is-destructive" type="button" disabled={libraryPending} onClick={() => void deleteFolder(folder.id, folderDeleteConfirm.mode)}>
+                          {libraryPending ? "删除中…" : "确认删除"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <button className="course-folder-rename-option" type="button" role="menuitem" disabled={libraryPending} onClick={() => { setFolderEditor({ mode: "rename", folderId: folder.id, value: folder.name }); setFolderMenuId(null); }}>重命名文件夹</button>
+                      {(folderCounts.get(folder.id) ?? 0) > 0 ? (
+                        <>
+                          <button className="course-folder-delete-option" type="button" role="menuitem" disabled={libraryPending} onClick={() => void deleteFolder(folder.id, "unfile")}>
+                            <Folder aria-hidden="true" />
+                            <span><strong>仅删除文件夹</strong><small>课程保留在未分类中</small></span>
+                          </button>
+                          <button className="course-folder-delete-option is-destructive" type="button" role="menuitem" disabled={libraryPending} onClick={() => setFolderDeleteConfirm({ folderId: folder.id, mode: "delete_courses" })}>
+                            <Trash2 aria-hidden="true" />
+                            <span><strong>删除文件夹和 {folderCounts.get(folder.id)} 门课程</strong><small>课程内容及关联记录会一并删除</small></span>
+                          </button>
+                        </>
+                      ) : (
+                        <button className="course-folder-delete-option" type="button" role="menuitem" disabled={libraryPending} onClick={() => setFolderDeleteConfirm({ folderId: folder.id, mode: "unfile" })}>
+                          <Trash2 aria-hidden="true" />
+                          <span><strong>删除空文件夹</strong></span>
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </nav>
+        {folderEditor ? (
+          <form className="course-folder-editor" onSubmit={saveFolder}>
+            <label>
+              <span>{folderEditor.mode === "create" ? "新建文件夹" : "重命名文件夹"}</span>
+              <input autoFocus maxLength={80} value={folderEditor.value} onChange={(event) => setFolderEditor({ ...folderEditor, value: event.target.value })} placeholder="例如：计算机网络" />
+            </label>
+            <button type="submit" disabled={libraryPending || !folderEditor.value.trim()}>保存</button>
+            <button type="button" disabled={libraryPending} onClick={() => setFolderEditor(null)}>取消</button>
+          </form>
+        ) : null}
         {initialError ? (
           <p className="library-error" role="alert">
             {initialError}
           </p>
         ) : null}
-        {courses.length === 0 && !initialError ? (
+        {libraryError ? <p className="library-error" role="alert">{libraryError}</p> : null}
+        {visibleCourses.length === 0 && !initialError ? (
           <div className="empty-library">
             <span className="empty-number">00</span>
             <div>
-              <h3>还没有课程</h3>
-              <p>上方创建的第一门课程会保存到 MySQL，并可在服务重启后恢复。</p>
+              <h3>{courses.length === 0 ? "还没有课程" : "当前文件夹还没有课程"}</h3>
+              <p>{courses.length === 0 ? "上方创建的第一门课程会保存到 MySQL，并可在服务重启后恢复。" : "可以从其他课程卡片的“移动”菜单将课程归入这里。"}</p>
             </div>
           </div>
         ) : (
           <div className="course-grid">
-            {courses.map((course, index) => (
+            {visibleCourses.map((course, index) => (
               <article className="course-card" key={course.id}>
                 <Link
                   className="course-card-main"
@@ -365,21 +583,76 @@ export function HomeWorkspace({
                     <span>
                       {course.readySceneCount}/{course.requestedSceneCount} 场景
                     </span>
-                    <span>REV.{course.revision}</span>
+                    <span>{folders.find((folder) => folder.id === membershipByCourse.get(course.id))?.name ?? "未分类"} · REV.{course.revision}</span>
                   </div>
                 </Link>
                 <div className="course-card-actions">
+                  <button
+                    className="course-card-action-icon"
+                    type="button"
+                    title="移动到文件夹"
+                    disabled={libraryPending}
+                    onClick={() => { setCourseMoveMenuId((current) => current === course.id ? null : course.id); setCourseDeleteConfirmId(null); }}
+                    aria-label={`移动课程：${course.title}`}
+                  >
+                    <FolderInput aria-hidden="true" />
+                  </button>
+                  <button
+                    className="course-card-action-icon"
+                    type="button"
+                    title="编辑课程名称"
+                    disabled={libraryPending}
+                    onClick={() => { setCourseRename({ courseId: course.id, value: course.title }); setCourseMoveMenuId(null); setCourseDeleteConfirmId(null); }}
+                    aria-label={`编辑课程名称：${course.title}`}
+                  >
+                    <Pencil aria-hidden="true" />
+                  </button>
+                  <button
+                    className="course-card-action-icon course-card-action-delete"
+                    type="button"
+                    title="删除课程"
+                    disabled={libraryPending}
+                    onClick={() => {
+                      setCourseDeleteConfirmId(course.id);
+                      setCourseMoveMenuId(null);
+                      setCourseRename(null);
+                    }}
+                    aria-label={`删除课程：${course.title}`}
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </button>
                   <span className={`course-status course-status--${course.status}`}>
                     {statusLabels[course.status]}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => deleteCourse(course)}
-                    aria-label={`删除课程：${course.title}`}
-                  >
-                    删除
-                  </button>
                 </div>
+                {courseMoveMenuId === course.id ? (
+                  <div className="course-move-menu" role="menu">
+                    <span>移动到文件夹</span>
+                    <button className={membershipByCourse.get(course.id) === undefined ? "is-current" : ""} type="button" role="menuitem" onClick={() => void moveCourse(course.id, null)}>未分类</button>
+                    {folders.map((folder) => (
+                      <button className={membershipByCourse.get(course.id) === folder.id ? "is-current" : ""} type="button" role="menuitem" key={folder.id} onClick={() => void moveCourse(course.id, folder.id)}>{folder.name}</button>
+                    ))}
+                    <button className="course-move-create" type="button" role="menuitem" onClick={() => { setFolderEditor({ mode: "create", value: "", moveCourseId: course.id }); setCourseMoveMenuId(null); }}>＋ 新建文件夹</button>
+                  </div>
+                ) : null}
+                {courseRename?.courseId === course.id ? (
+                  <form className="course-card-rename" onSubmit={(event) => void renameCourse(event, course)}>
+                    <label><span>编辑课程名称</span><input autoFocus maxLength={120} value={courseRename.value} onChange={(event) => setCourseRename({ courseId: course.id, value: event.target.value })} /></label>
+                    <div><button type="submit" disabled={libraryPending || !courseRename.value.trim()}>保存</button><button type="button" disabled={libraryPending} onClick={() => setCourseRename(null)}>取消</button></div>
+                  </form>
+                ) : null}
+                {courseDeleteConfirmId === course.id ? (
+                  <div className="course-delete-overlay" role="alertdialog" aria-modal="true" aria-labelledby={`delete-course-${course.id}`}>
+                    <strong id={`delete-course-${course.id}`}>删除课程？</strong>
+                    <p>课程内容和关联记录将被永久删除。</p>
+                    <div>
+                      <button type="button" autoFocus disabled={libraryPending} onClick={() => setCourseDeleteConfirmId(null)}>取消</button>
+                      <button className="course-delete-confirm-button" type="button" disabled={libraryPending} onClick={() => void deleteCourse(course)}>
+                        {libraryPending ? "删除中…" : "删除"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </article>
             ))}
           </div>

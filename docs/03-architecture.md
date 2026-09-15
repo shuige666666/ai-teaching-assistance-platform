@@ -505,3 +505,20 @@ Outline / initial Scene Service
 ```
 
 `course_generation` 覆盖大纲、人工审核后的首次 pending 场景；审核等待不计入 `active_duration_ms`。`scene_batch` 记录首次运行之外的 pending 批次，`scene_retry` 记录 failed 场景重试。开放运行通过 courseId 从 MySQL 恢复，不依赖浏览器 runId；首次失败结果不会被后来成功重试覆盖。课程删除由外键级联清理在线运行历史，论文评价仍保存在脱敏 `eval/runs`。
+
+## 15. 课程库文件夹增量（已实现）
+
+课程文件夹属于首页课程库的组织视图，不属于 Course 聚合。`course_folders` 保存单层文件夹元数据，`course_folder_memberships` 保存课程与文件夹的一对一归属；没有归属行即“未分类”。这种拆分避免继续扩大 `courses` 的职责，也让移动课程不必修改课程正文、`revision` 或 `updated_at`。
+
+```text
+首页 Server Component
+  ├─ CourseRepository.list()                 → 课程卡片
+  └─ CourseFolderRepository                  → 文件夹与归属
+
+HomeWorkspace
+  ├─ POST/PATCH/DELETE /api/course-folders   → 新建、改名、按模式删除文件夹
+  ├─ PUT /api/courses/{courseId}/folder      → 移动或回到未分类
+  └─ PATCH /api/courses/{courseId}           → 课程名称变更并推进 revision
+```
+
+文件夹删除显式区分 `unfile` 与 `delete_courses`。前者只删除文件夹和归属行，课程回到“未分类”；后者在红色警示确认后，由 MySQL 仓储在同一事务内删除文件夹及其中课程，课程关联数据继续按既有外键级联。首版只提供单层文件夹、一个课程至多归属一个文件夹，以及卡片中的移动、改名和删除。课程操作使用带 `title`/`aria-label` 的图标按钮；课程删除属于较重操作，先显示卡片内警示遮罩，再由用户取消或确认。嵌套目录、拖拽排序、批量操作、共享权限、软删除与回收站均不在本次范围。

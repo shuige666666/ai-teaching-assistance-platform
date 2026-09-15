@@ -15,6 +15,7 @@ import { MySQLAgentSessionRepository } from "@/lib/repository/mysql-agent-sessio
 import { CoursePatchService } from "@/lib/application/course-patch-service";
 import { AgentApplicationError } from "@/lib/agent/contracts";
 import { MySQLGenerationRunRepository } from "@/lib/repository/mysql-generation-run-repository";
+import { MySQLCourseFolderRepository } from "@/lib/repository/mysql-course-folder-repository";
 
 const pool = getDatabasePool();
 courseRepositoryContract("MySQL", () => new MySQLCourseRepository(pool));
@@ -319,6 +320,34 @@ describe("MySQLCourseRepository integration", () => {
       await expect(new MySQLCourseRepository(unavailablePool).list()).rejects.toBeInstanceOf(DatabaseUnavailableError);
     } finally {
       await unavailablePool.end();
+    }
+  });
+
+  it("文件夹归属独立保存，并支持保留课程或连同课程删除", async () => {
+    const courses = new MySQLCourseRepository(pool);
+    const folders = new MySQLCourseFolderRepository(pool);
+    const course = await courses.create(createFixtureCourse(`文件夹归属 ${crypto.randomUUID()}`, 4));
+    cleanupIds.push(course.id);
+    const folder = await folders.create(`课程分组 ${crypto.randomUUID()}`);
+    let destructiveFolderId: string | undefined;
+    try {
+      await folders.moveCourse(course.id, folder.id);
+      expect(await folders.listMemberships()).toContainEqual(expect.objectContaining({ courseId: course.id, folderId: folder.id }));
+      const unchanged = await courses.get(course.id);
+      expect(unchanged).toMatchObject({ revision: course.revision, updatedAt: course.updatedAt });
+      expect((await folders.rename(folder.id, "课程分组已改名"))?.name).toBe("课程分组已改名");
+      expect(await folders.delete(folder.id, "unfile")).toEqual({ folderId: folder.id, deletedCourseIds: [] });
+      expect((await folders.listMemberships()).some((item) => item.courseId === course.id)).toBe(false);
+      expect(await courses.get(course.id)).not.toBeNull();
+
+      const destructiveFolder = await folders.create(`待删除课程 ${crypto.randomUUID()}`);
+      destructiveFolderId = destructiveFolder.id;
+      await folders.moveCourse(course.id, destructiveFolder.id);
+      expect(await folders.delete(destructiveFolder.id, "delete_courses")).toEqual({ folderId: destructiveFolder.id, deletedCourseIds: [course.id] });
+      expect(await courses.get(course.id)).toBeNull();
+    } finally {
+      await folders.delete(folder.id);
+      if (destructiveFolderId) await folders.delete(destructiveFolderId);
     }
   });
 

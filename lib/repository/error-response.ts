@@ -6,6 +6,7 @@ import {
   RepositoryConfigurationError,
   StoredCourseInvalidError,
 } from "./course-repository";
+import { CourseFolderNameConflictError, CourseFolderNotFoundError } from "./course-folder-repository";
 
 export type RepositoryErrorResponse = {
   status: number;
@@ -18,6 +19,12 @@ export function createApiError(code: string, message: string, retryable: boolean
 
 /** 把服务端仓储异常映射为不泄露连接信息的统一 API 错误。 */
 export function mapRepositoryError(error: unknown, requestId?: string): RepositoryErrorResponse {
+  if (error instanceof CourseFolderNameConflictError) {
+    return { status: 409, body: createApiError("COURSE_FOLDER_NAME_CONFLICT", "已经存在同名文件夹", false, requestId) };
+  }
+  if (error instanceof CourseFolderNotFoundError) {
+    return { status: 404, body: createApiError("COURSE_FOLDER_NOT_FOUND", "文件夹不存在或已经被删除", false, requestId) };
+  }
   if (error instanceof CourseConflictError) {
     return { status: 409, body: createApiError("COURSE_CONFLICT", "课程已被其他操作更新，请刷新后重试", true, requestId) };
   }
