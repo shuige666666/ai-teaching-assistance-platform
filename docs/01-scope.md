@@ -38,7 +38,7 @@ OpenMAIC 当前是平台级项目，包含课程生成、四类场景、动作�
 | 大量动作类型 | 只实现 speech 和 pause |
 | 多 Provider 与按阶段路由 | MVP 只验收 mock 与 DeepSeek；百炼兼容档保留为后续可选扩展 |
 | IndexedDB 与 HTTP/PostgreSQL 双后端 | 使用服务端 MySQL 作为唯一课程事实来源 |
-| LangGraph 多智能体讨论 | 不进入 MVP，作为后续候选扩展 |
+| 多智能体讨论（早期使用 LangGraph；1.1.1 默认使用 Pi Director） | 不进入 MVP，作为后续候选扩展 |
 | PPTX、HTML、视频导出 | 不进入 MVP；只含 PPTX 与互动 HTML 的简化资源包暂存为可选 M11 |
 
 参考源码定位（均指 OpenMAIC 参考仓库）：
@@ -48,7 +48,7 @@ OpenMAIC 当前是平台级项目，包含课程生成、四类场景、动作�
 - 分阶段生成：`app/api/generate/scene-outlines-stream`、`scene-content`、`scene-actions`；
 - 动作与播放：`lib/action/engine.ts`、`lib/playback/engine.ts`；
 - 默认本地存储：`@openmaic/storage` 的 `BrowserDocumentStore`；
-- 多智能体边界：`lib/orchestration/director-graph.ts`。
+- 多智能体边界：1.1.1 默认路径见 `app/api/chat/pi/route.ts`、`lib/chat/pi/director-loop.ts`；早期 LangGraph 路径见 `lib/orchestration/director-graph.ts`。
 
 ## 3. 目标用户与核心场景
 
