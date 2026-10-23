@@ -29,6 +29,7 @@
     "lucide-react": "^1.45.0",
     "mysql2": "^3.23.4",
     "next": "16.3.2",
+    "parse5": "8.0.0",
     "pptxgenjs": "^4.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",

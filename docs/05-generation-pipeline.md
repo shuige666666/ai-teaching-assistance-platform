@@ -408,14 +408,16 @@ prompts/
 └─ repair-interactive.v1.ts
 ```
 
-所有 v2 User Prompt 都从 MySQL Course 构造，至少包含：
+slide 的 v2 User Prompt 从 MySQL Course 构造，包含：
 
 - 作为不可信数据传入的原始 topic；
 - 已校验的显式高级设置、确定性默认值、字段合并优先级，以及当前 provisional/resolved CourseBrief；
 - 完整但紧凑的课程计划和目标；
 - 当前 SceneOutline 的 role、objective、keyPoints、misconceptions/assessmentFocus；
-- 有上限的 `coveredKeyPoints`、`remainingObjectives` 和前文摘要；
+- 已保存前序场景的内容摘要（最多 7 页，每页摘要最多 300 字）、`remainingObjectives` 和前文摘要；不把失败或尚未生成页的大纲要点当成已经讲授的内容；
 - 当前场景的可见内容密度、允许类型和禁止字段。
+
+`scene-slide.v2.5` 使用实际场景摘要替代计划关键点作为已覆盖内容；局部修订后的摘录/失效提示随页面原子保存，规则见 04。互动 HTML 另用 `parse5` 提取浏览器会执行的普通内联脚本，并以 Node.js `Script` 只编译、不执行；语法错误通过既有 `InvalidInteractiveHtmlError` 进入一次 repair，修复后仍错误则拒绝保存。外部脚本、module、JSON 数据及模板内脚本不在本次语法检查范围内，运行时错误捕获与沙箱隔离继续保留。
 
 `outline.v2.1` 的输出契约使用以下包裹层：
 

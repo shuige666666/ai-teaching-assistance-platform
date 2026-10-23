@@ -7,6 +7,7 @@ import { PPTElementSchema } from "@/lib/domain/slide-schemas";
 import { postProcessInteractiveHtml, extractInteractiveAuthorHtml } from "@/lib/interactive/html-policy";
 import { sanitizeSlideText } from "@/lib/slides/normalize-slide";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
+import { refreshPatchedSceneSummary } from "./scene-summary";
 
 const JsonValueSchema: z.ZodType<unknown> = z.unknown();
 const PatchOperationSchema = z.discriminatedUnion("op", [
@@ -221,6 +222,8 @@ export class CoursePatchService {
     }
 
     const candidateScene = SceneSchema.parse({ ...candidate, id: original.id, courseId: original.courseId, outlineId: original.outlineId, type: original.type, createdAt: original.createdAt, updatedAt: Math.max(this.now(), original.updatedAt) });
+    candidateScene.summary = refreshPatchedSceneSummary(original, candidateScene);
+    if (candidateScene.summary !== original.summary) changedPaths.push("/summary");
     const candidateCourse = CourseSchema.parse({ ...current, scenes: current.scenes.map((scene) => scene.id === original.id ? candidateScene : scene), updatedAt: Math.max(this.now(), current.updatedAt) });
     void candidateCourse;
     return { courseId, sceneId: original.id, baseRevision: current.revision, candidateScene, quizQuestionsChanged, changedPaths: [...new Set(changedPaths)], warnings, summary: input.intent };

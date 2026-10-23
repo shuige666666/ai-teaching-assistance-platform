@@ -2,6 +2,12 @@
 
 ## OpenMAIC
 
+2026-10-23 的互动脚本语法检查参考 OpenMAIC 提交
+`8a55b2dcf150b5f855e7d069b584c84c686e14a8` 的
+`packages/@openmaic/generation/src/interactive-script-validator.ts`，按本项目错误契约重新实现。
+使用 `parse5`（MIT）解析真实 HTML 节点，再用 Node.js `Script` 仅编译普通内联脚本；
+跳过 JSON、外部及 module 脚本，不进行脚本执行或教学语义验证。
+
 M8 的 `scene-slide.v2` 提示词裁剪自 THU-MAIC/OpenMAIC 固定提交
 `59adbef03b63488a7ff1ea983cf0fbba51609f9f` 中的以下文件：
 

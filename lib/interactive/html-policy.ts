@@ -1,4 +1,5 @@
 import { buildRuntimeBootstrap } from "./runtime-bootstrap";
+import { findScriptSyntaxFailure } from "./script-syntax";
 
 export const INTERACTIVE_HTML_MAX_BYTES = 256 * 1024;
 export type InteractiveHtmlIssue = { path: string; message: string };
@@ -23,7 +24,7 @@ const CSP = [
   "object-src 'none'", "frame-src 'none'", "base-uri 'none'", "form-action 'none'",
 ].join("; ");
 
-/** 只检查文档和大小，执行边界依靠浏览器 sandbox/CSP，不用源码正则冒充脚本审计。 */
+/** 检查文档、大小和普通内联脚本语法；执行安全仍依靠浏览器 sandbox/CSP。 */
 export function postProcessInteractiveHtml(rawHtml: string): string {
   let html = rawHtml.trim().replace(/^```(?:html)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
   if (!/<html(?:\s|>)/i.test(html) || !/<head(?:\s|>)/i.test(html) || !/<body(?:\s|>)/i.test(html) || !/<\/html>\s*$/i.test(html)) {
@@ -35,6 +36,12 @@ export function postProcessInteractiveHtml(rawHtml: string): string {
   if (new TextEncoder().encode(html).length > INTERACTIVE_HTML_MAX_BYTES) {
     throw new InvalidInteractiveHtmlError([{ path: "content.html", message: "注入运行策略后的 HTML 不能超过 256 KiB" }]);
   }
+  // 语法失败沿用生成管线的一次 repair；局部修订则在保存前拒绝候选，保留旧页面。
+  const failure = findScriptSyntaxFailure(html);
+  if (failure) throw new InvalidInteractiveHtmlError([{
+    path: `content.html.script[${failure.scriptIndex}]`,
+    message: `普通内联脚本语法错误：${failure.message}`,
+  }]);
   return html;
 }
 

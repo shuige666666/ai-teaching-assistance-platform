@@ -21,17 +21,18 @@ import { resolveCourseTheme } from "@/lib/slides/theme-presets";
  * and adds connector craft rules (edge-to-edge with 4-8px gaps, length >=40px,
  * one line per connection, no shape-bar splicing).
  */
-export const SLIDE_PROMPT_VERSION = "scene-slide.v2.4";
+export const SLIDE_PROMPT_VERSION = "scene-slide.v2.5";
 
 export const SLIDE_SYSTEM_PROMPT = loadPromptTemplate("scene-slide-generation-system");
 
 /** 用已保存的 Brief、大纲和有限课程记忆构造本场 User Prompt。 */
 export function buildSlideUserPrompt(course: Course, outline: SceneOutline, previousSummary?: string): string {
   const orderedOutlines = [...course.outlines].sort((a, b) => a.order - b.order);
-  const coveredKeyPoints = orderedOutlines
-    .filter((item) => item.order < outline.order)
-    .flatMap((item) => item.keyPoints)
-    .slice(-8);
+  // 计划不等于实际生成内容；失败页不应被后页视为已经讲过。
+  const coveredScenes = course.scenes
+    .filter((scene) => scene.order < outline.order)
+    .sort((a, b) => a.order - b.order)
+    .map((scene) => ({ order: scene.order, title: scene.title, summary: scene.summary }));
   const remainingObjectives = orderedOutlines
     .filter((item) => item.order > outline.order)
     .map((item) => item.teachingObjective)
@@ -69,7 +70,7 @@ CourseBrief JSON：${JSON.stringify(course.brief)}
     estimatedMinutes: outline.estimatedMinutes,
   })}
 课程计划 JSON：${JSON.stringify(coursePlan)}
-已经覆盖的关键点 JSON：${JSON.stringify(coveredKeyPoints)}
+已生成场景摘要 JSON：${JSON.stringify(coveredScenes)}
 后续待覆盖目标 JSON：${JSON.stringify(remainingObjectives)}
 前一场景摘要 JSON：${JSON.stringify(previousSummary ?? "无，这是首个已生成场景")}
 
