@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { AIAdapter } from "@/lib/ai/contracts";
 import { CourseSchema, type Course, type DomainError, type SceneOutline } from "@/lib/domain/schemas";
 import { generateOutline, OutlineGenerationError } from "@/lib/generation/outline-pipeline";
-import { validateEditedOutline } from "@/lib/generation/outline-schema";
+import { validateEditedOutline, validateOutlineSources } from "@/lib/generation/outline-schema";
+import { buildMaterialContext } from "@/lib/materials/context";
+import { MaterialError } from "@/lib/materials/types";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
 import type { GenerationRunTracker } from "./generation-run-tracker";
 
@@ -14,6 +16,7 @@ export class OutlineApplicationError extends Error {
 }
 
 function asDomainError(error: unknown, requestId: string): DomainError {
+  if (error instanceof MaterialError) return { code: error.code, message: error.message, retryable: false, stage: "outline", details: { requestId } };
   if (error instanceof OutlineGenerationError) {
     return {
       code: error.code,
@@ -76,6 +79,7 @@ export class OutlineGenerationService {
         provisionalResolution: registered.briefResolution,
         requestId,
         signal,
+        materialContext: buildMaterialContext(await this.repository.listMaterials(courseId)),
       });
       // 6. 再次读取课程，确认这次操作还没有被其他请求替代。
       const latest = await this.repository.get(courseId);
@@ -136,6 +140,7 @@ export class OutlineGenerationService {
     }
     // 3. 校验用户修改后的标题、目标和关键点。
     const validated = validateEditedOutline(courseTitle, outlines, current.requestedSceneCount, current.brief.interactionMode);
+    validateOutlineSources(validated.outlines, buildMaterialContext(await this.repository.listMaterials(courseId)));
     // 4. 保存修改后的大纲，并把课程版本号加一。
     return this.repository.save(CourseSchema.parse({ ...current, title: validated.courseTitle, outlines: validated.outlines, updatedAt: this.now() }), expectedRevision);
   }

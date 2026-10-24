@@ -16,6 +16,9 @@ import { CoursePatchService } from "@/lib/application/course-patch-service";
 import { AgentApplicationError } from "@/lib/agent/contracts";
 import { MySQLGenerationRunRepository } from "@/lib/repository/mysql-generation-run-repository";
 import { MySQLCourseFolderRepository } from "@/lib/repository/mysql-course-folder-repository";
+import { CourseMaterialService } from "@/lib/application/course-material-service";
+import { textMaterial } from "@/tests/domain/material-fixtures";
+import { SLIDE_PROMPT_VERSION } from "@/lib/generation/prompts/scene-slide.v2";
 
 const pool = getDatabasePool();
 courseRepositoryContract("MySQL", () => new MySQLCourseRepository(pool));
@@ -34,6 +37,24 @@ describe("MySQLCourseRepository integration", () => {
     cleanupIds.push(created.id);
     const secondRepository = new MySQLCourseRepository(pool);
     expect((await secondRepository.get(created.id))?.topic).toBe(created.topic);
+  });
+
+  it("材料与大纲失效原子提交，重启后来源可恢复，旧版本不会覆盖材料", async () => {
+    const repository = new MySQLCourseRepository(pool);
+    const draft = await repository.create(createCourseDraft(`材料持久化 ${crypto.randomUUID()}`, 4));
+    cleanupIds.push(draft.id);
+    const saved = await new CourseMaterialService(repository).replace(draft.id, draft.revision, [{ file: textMaterial(), pageRange: "" }]);
+    const restarted = new MySQLCourseRepository(pool);
+    expect(await restarted.listMaterials(draft.id)).toEqual(saved.materials);
+    const outlined = await new OutlineGenerationService(restarted, new MockAIAdapter()).generate(draft.id, saved.course.revision, "material-outline");
+    const generated = await new SceneGenerationService(restarted, new MockAIAdapter()).generate(draft.id, outlined.outlines[0].id, outlined.revision, "material-scene");
+    const restored = await new MySQLCourseRepository(pool).get(draft.id);
+    expect(restored?.scenes[0].sourceBlockIds).toEqual(outlined.outlines[0].sourceBlockIds);
+    await expect(repository.save(saved.course, saved.course.revision, { replaceMaterials: [] })).rejects.toThrow("COURSE_CONFLICT");
+    expect(await restarted.listMaterials(draft.id)).toEqual(saved.materials);
+    expect(await repository.get(draft.id)).toEqual(generated);
+    await repository.delete(draft.id);
+    expect(await restarted.listMaterials(draft.id)).toEqual([]);
   });
 
   it("mock 大纲经过短事务管线后可由新仓储实例恢复", async () => {
@@ -67,7 +88,7 @@ describe("MySQLCourseRepository integration", () => {
     const recovered = await new MySQLCourseRepository(pool).get(draft.id);
     expect(course).toMatchObject({ status: "ready", revision: 10 });
     expect(recovered?.scenes.map((scene) => scene.type)).toEqual(["slide", "slide", "slide", "quiz"]);
-    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual(["scene-slide.v2.4", "scene-slide.v2.4", "scene-slide.v2.4", "scene-quiz.v2"]);
+    expect(recovered?.scenes.map((scene) => scene.generation.promptVersion)).toEqual([SLIDE_PROMPT_VERSION, SLIDE_PROMPT_VERSION, SLIDE_PROMPT_VERSION, "scene-quiz.v2"]);
   });
 
   it("互动 HTML、fallback 和生成元数据可从 MySQL 完整恢复", async () => {

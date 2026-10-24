@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { DetectedCourseBriefSchema } from "@/lib/domain/course-brief";
 import { BriefResolutionWarningSchema, SceneOutlineSchema, type SceneOutline } from "@/lib/domain/schemas";
+import type { MaterialContextBlock } from "@/lib/materials/types";
 
 const ModelWarningSchema = BriefResolutionWarningSchema.refine(
   (warning) => warning.code === "PROMPT_AMBIGUOUS" || warning.code === "SCOPE_TOO_BROAD",
@@ -14,6 +15,7 @@ const OutlineItemModelSchema = SceneOutlineSchema.omit({ id: true }).strip().ext
   assessmentFocus: z.preprocess(nullAsUndefined, SceneOutlineSchema.shape.assessmentFocus),
   estimatedMinutes: z.preprocess(nullAsUndefined, SceneOutlineSchema.shape.estimatedMinutes),
   widgetType: z.preprocess(nullAsUndefined, SceneOutlineSchema.shape.widgetType),
+  sourceBlockIds: z.preprocess(nullAsUndefined, SceneOutlineSchema.shape.sourceBlockIds),
   // OpenMAIC 风格的 description 与本项目 designIdea 同义；不因辅助字段别名多付一次 repair。
   widgetOutline: z.preprocess((value) => {
     if (!value || typeof value !== "object") return undefined;
@@ -70,6 +72,7 @@ export function validateAndNormalizeOutline(
     courseTitle: parsed.data.courseTitle.trim(),
     outlines: [...parsed.data.outlines].sort((a, b) => a.order - b.order).map((outline, index) => ({
       ...outline,
+      ...(outline.sourceBlockIds ? { sourceBlockIds: [...new Set(outline.sourceBlockIds)] } : {}),
       title: outline.title.trim(),
       teachingObjective: outline.teachingObjective.trim(),
       keyPoints: [...new Map(outline.keyPoints.map((point) => [normalizedKey(point), point.trim()])).values()],
@@ -113,6 +116,17 @@ export function validateAndNormalizeOutline(
 /** 为已通过模型边界校验的大纲补齐领域 ID，模型不能控制实体标识。 */
 export function assembleSceneOutlines(output: OutlineModelOutput): SceneOutline[] {
   return output.outlines.map((outline) => SceneOutlineSchema.parse({ ...outline, id: randomUUID() }));
+}
+
+/** 来源 ID 必须属于实际送入模型的原文，材料课程的每页都要明确规划依据。 */
+export function validateOutlineSources(outlines: Array<{ sourceBlockIds?: string[] }>, blocks: MaterialContextBlock[]): void {
+  const allowed = new Set(blocks.map((block) => block.id));
+  const issues: OutlineIssue[] = [];
+  outlines.forEach((outline, index) => {
+    if (blocks.length && !outline.sourceBlockIds?.length) issues.push({ path: `outlines.${index}.sourceBlockIds`, message: "请为本页选择 1～10 个教学材料片段 ID" });
+    if (outline.sourceBlockIds?.some((id) => !allowed.has(id))) issues.push({ path: `outlines.${index}.sourceBlockIds`, message: "引用 ID 必须来自教学材料 JSON，不能虚构或引用其他课程" });
+  });
+  if (issues.length) throw new InvalidOutlineError(issues);
 }
 
 /** 复用模型语义门校验人工编辑，同时保留已有 ID、角色、类型与结构顺序。 */

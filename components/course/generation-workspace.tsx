@@ -1,5 +1,7 @@
 "use client";
 
+import { CourseMaterialsPanel } from "./course-materials-panel";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -131,6 +133,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
   const [operationView, setOperationView] = useState<OperationView | null>(null);
   const [operationElapsedMs, setOperationElapsedMs] = useState(0);
   const [dirty, setDirty] = useState(false);
+  const [materialsPending, setMaterialsPending] = useState(false);
   const [briefEditing, setBriefEditing] = useState(false);
   const [briefDraft, setBriefDraft] = useState<CourseBrief>(() => structuredClone(initialCourse.brief));
   const [leaseClock, setLeaseClock] = useState(initialCourse.updatedAt);
@@ -283,6 +286,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
 
   /** 请求服务端正式大纲管线；主题、场景数量和 Provider 均不由浏览器覆盖。 */
   async function generateCourseOutline() {
+    if (materialsPending) return;
     // 1. 重置页面状态，准备开始生成大纲。
     cancellationRequested.current = false;
     setBusy("outline");
@@ -471,6 +475,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
 
   /** 确认前先保存编辑稿，再按大纲顺序逐场景调用正式生成接口。 */
   async function confirmAndGenerateScenes() {
+    if (materialsPending) return;
     // 1. 如果用户改过大纲，先保存大纲。
     cancellationRequested.current = false;
     setBusy("scenes");
@@ -562,6 +567,10 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
         </span>
       </section>
 
+      <CourseMaterialsPanel course={course} disabled={busy !== null} onPendingChange={setMaterialsPending}
+        onBusyChange={(saving) => setBusy(saving ? "materials" : null)}
+        onCourseChange={(saved) => { setCourse(saved); setDirty(false); setError(null); setOperationView(null); setSavedNotice("教学材料已更新，请重新生成大纲。"); router.refresh(); }} />
+      {materialsPending ? <p className="material-warning" role="status">有尚未保存的材料，请先解析并保存，或移除待上传文件，再开始生成。</p> : null}
       <div className="generation-layout">
         <section className="brief-panel reveal reveal--two">
           <div className="brief-panel__head">
@@ -825,7 +834,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
               <small>{recoveryGuidance(error)}</small>
             </div>
           ) : null}
-          {busy ? (
+          {busy && busy !== "materials" ? (
             <button className="cancel-request" type="button" onClick={cancelCurrentRequests}>
               取消当前请求
             </button>
@@ -854,7 +863,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
                 className="button button--accent button--wide"
                 type="button"
                 onClick={confirmAndGenerateScenes}
-                disabled={busy !== null}
+                disabled={busy !== null || materialsPending}
               >
                 {busy === "scenes"
                   ? `正在生成 ${readyCount + 1} / ${course.requestedSceneCount}…`
@@ -888,7 +897,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
               type="button"
               onClick={generateCourseOutline}
               disabled={
-                busy !== null ||
+                busy !== null || materialsPending ||
                 course.status === "outlining" ||
                 Boolean(course.lastError && !canRetryGeneration(course.lastError))
               }

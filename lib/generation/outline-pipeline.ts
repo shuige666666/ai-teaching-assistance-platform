@@ -4,7 +4,9 @@ import { resolveCourseBrief } from "@/lib/domain/course-brief";
 import type { CourseBrief, CourseBriefResolution, GenerationMetadata, SceneOutline } from "@/lib/domain/schemas";
 import { writeServerEvent } from "@/lib/observability/server-log";
 import { parseModelJson } from "./parse-json";
-import { assembleSceneOutlines, InvalidOutlineError, validateAndNormalizeOutline, type OutlineValidationKind } from "./outline-schema";
+import { assembleSceneOutlines, InvalidOutlineError, validateAndNormalizeOutline, validateOutlineSources, type OutlineValidationKind } from "./outline-schema";
+import type { MaterialContextBlock } from "@/lib/materials/types";
+import { MATERIAL_GENERATION_RULES } from "@/lib/materials/context";
 import { buildOutlineUserPrompt, OUTLINE_PROMPT_VERSION, OUTLINE_SYSTEM_PROMPT } from "./prompts/outline.v2";
 import { buildRepairUserPrompt, REPAIR_SYSTEM_PROMPT } from "./prompts/repair.v1";
 import { logUpstreamFailure, logUpstreamSuccess, retryDelayMs, waitForRetry } from "./retry-policy";
@@ -56,6 +58,7 @@ export async function generateOutline(
     provisionalResolution: CourseBriefResolution;
     requestId: string;
     signal: AbortSignal;
+    materialContext?: MaterialContextBlock[];
   },
 ): Promise<OutlinePipelineResult> {
   const startedAt = Date.now();
@@ -65,6 +68,7 @@ export async function generateOutline(
   const maxCalls = 4;
   // 1. 用课程主题和场景数量拼出发给模型的提示词。
   const userPrompt = buildOutlineUserPrompt(input);
+  const materialRules = input.materialContext?.length ? `\n${MATERIAL_GENERATION_RULES}` : "";
 
   function attemptOptions(options: ErrorOptions & { validationKind?: OutlineValidationKind } = {}) {
     return {
@@ -86,6 +90,7 @@ export async function generateOutline(
   function validateResponse(value: unknown) {
     // 先检查模型输出的结构和课程级约束，再整理顺序与文本内容。
     const output = validateAndNormalizeOutline(value, input.sceneCount, input.provisionalBrief.interactionMode);
+    validateOutlineSources(output.outlines, input.materialContext ?? []);
     // 再按显式设置、模型检测结果和默认值的优先级确定最终课程要求。
     const resolved = resolveCourseBrief({
       topic: input.topic,
@@ -133,7 +138,7 @@ export async function generateOutline(
   }
 
   // 2. 第一次调用模型，得到大纲文本。
-  const first = await callAI({ stage: "outline", systemPrompt: OUTLINE_SYSTEM_PROMPT, userPrompt });
+  const first = await callAI({ stage: "outline", systemPrompt: OUTLINE_SYSTEM_PROMPT + materialRules, userPrompt });
   let validated;
   try {
     // 3. 解析模型文本，并校验大纲结构、数量和课程级约束。
@@ -156,7 +161,7 @@ export async function generateOutline(
     }
     // 5. 把首次结果和具体校验问题交给模型，请它修正一次。
     repairAttempted = true;
-    const repair = await callAI({ stage: "repair", systemPrompt: REPAIR_SYSTEM_PROMPT, userPrompt: buildRepairUserPrompt(userPrompt, first.text, invalid.issues) });
+    const repair = await callAI({ stage: "repair", systemPrompt: REPAIR_SYSTEM_PROMPT + materialRules, userPrompt: buildRepairUserPrompt(userPrompt, first.text, invalid.issues) });
     try {
       // 6. 修复结果仍需经过与首次结果相同的解析和校验流程。
       validated = validateResponse(parseModelJson(repair.text));

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CanvasSlideContentSchema } from "./slide-schemas";
 import { WidgetTypeSchema } from "@/lib/interactive/widget-types";
+import { MAX_SCENE_SOURCE_BLOCKS } from "@/lib/materials/types";
 
 export const CURRENT_SCHEMA_VERSION = 5 as const;
 
@@ -89,6 +90,7 @@ export const SceneOutlineSchema = z.object({
   assessmentFocus: z.string().trim().min(1).max(300).optional(),
   order: z.number().int().positive(),
   estimatedMinutes: z.number().int().min(1).max(20).optional(),
+  sourceBlockIds: z.array(z.string().min(1).max(80)).max(MAX_SCENE_SOURCE_BLOCKS).optional(),
 }).strict();
 
 export const SlideContentSchema = CanvasSlideContentSchema;
@@ -159,6 +161,8 @@ const SceneBaseSchema = z.object({
   order: z.number().int().positive(),
   actions: z.array(ActionSchema).min(1),
   generation: GenerationMetadataSchema,
+  // 记录本次生成实际收到的原文片段；不能由模型伪造来源。
+  sourceBlockIds: z.array(z.string().min(1).max(80)).max(MAX_SCENE_SOURCE_BLOCKS).optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });

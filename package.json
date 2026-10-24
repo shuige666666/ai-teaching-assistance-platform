@@ -37,6 +37,7 @@
     "remark-gfm": "^4.0.1",
     "sanitize-html": "^2.17.7",
     "svg-pathdata": "^6.0.3",
+    "unpdf": "1.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

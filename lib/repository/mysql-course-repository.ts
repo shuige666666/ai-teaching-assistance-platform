@@ -3,6 +3,8 @@ import type { Pool, PoolConnection } from "mysql2/promise";
 import { upgradeCourseV4ToV5 } from "@/lib/domain/course-upgrade";
 import { CourseSchema, CURRENT_SCHEMA_VERSION, type Course, type CourseSummary } from "@/lib/domain/schemas";
 import { getDatabasePool } from "@/lib/db/pool";
+import { validateCourseMaterials } from "@/lib/materials/validation";
+import type { CourseMaterial } from "@/lib/materials/types";
 import {
   CourseConflictError,
   DatabaseUnavailableError,
@@ -158,6 +160,7 @@ export class MySQLCourseRepository implements CourseRepository {
   /** 在短事务中用 revision 条件更新完整聚合，防止迟到响应覆盖新结果。 */
   async save(course: Course, expectedRevision: number, options: CourseSaveOptions = {}): Promise<Course> {
     if (course.revision !== expectedRevision) throw new CourseConflictError();
+    const materials = options.replaceMaterials === undefined ? undefined : validateCourseMaterials(course.id, options.replaceMaterials);
     // 4. 保存时把课程版本号加一。
     const nextCourse = CourseSchema.parse({
       ...course,
@@ -196,6 +199,14 @@ export class MySQLCourseRepository implements CourseRepository {
         ],
       );
       if (result.affectedRows !== 1) throw new CourseConflictError();
+      // 材料替换与旧大纲失效一起提交，防止并发生成读取到新材料和旧大纲的混合状态。
+      if (materials) {
+        await connection.execute("DELETE FROM course_materials WHERE course_id = ?", [course.id]);
+        for (const [index, material] of materials.entries()) {
+          await connection.execute("INSERT INTO course_materials (id, course_id, position, document_json) VALUES (?, ?, ?, ?)",
+            [material.id, course.id, index + 1, JSON.stringify(material)]);
+        }
+      }
       // quiz 场景正式替换后，旧题目的作答必须与课程更新在同一事务清理。
       if (options.clearQuizAttemptsForSceneId) {
         await connection.execute<ResultSetHeader>(
@@ -214,7 +225,17 @@ export class MySQLCourseRepository implements CourseRepository {
     throw new DatabaseUnavailableError();
   }
 
-  /** 删除聚合根；quiz_attempts 由数据库外键级联清理。 */
+  /** 按上传顺序恢复材料，正文不进入首页课程列表。 */
+  async listMaterials(courseId: string): Promise<CourseMaterial[]> {
+    try {
+      const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT document_json FROM course_materials WHERE course_id = ? ORDER BY position", [courseId]);
+      return validateCourseMaterials(courseId, rows.map((row) => decodeJson(row.document_json)));
+    } catch (error) {
+      rethrowQueryError(error);
+    }
+  }
+
+  /** 删除聚合根；作答与材料由数据库外键级联清理。 */
   async delete(id: string): Promise<void> {
     try {
       await this.pool.execute<ResultSetHeader>("DELETE FROM courses WHERE id = ?", [id]);

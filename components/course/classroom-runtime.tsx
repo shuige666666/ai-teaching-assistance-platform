@@ -6,6 +6,7 @@ import { CourseAgentDrawer } from "@/components/agent/course-agent-drawer";
 import { QuizEditDialog } from "@/components/course/quiz-edit-dialog";
 import { ExportButton } from "@/components/export/export-button";
 import { SceneRenderer } from "@/components/renderers/scene-renderer";
+import { SceneMaterialSources } from "./scene-material-sources";
 import type { EditableQuizQuestion } from "@/lib/domain/quiz-edit";
 import type { Course } from "@/lib/domain/schemas";
 import { isBrowserSpeechAvailable } from "@/lib/playback/speech-adapters";
@@ -304,6 +305,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             <span className="classroom-agent-switch__label">智能修订</span>
             <span className="classroom-agent-switch__track" aria-hidden="true"><i /></span>
           </button>
+          <SceneMaterialSources key={scene.id} scene={scene} />
           <ExportButton course={course} />
           <Link className="exit-link" href={`/generation/${course.id}`}>退出课堂</Link>
         </div>

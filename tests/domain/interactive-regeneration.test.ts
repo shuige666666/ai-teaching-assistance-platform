@@ -139,7 +139,7 @@ describe("ready 单场景替换", () => {
   it("最终保存失败后不丢旧场景，过期租约可以由显式请求恢复", async () => {
     const { repository, course, old, mock } = await setup();
     let saves = 0;
-    const failing: CourseRepository = { create: c => repository.create(c), get: id => repository.get(id), list: () => repository.list(), delete: id => repository.delete(id), save: (c, revision) => { if (++saves === 2) throw new DatabaseUnavailableError(); return repository.save(c, revision); } };
+    const failing: CourseRepository = { create: c => repository.create(c), get: id => repository.get(id), list: () => repository.list(), listMaterials: id => repository.listMaterials(id), delete: id => repository.delete(id), save: (c, revision) => { if (++saves === 2) throw new DatabaseUnavailableError(); return repository.save(c, revision); } };
     await expect(new SceneGenerationService(failing, mock).revise(course.id, old.outlineId, course.revision, "save-failure", { instruction: "减少文字" })).rejects.toBeInstanceOf(DatabaseUnavailableError);
     const kept = (await repository.get(course.id))!;
     expect(kept.scenes).toEqual(course.scenes);

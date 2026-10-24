@@ -1,6 +1,7 @@
 import type { AIAdapter, GenerateTextInput, GenerateTextResult } from "./contracts";
 import { createMockWidget, escapeWidgetText } from "@/lib/interactive/mock-widgets";
 import type { CourseBrief, SceneOutline } from "@/lib/domain/schemas";
+import type { MaterialContextBlock } from "@/lib/materials/types";
 
 type MockOutline = {
   courseTitle: string;
@@ -175,6 +176,7 @@ export class MockAIAdapter implements AIAdapter {
     if (!defaultBrief) throw new Error("mock outline prompt missing default brief");
     // mock 不猜测原文字段，因此用同一优先级确定性合并显式设置与默认值。
     const resolvedBrief = { ...defaultBrief, ...explicitBrief };
+    const materials = readPromptJson<MaterialContextBlock[]>(input.userPrompt, "教学材料 JSON") ?? [];
     const titles = ["建立问题地图", "拆解核心机制", "探索概念关系", "检验关键理解", "连接工程实践", "分析边界条件", "整合应用路径", "形成复习闭环"];
     const interactiveIndexes = resolvedBrief.interactionMode === "required"
       ? count === 4 ? new Set([2]) : count <= 6 ? new Set([2, 4].filter((index) => index < count - 1)) : new Set([2, 4, 6].filter((index) => index < count - 1))
@@ -198,6 +200,7 @@ export class MockAIAdapter implements AIAdapter {
                 : "worked_example";
         return {
           type,
+          ...(materials.length ? { sourceBlockIds: [materials[index % materials.length].id] } : {}),
           ...(type === "interactive" ? { widgetType: (["diagram", "simulation", /代码|编程|Agent/i.test(topic) ? "code" : "game"] as const)[Math.floor((index - 2) / 2)], widgetOutline: { designIdea: "操作参数或工具，观察结果、比较反馈并完成任务。" } } : {}),
           role,
           title: `${titles[index]}：${topic}`,
@@ -208,7 +211,7 @@ export class MockAIAdapter implements AIAdapter {
             : index === 0
               ? `帮助${resolvedBrief.audience}建立${topic}的问题背景，并进入目标“${resolvedBrief.learningGoal}”`
               : `围绕“${resolvedBrief.learningGoal}”理解${topic}在第 ${index + 1} 个学习层次中的作用与边界`,
-          keyPoints: type === "quiz" ? ["核心概念辨析", "常见误区判断"] : [`${topic}的核心概念`, "机制之间的因果关系", "实际应用边界"],
+          keyPoints: materials.length ? [materials[index % materials.length].text.slice(0, 150), "联系原文理解适用条件"] : type === "quiz" ? ["核心概念辨析", "常见误区判断"] : [`${topic}的核心概念`, "机制之间的因果关系", "实际应用边界"],
           order: index + 1,
           estimatedMinutes: type === "quiz" ? 3 : 5,
           ...(type === "quiz" ? { assessmentFocus: `检查是否达到学习目标：${resolvedBrief.learningGoal}` } : {}),

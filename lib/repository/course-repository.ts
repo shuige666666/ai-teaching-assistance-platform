@@ -1,13 +1,16 @@
 import type { Course, CourseSummary } from "@/lib/domain/schemas";
+import type { CourseMaterial } from "@/lib/materials/types";
 
 export type CourseSaveOptions = {
   clearQuizAttemptsForSceneId?: string;
+  replaceMaterials?: CourseMaterial[];
 };
 
 export interface CourseRepository {
   create(course: Course): Promise<Course>;
   get(id: string): Promise<Course | null>;
   list(): Promise<CourseSummary[]>;
+  listMaterials(courseId: string): Promise<CourseMaterial[]>;
   save(course: Course, expectedRevision: number, options?: CourseSaveOptions): Promise<Course>;
   delete(id: string): Promise<void>;
 }

@@ -3,6 +3,8 @@ import type { AIAdapter } from "@/lib/ai/contracts";
 import { CourseSchema, type Course, type DomainError, type Scene, type SceneOutline } from "@/lib/domain/schemas";
 import { generateScene, SceneGenerationError } from "@/lib/generation/scene-pipeline";
 import { extractInteractiveAuthorHtml } from "@/lib/interactive/html-policy";
+import { selectSceneMaterialContext } from "@/lib/materials/context";
+import { MaterialError } from "@/lib/materials/types";
 import { CourseConflictError, type CourseRepository } from "@/lib/repository/course-repository";
 import type { GenerationRunTracker, SceneRunContext } from "./generation-run-tracker";
 
@@ -14,6 +16,7 @@ export class SceneApplicationError extends Error {
 }
 
 function asDomainError(error: unknown): DomainError {
+  if (error instanceof MaterialError) return { code: error.code, message: error.message, retryable: false, stage: "scene" };
   if (error instanceof SceneGenerationError) {
     return {
       code: error.code,
@@ -61,6 +64,11 @@ export class SceneGenerationService {
     private readonly now: () => number = Date.now,
     private readonly generationRuns?: GenerationRunTracker,
   ) {}
+
+  /** 所有生成入口统一从服务端取原文，重试、修订和 Agent 插页也使用相同来源。 */
+  private async materialContext(courseId: string, outline: SceneOutline, instruction = "") {
+    return selectSceneMaterialContext(await this.repository.listMaterials(courseId), outline, instruction);
+  }
 
   /** 运行失败的互动采用干净重生成，只发送错误背景，不向模型发送旧 HTML。 */
   async regenerateFailedInteractive(courseId: string, outlineId: string, expectedRevision: number, requestId: string, options: {
@@ -139,7 +147,7 @@ export class SceneGenerationService {
     try {
       // 3. 新增指令进入与已有场景相同的底层生成、修复、装配链。
       signal.throwIfAborted();
-      const scene = await generateScene(this.adapter, { course: generationCourse, outline: generationOutline, requestId, signal, regeneration: { kind: "insert", instruction: instruction.slice(0, 500) } });
+      const scene = await generateScene(this.adapter, { course: generationCourse, outline: generationOutline, requestId, signal, materialContext: await this.materialContext(courseId, generationOutline, instruction), regeneration: { kind: "insert", instruction: instruction.slice(0, 500) } });
       signal.throwIfAborted();
       const latest = await this.repository.get(courseId);
       if (!latest || latest.revision !== registered.revision || latest.activeOperation?.id !== operationId) throw new CourseConflictError();
@@ -151,7 +159,7 @@ export class SceneGenerationService {
         ...latest,
         requestedSceneCount: current.requestedSceneCount + 1,
         status: "ready",
-        outlines: orderedOutlines,
+        outlines: orderedOutlines.map((item) => item.id === outline.id ? { ...item, sourceBlockIds: scene.sourceBlockIds } : item),
         scenes: finalScenes,
         sceneProgress: finalProgress,
         activeOperation: undefined,
@@ -218,7 +226,7 @@ export class SceneGenerationService {
     try {
       // 2. 复用首次生成的预算、Prompt、解析和装配；不同入口只改变模型上下文。
       signal.throwIfAborted();
-      const scene = await generateScene(this.adapter, { course: registered, outline, requestId, signal,
+      const scene = await generateScene(this.adapter, { course: registered, outline, requestId, signal, materialContext: await this.materialContext(courseId, outline),
         regeneration: options.kind === "regenerate"
           ? { kind: "regenerate", replacedSceneSummary: oldScene.summary, runtimeError: options.runtimeError }
           : { kind: "revise", instruction: options.instruction, existingScene: buildRevisionReference(oldScene) } });
@@ -303,7 +311,7 @@ export class SceneGenerationService {
     let attemptMetadata: Scene["generation"] | undefined;
     try {
       // 6. 调用 generateScene()，让模型生成这一场的内容和 Action。
-      const scene = await generateScene(this.adapter, { course: registered, outline, requestId, signal });
+      const scene = await generateScene(this.adapter, { course: registered, outline, requestId, signal, materialContext: await this.materialContext(courseId, outline) });
       attemptMetadata = scene.generation;
       // 7. 再次读取课程，确认这次操作仍然有效。
       const latest = await this.repository.get(courseId);

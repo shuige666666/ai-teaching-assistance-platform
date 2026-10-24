@@ -8,6 +8,7 @@ import { SceneGenerationError } from "@/lib/generation/scene-pipeline";
 import { CourseConflictError, DatabaseUnavailableError, FutureCourseSchemaVersionError, LegacyCourseUnsupportedError, StoredCourseInvalidError } from "@/lib/repository/course-repository";
 import { OutlineApplicationError } from "./outline-generation-service";
 import { SceneApplicationError } from "./scene-generation-service";
+import { MaterialError } from "@/lib/materials/types";
 
 export const GenerateOutlineInputSchema = z.object({ expectedRevision: z.number().int().nonnegative() }).strict();
 export const GenerateSceneInputSchema = z.object({ expectedRevision: z.number().int().nonnegative() }).strict();
@@ -41,6 +42,7 @@ export function mapOutlineError(error: unknown, requestId: string = randomUUID()
   let issues: Array<{ path: string; message: string }> | undefined;
   let validationKind: string | undefined;
   if (error instanceof z.ZodError || error instanceof SyntaxError) { status = 400; code = "INVALID_REQUEST"; message = error instanceof z.ZodError ? error.issues[0]?.message ?? "请求不合法" : "请求体必须是合法 JSON"; retryable = false; }
+  else if (error instanceof MaterialError) { status = error.status; code = error.code; message = error.message; retryable = false; }
   else if (error instanceof OutlineApplicationError) { status = error.code === "COURSE_NOT_FOUND" ? 404 : 409; code = error.code; message = error.message; retryable = false; }
   else if (error instanceof SceneApplicationError) { status = error.code === "COURSE_NOT_FOUND" || error.code === "OUTLINE_NOT_FOUND" ? 404 : 409; code = error.code; message = error.message; retryable = false; }
   else if (error instanceof CourseConflictError) { status = 409; code = "COURSE_CONFLICT"; message = "课程已被其他操作更新，请刷新后重试"; }

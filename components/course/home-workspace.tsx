@@ -6,10 +6,11 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Folder, FolderInput, Pencil, Trash2 } from "lucide-react";
 import type { CourseBriefOverrides } from "@/lib/domain/course-brief";
 import type { CourseFolder, CourseFolderMembership } from "@/lib/domain/course-folder";
-import type { CourseSummary } from "@/lib/domain/schemas";
+import type { Course, CourseSummary } from "@/lib/domain/schemas";
+import { MaterialFilePicker, materialUploadBody, type MaterialUpload } from "./material-file-picker";
 
 type CreationProgress = {
-  phase: "saving" | "opening";
+  phase: "saving" | "materials" | "opening";
   requestId: string;
   startedAt: number;
 };
@@ -51,6 +52,8 @@ export function HomeWorkspace({
   const [teachingStyle, setTeachingStyle] = useState<CourseBriefOverrides["teachingStyle"]>();
   const [additionalRequirements, setAdditionalRequirements] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [materialUploads, setMaterialUploads] = useState<MaterialUpload[]>([]);
+  const [pendingDraft, setPendingDraft] = useState<Course | null>(null);
   const [creationProgress, setCreationProgress] = useState<CreationProgress | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +111,7 @@ export function HomeWorkspace({
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    const timeout = window.setTimeout(() => controller.abort(), materialUploads.length ? 90_000 : 15_000);
     setSubmitting(true);
     setElapsedMs(0);
     setCreationProgress({ phase: "saving", requestId, startedAt });
@@ -137,22 +140,41 @@ export function HomeWorkspace({
             }
           : {}),
       };
-      const response = await fetch("/api/courses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-request-id": requestId },
-        body: JSON.stringify({ topic, requestedSceneCount: sceneCount, briefOverrides }),
-        signal: controller.signal,
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(apiErrorMessage(payload, "创建课程失败"));
-      setCreationProgress({ phase: "opening", requestId: payload.meta?.requestId ?? requestId, startedAt });
+      // 上传失败后复用已创建的草稿；重新读取版本，兼容响应丢失但服务端已经保存的情况。
+      let draft = pendingDraft;
+      if (draft) {
+        const latest = await fetch(`/api/courses/${draft.id}`, { signal: controller.signal });
+        const latestPayload = await latest.json();
+        if (!latest.ok) throw new Error(apiErrorMessage(latestPayload, "草稿读取失败"));
+        draft = latestPayload.course as Course;
+      } else {
+        const response = await fetch("/api/courses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-request-id": requestId },
+          body: JSON.stringify({ topic, requestedSceneCount: sceneCount, briefOverrides }),
+          signal: controller.signal,
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(apiErrorMessage(payload, "创建课程失败"));
+        draft = payload.course as Course;
+      }
+      setPendingDraft(draft);
+      if (materialUploads.length) {
+        setCreationProgress({ phase: "materials", requestId, startedAt });
+        const response = await fetch(`/api/courses/${draft.id}/materials`, {
+          method: "POST", headers: { "x-request-id": requestId }, body: materialUploadBody(draft.revision, materialUploads), signal: controller.signal,
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(apiErrorMessage(payload, "材料上传失败；课程草稿已保留，请调整材料后重试"));
+      }
+      setCreationProgress({ phase: "opening", requestId, startedAt });
       // 开发模式的 RSC 客户端跳转可能长时间停留在 Rendering；完整导航可可靠进入服务端页面。
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.assign(`/generation/${payload.course.id}`);
+      window.location.assign(`/generation/${draft.id}`);
     } catch (caught) {
       const message =
         caught instanceof DOMException && caught.name === "AbortError"
-          ? `保存课程超过 15 秒，已停止等待。请用请求编号 ${requestId} 检查终端日志，刷新后确认课程是否已经创建。`
+          ? `操作超时，已停止等待。已保存的课程草稿会保留；请重试或进入草稿继续处理。请求编号：${requestId}`
           : caught instanceof Error
             ? caught.message
             : "创建课程失败";
@@ -313,6 +335,7 @@ export function HomeWorkspace({
 
         <form className="composer-card reveal reveal--two" onSubmit={handleSubmit}>
           <div className="card-index">01 / COURSE BRIEF</div>
+          <fieldset className="material-course-fields" disabled={submitting || pendingDraft !== null}>
           <label htmlFor="topic">这堂课要讲什么？</label>
           <textarea
             id="topic"
@@ -434,6 +457,9 @@ export function HomeWorkspace({
             </div>
             <p>互动场景在下一步的大纲工作台选择；开启后 AI 会按课程长度安排 1～3 个 diagram。</p>
           </details>
+          </fieldset>
+          <MaterialFilePicker uploads={materialUploads} onChange={setMaterialUploads} disabled={submitting} />
+          {pendingDraft && !submitting ? <p className="material-hint">课程草稿已保存。可重新上传材料，或<Link href={`/generation/${pendingDraft.id}`}>进入草稿继续处理</Link>。</p> : null}
           {error ? (
             <p className="form-error" role="alert">
               {error}
@@ -453,8 +479,9 @@ export function HomeWorkspace({
                     <small>{creationProgress.phase === "saving" ? "正在写入 MySQL" : "已经完成"}</small>
                   </div>
                 </li>
+                {materialUploads.length ? <li className={creationProgress.phase === "materials" ? "is-active" : ""}><span>02</span><div><strong>解析并保存教学材料</strong><small>{creationProgress.phase === "materials" ? "正在提取原文和来源位置" : creationProgress.phase === "opening" ? "已经完成" : "等待草稿保存"}</small></div></li> : null}
                 <li className={creationProgress.phase === "opening" ? "is-active" : ""}>
-                  <span>02</span>
+                  <span>{materialUploads.length ? "03" : "02"}</span>
                   <div>
                     <strong>打开大纲工作台</strong>
                     <small>{creationProgress.phase === "opening" ? "正在加载页面" : "等待保存完成"}</small>
@@ -467,9 +494,9 @@ export function HomeWorkspace({
           <button className="button button--accent button--wide" type="submit" disabled={submitting}>
             {creationProgress?.phase === "opening"
               ? "课程已保存，正在打开…"
-              : submitting
+              : creationProgress?.phase === "materials" ? "正在解析教学材料…" : submitting
                 ? "正在保存课程草稿…"
-                : "生成课程大纲"}
+                : pendingDraft ? "继续准备课程" : "生成课程大纲"}
             <span aria-hidden="true">→</span>
           </button>
         </form>

@@ -109,7 +109,7 @@ describe("outline generation pipeline", () => {
       new MockAIAdapter([validOutline("一次生成", { audience: "描述受众", learnerLevel: "intermediate" })]),
       input,
     );
-    expect(result.metadata).toMatchObject({ upstreamCalls: 1, repaired: false, promptVersion: "outline.v2.4" });
+    expect(result.metadata).toMatchObject({ upstreamCalls: 1, repaired: false, promptVersion: "outline.v2.5" });
     expect(result.brief.audience).toBe("显式受众");
     expect(result.brief.learnerLevel).toBe("intermediate");
     expect(result.briefResolution.sources.audience).toBe("explicit_setting");

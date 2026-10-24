@@ -88,6 +88,7 @@ describe("SceneGenerationService", () => {
       create: (value) => repository.create(value),
       get: (id) => repository.get(id),
       list: () => repository.list(),
+      listMaterials: (id) => repository.listMaterials(id),
       delete: (id) => repository.delete(id),
       save: (value, expectedRevision) => {
         saveCalls += 1;

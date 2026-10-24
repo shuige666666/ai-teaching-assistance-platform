@@ -882,3 +882,48 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .usage-status-list > div:nth-child(odd) { margin-right: 0; }
   .usage-footnote p { text-align: left; }
 }
+
+/* 教学材料沿用课程工作台配色；原文预览独立滚动，不挤占生成与播放区域。 */
+.material-course-fields { display: contents; }
+.material-picker { display: grid; gap: 10px; margin: 18px 0; }
+.material-picker > label { font-weight: 700; }
+.material-picker input[type="file"] { width: 100%; padding: 12px; border: 1px dashed #9cb5bd; background: #f3fafb; border-radius: 8px; }
+.material-picker input[type="file"]::file-selector-button { border: 0; border-radius: 5px; padding: 8px 12px; margin-right: 12px; color: #143f59; background: #dcefed; cursor: pointer; }
+.material-hint { color: #526e79; font-size: 13px; line-height: 1.7; margin: 6px 0; }
+.material-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px; border: 1px solid #d9e5e7; border-radius: 8px; }
+.material-upload > div { flex: 1; min-width: 140px; }
+.material-upload strong, .material-saved strong { display: block; overflow-wrap: anywhere; }
+.material-upload small, .material-saved summary small { display: block; font-size: 12px; color: #526e79; margin-top: 5px; }
+.material-upload label { display: grid; gap: 4px; font-size: 12px; }
+.material-upload label input { max-width: 200px; padding: 7px; border: 1px solid #b7d0d7; border-radius: 4px; }
+.material-text-button { color: #2b6478; background: transparent; border: 0; padding: 6px 8px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.material-text-button:disabled { opacity: .45; cursor: default; }
+.course-materials-panel { padding: 22px 26px; margin: 0 0 24px; border: 1px solid #cbdde2; border-radius: 12px; background: #fff; }
+.material-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.material-panel-heading h2 { margin: 0; font-size: 18px; }
+.material-panel-heading > span { font-size: 12px; color: #526e79; }
+.material-saved { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e4edef; }
+.material-saved details { flex: 1; min-width: 0; }
+.material-saved summary { cursor: pointer; }
+.material-saved > button { align-self: flex-start; }
+.material-preview { max-height: 300px; overflow-y: auto; margin-top: 12px; }
+.material-excerpt { padding: 14px; background: #f3fafb; border-left: 3px solid #7ba4ad; margin: 10px 0; }
+.material-excerpt small { color: #3d6b79; font-weight: 600; }
+.material-excerpt pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; line-height: 1.8; margin: 8px 0 0; color: #173e4c; }
+.material-warning { padding: 10px 14px; color: #865319; background: #fff7e8; border-radius: 6px; font-size: 13px; line-height: 1.6; }
+.material-notice { color: #286d62; font-size: 13px; }
+.material-source-button { border: 1px solid #72959e; background: transparent; color: inherit; border-radius: 6px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
+/* 显式恢复 dialog 的自动边距，避免全局样式重置后弹窗贴在左上角。 */
+.material-source-dialog { margin: auto; width: min(740px, calc(100vw - 32px)); max-height: 82vh; overflow: auto; border: 1px solid #b7d0d7; border-radius: 14px; padding: 26px; color: #143f59; background: #fff; }
+.material-source-dialog::backdrop { background: rgb(13 35 46 / 55%); }
+.material-source-dialog header { display: flex; gap: 20px; justify-content: space-between; align-items: flex-start; }
+.material-source-dialog h2 { margin: 0; font-size: 21px; }
+.material-source-dialog h3 { font-size: 15px; overflow-wrap: anywhere; }
+.material-source-dialog header p { color: #526e79; font-size: 13px; }
+.material-source-dialog header button { border: 0; background: #edf5f6; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 22px; }
+@media (max-width: 640px) {
+  .course-materials-panel { padding: 18px; }
+  .material-upload { align-items: flex-start; }
+  .material-source-dialog { padding: 18px; }
+  .material-source-button { padding: 7px; font-size: 12px; }
+}
