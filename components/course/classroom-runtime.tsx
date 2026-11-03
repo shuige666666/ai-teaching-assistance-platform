@@ -7,6 +7,7 @@ import { QuizEditDialog } from "@/components/course/quiz-edit-dialog";
 import { ExportButton } from "@/components/export/export-button";
 import { SceneRenderer } from "@/components/renderers/scene-renderer";
 import { SceneMaterialSources } from "./scene-material-sources";
+import { NarrationSegments } from "./narration-segments";
 import type { EditableQuizQuestion } from "@/lib/domain/quiz-edit";
 import type { Course } from "@/lib/domain/schemas";
 import { isBrowserSpeechAvailable } from "@/lib/playback/speech-adapters";
@@ -341,6 +342,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
           )}
           <SceneRenderer
             scene={scene}
+            focusElementIds={playback.focusElementIds}
             quizSessionId={playback.state.runId}
             onQuizSubmit={submitQuiz}
             onQuizCompleted={playback.completeLearner}
@@ -364,13 +366,20 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             onPointerCancel={finishNarrationResize}
           />
           <div className="runtime-heading"><div><p className="eyebrow">ACTION RUNTIME</p><h2>课堂调度台</h2></div><span className={`runtime-lamp runtime-lamp--${playback.state.status}`} aria-hidden="true" /></div>
-          <div className="runtime-status" aria-live="polite"><span>{statusLabels[playback.state.status]}</span><small>ACTION {Math.min(playback.state.actionIndex + 1, playback.state.actionCount)} / {playback.state.actionCount}</small></div>
+          <div className="runtime-status" aria-live="polite"><span>{statusLabels[playback.state.status]}</span><small>{scene.type === "slide" ? "分段讲解" : `ACTION ${Math.min(playback.state.actionIndex + 1, playback.state.actionCount)} / ${playback.state.actionCount}`}</small></div>
           {primaryControl()}
           <div className="runtime-track"><i style={{ width: `${playback.progress}%` }} /></div>
-          <blockquote tabIndex={0} aria-label="当前场景讲解文本，可上下滚动">{speech?.type === "speech" ? speech.text : "当前场景没有讲解动作。"}</blockquote>
+          {scene.type === "slide" ? (
+            <NarrationSegments
+              actions={scene.actions}
+              actionIndex={playback.state.actionIndex}
+              status={playback.state.status}
+              onSelect={(actionIndex, play) => { setContinuousPlay(false); playback.seekToAction(actionIndex, play); }}
+            />
+          ) : <blockquote tabIndex={0} aria-label="当前场景讲解文本，可上下滚动">{speech?.type === "speech" ? speech.text : "当前场景没有讲解动作。"}</blockquote>}
           <div className="speech-switch">
             <div><span>浏览器朗读</span><small>{browserSpeechSupported ? "可选增强 · 失败自动回退文本" : "当前浏览器不支持，使用文本计时"}</small></div>
-            <button type="button" role="switch" aria-checked={browserSpeechEnabled} disabled={!browserSpeechSupported} className={browserSpeechEnabled ? "is-on" : ""} onClick={toggleBrowserSpeech}><i /></button>
+            <button type="button" role="switch" aria-label="浏览器朗读" aria-checked={browserSpeechEnabled} disabled={!browserSpeechSupported} className={browserSpeechEnabled ? "is-on" : ""} onClick={toggleBrowserSpeech}><i /></button>
           </div>
           {scene.type === "quiz" ? <button className="scene-quiz-edit-toggle" type="button" disabled={regenerating} onClick={() => setQuizEditorOpen(true)}><span>✎</span>手动调整题目</button> : null}
           {regenerating ? <p className="scene-regenerate-status" role="status">课程仍可浏览；完成后将自动刷新。</p> : null}

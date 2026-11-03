@@ -7,7 +7,7 @@ import type {
   PPTTextElement,
   SlideTheme,
 } from "@/lib/domain/slide-schemas";
-import type { CSSProperties } from "react";
+import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { resolveTextLayout } from "@/lib/slides/resolve-text-layout";
 import { SlideChart } from "./slide-chart";
 import styles from "./slide-canvas.module.css";
@@ -156,9 +156,33 @@ function CodeElement({ element }: { element: PPTCodeElement }) {
   );
 }
 
+/** 表格内容适配模型给定的区域，避免溢出画布后讲稿聚焦只能覆盖部分数据。 */
 function TableElement({ element }: { element: PPTTableElement }) {
+  const tableRef = useRef<HTMLTableElement>(null);
   const totalWidth = element.colWidths.reduce((sum, width) => sum + width, 0) || 1;
   const [headRow, ...dataRows] = element.rows;
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    const container = table?.parentElement;
+    if (!table || !container) return;
+
+    // 1. 内容修订后先恢复常规排版；画布整体缩放不改变这里的逻辑像素尺寸。
+    table.style.removeProperty("--table-font-size");
+    table.style.removeProperty("--table-cell-padding");
+    if (table.offsetHeight <= container.clientHeight) return;
+
+    // 2. 高度不足时先压缩留白，再按实际换行结果寻找可容纳全部单元格的最大字号。
+    table.style.setProperty("--table-cell-padding", "2px 6px");
+    let lower = 1;
+    let upper = 14;
+    for (let attempt = 0; attempt < 7; attempt++) {
+      const size = (lower + upper) / 2;
+      table.style.setProperty("--table-font-size", `${size}px`);
+      if (table.offsetHeight <= container.clientHeight) lower = size;
+      else upper = size;
+    }
+    table.style.setProperty("--table-font-size", `${lower}px`);
+  }, [element]);
   return (
     <div
       className={styles.box}
@@ -171,7 +195,7 @@ function TableElement({ element }: { element: PPTTableElement }) {
         borderWidth: element.outline?.width,
       }}
     >
-      <table className={styles.table}>
+      <table ref={tableRef} className={styles.table}>
         <colgroup>
           {element.colWidths.map((width, index) => (
             <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />
@@ -208,5 +232,5 @@ export function SlideElement({ element, index, theme }: { element: PPTElement; i
     default:
       content = <div className={styles.fallback}>该幻灯片元素暂时无法显示</div>;
   }
-  return <div className={styles.elementLayer} style={{ zIndex: index + 1, color: theme.fontColor }}>{content}</div>;
+  return <div className={styles.elementLayer} data-element-id={element.id} style={{ zIndex: index + 1, color: theme.fontColor }}>{content}</div>;
 }

@@ -13,6 +13,8 @@
 
 ## 当前状态
 
+2026-11-01 新增幻灯片分段讲解与画面联动：`scene-slide.v2.6` 在同一次调用中生成分段讲稿及元素临时引用，服务端映射为正式 ID；课堂支持段落定位、上一段／下一段、重听及随播放状态变化的元素高亮。旧课程继续单段播放，无需数据库迁移。设计、使用方式、开发记录和验证限制见 [分段讲解与画面联动](docs/stage-plans/segmented-narration.md)。
+
 2026-10-24 新增教学材料驱动生成：主页或大纲页可上传文字型 PDF、Markdown、TXT，PDF 可指定页码范围。材料原文独立保存至 MySQL，大纲规划各页来源，slide/quiz/interactive 生成、重试、修订和 Agent 插页均经服务层读取原文；课堂可查看本页生成时参考的文件及片段。部署前运行 `pnpm db:migrate` 应用 `009_course_materials.sql`。使用方式、预算、来源语义和验收证据见 [教学材料驱动生成](docs/stage-plans/material-driven-generation.md)。
 
 2026-09-05 slide 视觉升级：slide Prompt 升级为 `scene-slide.v2.4`、大纲 Prompt 升级为 `outline.v2.4`，移植 OpenMAIC 的量化排版规则（文字宽度容量、字号×行数高度查表、对齐公式、间距标准）、三种装饰线配方、整页 few-shot 示例和输出前自检清单，并按大纲角色（hook/concept/mechanism/worked_example/practice/summary）提供版式骨架分支。元素在 `text/shape/line/code` 基础上新增 `chart`（bar/column/line/pie，模型只输出数据，ECharts SVG 渲染）与 `table`（纯文本行 + 列宽比例）；shape 支持渐变填充和 pathFormula 圆角/箭头等形状预设（服务端解析）。三套主题色板按 courseId 确定性选择（学术蓝青为项目原有色板，经典蓝橙与淡彩清新取自 OpenMAIC 默认主题与 Prompt 示例配色），同一课程共用一套视觉。可视化采用 OpenMAIC 同款两级机制：大纲阶段把 [Chart]/[Table] 标记写入 slide 页 keyPoints，场景阶段按标记生成真实元素（真实 smoke 首轮发现仅靠 slide prompt 指令模型不会主动用图表，故移植大纲级规划）；mechanism 页连线按内容关系条件触发并附工艺规范（边到边、长度 ≥40px、禁止色条拼接）。历史课程与旧场景完全兼容；不需要数据库迁移。验证见 docs/07，浏览器截图核对脚本见 `scripts/slide-visual-check.mjs`，真实生成冒烟脚本见 `scripts/deepseek-slide-smoke.mjs`。

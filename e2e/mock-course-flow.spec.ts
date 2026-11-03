@@ -82,8 +82,10 @@ test("mock 课程从创建、导出、互动、测验到刷新恢复", async ({ 
     const agentDrawer = page.getByRole("complementary", { name: "课程修订对话" });
     await expect(agentDrawer).toBeVisible();
     // 宽屏拖动侧栏后课堂与侧栏使用同一宽度变量，关闭重开仍保留本机偏好。
-    const drawerBefore = await agentDrawer.boundingBox();
     const resizeHandle = page.locator(".agent-drawer-resize");
+    // hover 等待把手位置稳定，避免入场动画期间读取的坐标在按下鼠标前已经失效。
+    await resizeHandle.hover({ position: { x: 4, y: 120 } });
+    const drawerBefore = await agentDrawer.boundingBox();
     const handleBox = await resizeHandle.boundingBox();
     expect(drawerBefore).not.toBeNull();
     expect(handleBox).not.toBeNull();
@@ -91,8 +93,8 @@ test("mock 课程从创建、导出、互动、测验到刷新恢复", async ({ 
     await page.mouse.down();
     await page.mouse.move(handleBox!.x - 70, handleBox!.y + 120);
     await page.mouse.up();
+    await expect.poll(async () => (await agentDrawer.boundingBox())?.width).toBeGreaterThan(drawerBefore!.width + 50);
     const drawerAfter = await agentDrawer.boundingBox();
-    expect(drawerAfter!.width).toBeGreaterThan(drawerBefore!.width + 50);
     await page.getByRole("button", { name: "关闭", exact: true }).click();
     await page.getByRole("switch", { name: "智能修订", exact: true }).click();
     await expect.poll(async () => (await agentDrawer.boundingBox())?.width).toBeCloseTo(drawerAfter!.width, 0);

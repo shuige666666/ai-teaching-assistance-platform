@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { AgentApplicationError } from "@/lib/agent/contracts";
 import { buildQuizQuestions, toEditableQuizQuestions } from "@/lib/domain/quiz-question-builder";
-import { CourseSchema, SceneSchema, type Scene } from "@/lib/domain/schemas";
+import { ActionSchema, CourseSchema, SceneSchema, type Scene } from "@/lib/domain/schemas";
 import { PPTElementSchema } from "@/lib/domain/slide-schemas";
 import { postProcessInteractiveHtml, extractInteractiveAuthorHtml } from "@/lib/interactive/html-policy";
 import { sanitizeSlideText } from "@/lib/slides/normalize-slide";
@@ -205,6 +205,16 @@ export class CoursePatchService {
 
     normalizeActions(candidate, original);
     if (original.type === "slide") normalizeSlide(candidate, original, addedIds, deletedIds, warnings);
+    if (deletedIds.size > 0 && Array.isArray(candidate.actions)) {
+      // 删除元素时同步清理旧聚焦；其他不存在的目标仍由 SceneSchema 拒绝。
+      candidate.actions = candidate.actions.map((raw, index) => {
+        const action = ActionSchema.parse(raw);
+        if (action.type !== "speech" || !action.focusElementIds?.some((id) => deletedIds.has(id))) return action;
+        warnings.push(`第 ${index + 1} 个讲解动作的目标元素已删除，已清理高亮引用，请复查对应讲稿`);
+        changedPaths.push(`/actions/${index}/focusElementIds`);
+        return { ...action, focusElementIds: action.focusElementIds.filter((id) => !deletedIds.has(id)) };
+      });
+    }
     if (original.type === "interactive") {
       const content = candidate.content as Record<string, unknown>;
       if (content.widgetType !== original.content.widgetType || content.runtimeContractVersion !== original.content.runtimeContractVersion) {

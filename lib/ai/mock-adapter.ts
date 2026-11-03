@@ -13,7 +13,8 @@ type MockScene = {
   type: "slide" | "quiz" | "interactive";
   title?: string;
   content: unknown;
-  narration: string;
+  narration?: string;
+  narrationSegments?: Array<{ text: string; targetRefs: string[] }>;
   summary: string;
 };
 
@@ -90,7 +91,7 @@ function createMockScene(prompt: string): MockScene {
   const rightVisual = isHook
     ? [
         {
-          type: "chart", left: 516, top: 178, width: 420, height: 180, chartType: "column",
+          ref: "visual", type: "chart", left: 516, top: 178, width: 420, height: 180, chartType: "column",
           data: {
             labels: ["概念理解", "机制拆解", "实践应用"],
             series: [{ name: "掌握度", values: [60, 75, 90] }],
@@ -98,7 +99,7 @@ function createMockScene(prompt: string): MockScene {
           themeColors: theme?.themeColors ?? ["#498ba6", "#bf545d", "#14d9c5"],
         },
         {
-          type: "table", left: 516, top: 370, width: 420, height: 132, header: true, colWidths: [1, 2],
+          ref: "conclusion", type: "table", left: 516, top: 370, width: 420, height: 132, header: true, colWidths: [1, 2],
           rows: [
             ["对比维度", "核心要点"],
             ["核心概念", keyPoints[0] ?? "理解关键定义"],
@@ -109,9 +110,9 @@ function createMockScene(prompt: string): MockScene {
     : [
         { type: "line", left: 486, top: 306, width: 3, start: [0, 0], end: [28, 0], style: "solid", color: soft, points: ["", "arrow"] },
         isMechanism
-          ? { type: "code", left: 516, top: 190, width: 420, height: 240, language: "typescript", fileName: "lesson.ts", showLineNumbers: true, fontSize: 14, lines: ["const input = modelOutput;", "const slide = schema.parse(input);", "return render(slide);"] }
+          ? { ref: "visual", type: "code", left: 516, top: 190, width: 420, height: 240, language: "typescript", fileName: "lesson.ts", showLineNumbers: true, fontSize: 14, lines: ["const input = modelOutput;", "const slide = schema.parse(input);", "return render(slide);"] }
           : {
-              type: "chart", left: 516, top: 190, width: 420, height: 240, chartType: "column",
+              ref: "visual", type: "chart", left: 516, top: 190, width: 420, height: 240, chartType: "column",
               data: {
                 labels: ["概念理解", "机制拆解", "实践应用"],
                 series: [{ name: "掌握度", values: [60, 75, 90] }],
@@ -126,7 +127,7 @@ function createMockScene(prompt: string): MockScene {
           gradient: { type: "linear", rotate: 90, colors: [{ pos: 0, color: "#ffffff" }, { pos: 100, color: cardBg }] },
           outline: { style: "solid", width: 1, color: "#b7d0d7" },
         },
-        { type: "text", left: 88, top: 200, width: 372, height: 280, content: `<p style="font-size:20px;font-weight:bold;color:${labelColor}">01 · 问题</p><p style="font-size:18px;color:${fontColor}">${keyPoints[0] ?? "核心概念"}</p><p style="font-size:18px;font-weight:bold;color:${labelColor2}">02 · 机制</p><p style="font-size:18px;color:${fontColor}">${keyPoints[1] ?? "关键机制"}</p><p style="font-size:18px;font-weight:bold;color:${labelColor3}">03 · 应用</p><p style="font-size:18px;color:${fontColor}">${keyPoints[2] ?? "实践边界"}</p>`, textType: "content", lineHeight: 1.6 },
+        { ref: "concept", type: "text", left: 88, top: 200, width: 372, height: 280, content: `<p style="font-size:20px;font-weight:bold;color:${labelColor}">01 · 问题</p><p style="font-size:18px;color:${fontColor}">${keyPoints[0] ?? "核心概念"}</p><p style="font-size:18px;font-weight:bold;color:${labelColor2}">02 · 机制</p><p style="font-size:18px;color:${fontColor}">${keyPoints[1] ?? "关键机制"}</p><p style="font-size:18px;font-weight:bold;color:${labelColor3}">03 · 应用</p><p style="font-size:18px;color:${fontColor}">${keyPoints[2] ?? "实践边界"}</p>`, textType: "content", lineHeight: 1.6 },
       ]
     : [
         {
@@ -134,10 +135,10 @@ function createMockScene(prompt: string): MockScene {
           gradient: { type: "linear", rotate: 90, colors: [{ pos: 0, color: "#ffffff" }, { pos: 100, color: cardBg }] },
           outline: { style: "solid", width: 1, color: "#b7d0d7" },
         },
-        { type: "text", left: 88, top: 212, width: 372, height: 200, content: `<p style="font-size:18px;font-weight:bold;color:${labelColor}">01 · 问题</p><p style="font-size:18px;color:${fontColor}">${keyPoints[0] ?? "核心概念"}</p><p style="font-size:16px;color:${soft}">结合机制理解应用边界。</p>`, textType: "content", lineHeight: 1.5 },
+        { ref: "concept", type: "text", left: 88, top: 212, width: 372, height: 200, content: `<p style="font-size:18px;font-weight:bold;color:${labelColor}">01 · 问题</p><p style="font-size:18px;color:${fontColor}">${keyPoints[0] ?? "核心概念"}</p><p style="font-size:16px;color:${soft}">结合机制理解应用边界。</p>`, textType: "content", lineHeight: 1.5 },
       ];
   const hookNotes = isHook ? [] : [
-    { type: "text", left: 82, top: 462, width: 850, height: 50, content: `<p style="font-size:18px;color:${fontColor}"><strong>结论：</strong>${keyPoints[2] ?? "把概念、机制与实践边界连接起来"}</p>`, textType: "notes", vAlign: "middle" },
+    { ref: "conclusion", type: "text", left: 82, top: 462, width: 850, height: 50, content: `<p style="font-size:18px;color:${fontColor}"><strong>结论：</strong>${keyPoints[2] ?? "把概念、机制与实践边界连接起来"}</p>`, textType: "notes", vAlign: "middle" },
   ];
   return {
     type,
@@ -152,7 +153,11 @@ function createMockScene(prompt: string): MockScene {
         ...hookNotes,
       ],
     },
-    narration: `现在进入${title}。请先建立问题背景，再理解关键机制，最后联系实际应用。`,
+    narrationSegments: [
+      { text: `现在进入${title}。先看左侧要点：${keyPoints[0] ?? "理解核心概念"}，再把问题背景与后面的示例联系起来。`, targetRefs: ["concept"] },
+      { text: isMechanism ? "观察右侧代码，输入先通过结构校验，再交给渲染函数。三个步骤展示了从数据到画面的处理顺序。" : "观察右侧示例图，三个阶段的数值分别为 60、75 和 90。这些演示数据用于说明图表读法，不代表真实学习测量。", targetRefs: ["visual"] },
+      { text: `最后结合${isHook ? "表格" : "结论"}回顾应用边界：${keyPoints[2] ?? "把概念、机制与实践联系起来"}。`, targetRefs: ["conclusion"] },
+    ],
     summary: `${title}介绍了${topic}的核心概念、运行机制和应用边界。`,
   };
 }

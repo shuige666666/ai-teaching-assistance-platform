@@ -2,6 +2,7 @@ export type PlaybackStatus = "idle" | "playing" | "paused" | "awaitingLearner" |
 
 export type PlaybackState = {
   sceneId: string;
+  sceneVersion: string;
   status: PlaybackStatus;
   actionIndex: number;
   actionCount: number;
@@ -9,18 +10,19 @@ export type PlaybackState = {
 };
 
 export type PlaybackEvent =
-  | { type: "LOAD_SCENE"; sceneId: string; actionCount: number }
+  | { type: "LOAD_SCENE"; sceneId: string; actionCount: number; sceneVersion?: string }
   | { type: "PLAY" }
   | { type: "PAUSE" }
   | { type: "RESUME" }
   | { type: "REPLAY" }
+  | { type: "SEEK"; actionIndex: number; play?: boolean }
   | { type: "ACTION_COMPLETED"; sceneId: string; actionIndex: number; runId: number }
   | { type: "AWAIT_LEARNER"; sceneId: string; actionIndex: number; runId: number }
   | { type: "LEARNER_COMPLETED"; sceneId: string; actionIndex: number; runId: number };
 
 /** 为指定场景创建确定性的播放器初始状态。 */
-export function createPlaybackState(sceneId: string, actionCount: number): PlaybackState {
-  return { sceneId, actionCount, actionIndex: 0, status: "idle", runId: 0 };
+export function createPlaybackState(sceneId: string, actionCount: number, sceneVersion = ""): PlaybackState {
+  return { sceneId, sceneVersion, actionCount, actionIndex: 0, status: "idle", runId: 0 };
 }
 
 function matchesCurrentRun(state: PlaybackState, event: { sceneId: string; actionIndex: number; runId: number }) {
@@ -38,7 +40,8 @@ function advance(state: PlaybackState): PlaybackState {
 export function playbackReducer(state: PlaybackState, event: PlaybackEvent): PlaybackState {
   switch (event.type) {
     case "LOAD_SCENE":
-      return createPlaybackState(event.sceneId, event.actionCount);
+      // 同页修订也开启新一轮执行，旧语音的回调不能推进新讲稿。
+      return { ...createPlaybackState(event.sceneId, event.actionCount, event.sceneVersion), runId: state.runId + 1 };
     case "PLAY":
       return state.status === "idle" ? { ...state, status: state.actionCount === 0 ? "completed" : "playing" } : state;
     case "PAUSE":
@@ -47,6 +50,11 @@ export function playbackReducer(state: PlaybackState, event: PlaybackEvent): Pla
       return state.status === "paused" ? { ...state, status: "playing" } : state;
     case "REPLAY":
       return { ...state, actionIndex: 0, status: state.actionCount === 0 ? "completed" : "playing", runId: state.runId + 1 };
+    case "SEEK": {
+      if (!Number.isInteger(event.actionIndex) || event.actionIndex < 0 || event.actionIndex >= state.actionCount) return state;
+      const playing = event.play ?? state.status === "playing";
+      return { ...state, actionIndex: event.actionIndex, status: playing ? "playing" : "paused", runId: state.runId + 1 };
+    }
     case "ACTION_COMPLETED":
       return state.status === "playing" && matchesCurrentRun(state, event) ? advance(state) : state;
     case "AWAIT_LEARNER":

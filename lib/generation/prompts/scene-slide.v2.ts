@@ -20,8 +20,9 @@ import { resolveCourseTheme } from "@/lib/slides/theme-presets";
  * content actually expressing a flow (grouped cards for plain parallel lists),
  * and adds connector craft rules (edge-to-edge with 4-8px gaps, length >=40px,
  * one line per connection, no shape-bar splicing).
+ * v2.6 在同一次内容生成中增加分段讲稿与临时元素引用，仍由服务端分配正式 ID。
  */
-export const SLIDE_PROMPT_VERSION = "scene-slide.v2.5";
+export const SLIDE_PROMPT_VERSION = "scene-slide.v2.6";
 
 export const SLIDE_SYSTEM_PROMPT = loadPromptTemplate("scene-slide-generation-system");
 
@@ -74,5 +75,5 @@ CourseBrief JSON：${JSON.stringify(course.brief)}
 后续待覆盖目标 JSON：${JSON.stringify(remainingObjectives)}
 前一场景摘要 JSON：${JSON.stringify(previousSummary ?? "无，这是首个已生成场景")}
 
-请围绕当前 SceneOutline 生成一张完整幻灯片。画布内标题必须表达当前 SceneOutline.title；页面内容服务于 teachingObjective 和 keyPoints，并避免提前展开后续目标。先按场景角色选择版式骨架，再按【画布与量化排版】和【输出前自检清单】完成布局；所有颜色只能使用本场主题 JSON 中的颜色，元素数量以表达清晰为准（通常 8～18 个）。`;
+请围绕当前 SceneOutline 生成一张完整幻灯片。画布内标题必须表达当前 SceneOutline.title；页面内容服务于 teachingObjective 和 keyPoints，并避免提前展开后续目标。先按场景角色选择版式骨架，再按【画布与量化排版】和【输出前自检清单】完成布局；所有颜色只能使用本场主题 JSON 中的颜色，元素数量以表达清晰为准（通常 8～18 个）。讲解按教学步骤组织为 narrationSegments，targetRefs 必须引用本页元素的唯一 ref；不要输出整页 narration 或自行分配 id。`;
 }

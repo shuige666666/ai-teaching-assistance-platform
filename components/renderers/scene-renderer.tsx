@@ -5,6 +5,7 @@ import { InteractiveRenderer } from "@/components/interactive/interactive-render
 
 type SceneRendererProps = {
   scene: Scene;
+  focusElementIds?: string[];
   quizSessionId?: number;
   onQuizSubmit?: (questionId: string, selectedOptionIds: string[]) => Promise<{ correct: boolean }>;
   onQuizCompleted?: () => void;
@@ -14,10 +15,10 @@ type SceneRendererProps = {
 };
 
 /** 根据 Scene 判别字段分派固定渲染器，禁止动态执行模型提供的组件代码。 */
-export function SceneRenderer({ scene, quizSessionId, onQuizSubmit, onQuizCompleted, onInteractiveCompleted, onInteractiveRegenerate, onCancelRegeneration }: SceneRendererProps) {
+export function SceneRenderer({ scene, focusElementIds, quizSessionId, onQuizSubmit, onQuizCompleted, onInteractiveCompleted, onInteractiveRegenerate, onCancelRegeneration }: SceneRendererProps) {
   switch (scene.type) {
     case "slide":
-      return <SlideRenderer content={scene.content} />;
+      return <SlideRenderer content={scene.content} focusElementIds={focusElementIds} />;
     case "quiz":
       return <QuizRenderer key={`${scene.id}:${quizSessionId ?? 0}`} content={scene.content} onSubmit={onQuizSubmit} onCompleted={onQuizCompleted} />;
     case "interactive":

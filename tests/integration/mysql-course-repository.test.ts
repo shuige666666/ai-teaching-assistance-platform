@@ -113,6 +113,43 @@ describe("MySQLCourseRepository integration", () => {
     expect(refreshed.outlines).toEqual(course.outlines);
   });
 
+  it("分段讲稿与聚焦完整落库，删除目标后重新读取不会恢复失效引用", async () => {
+    const repository = new MySQLCourseRepository(pool);
+    const draft = await repository.create(createCourseDraft(`分段持久化 ${crypto.randomUUID()}`, 4));
+    cleanupIds.push(draft.id);
+    let course = await new OutlineGenerationService(repository, new MockAIAdapter()).generate(draft.id, draft.revision, "segments-outline");
+    const generation = new SceneGenerationService(repository, new MockAIAdapter());
+    for (const outline of course.outlines) course = await generation.generate(course.id, outline.id, course.revision, `segments-${outline.order}`);
+
+    // 从新仓储恢复实际生成结果，同时核对段落顺序、正式元素 ID 与生成元数据。
+    const restored = (await new MySQLCourseRepository(pool).get(course.id))!;
+    expect(restored).toEqual(course);
+    const slide = restored.scenes[0];
+    if (slide.type !== "slide") throw new Error("slide missing");
+    const speech = slide.actions.filter((action) => action.type === "speech");
+    expect(speech).toHaveLength(3);
+    const targets = speech.flatMap((action) => action.focusElementIds ?? []);
+    expect(targets).toHaveLength(3);
+    expect(targets.every((id) => slide.content.canvas.elements.some((element) => element.id === id))).toBe(true);
+
+    // 提交真实 Agent 补丁后再恢复；只清理被删除元素的关联，其余段落及页面保持一致。
+    const removedId = targets[1];
+    const patch = new CoursePatchService(repository);
+    const prepared = await patch.prepareScenePatch(course.id, {
+      sceneId: slide.id, expectedRevision: restored.revision, intent: "删除讲解关联图表",
+      operations: [{ op: "delete_element", elementId: removedId }],
+    });
+    const committed = await patch.commitPrepared(prepared);
+    const recovered = (await new MySQLCourseRepository(pool).get(course.id))!;
+    expect(recovered.revision).toBe(restored.revision + 1);
+    expect(recovered.scenes[0]).toEqual(prepared.candidateScene);
+    expect(recovered.scenes[0].actions).toEqual(slide.actions.map((action) => action.type === "speech"
+      ? { ...action, focusElementIds: action.focusElementIds?.filter((id) => id !== removedId) } : action));
+    expect(recovered.scenes.slice(1)).toEqual(restored.scenes.slice(1));
+    expect(committed.warnings.join(" ")).toContain("复查对应讲稿");
+    expect(committed.changedPaths).toContain("/actions/1/focusElementIds");
+  });
+
   it("读取时自动升级 v4 单选题，并在下次保存时将课程落成 v5", async () => {
     const repository = new MySQLCourseRepository(pool);
     const created = await repository.create(materializeFixtureCourse(createFixtureCourse(`v4 自动升级 ${crypto.randomUUID()}`, 4)));

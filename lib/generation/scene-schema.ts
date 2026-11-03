@@ -154,7 +154,7 @@ export function validateSceneOutput(value: unknown, outline: SceneOutline, cours
   return output;
 }
 
-/** 将不含任何 ID 的模型 DTO 装配成可持久化 Scene，并由系统生成 Action。 */
+/** 将规范化模型 DTO 装配成可持久化 Scene，Action 身份始终由服务端生成。 */
 export function assembleScene(input: {
   output: SceneModelOutput;
   courseId: string;
@@ -166,7 +166,7 @@ export function assembleScene(input: {
   // 1. 根据场景类型创建播放动作。
   const actions = output.type === "quiz" || output.type === "interactive"
     ? [{ id: randomUUID(), type: "speech" as const, text: output.narration }, { id: randomUUID(), type: "pause" as const, reason: "learner" as const }]
-    : [{ id: randomUUID(), type: "speech" as const, text: output.narration }];
+    : output.narrationSegments.map((segment) => ({ id: randomUUID(), type: "speech" as const, ...segment }));
   if (output.type === "slide") {
     // 2. 元素已经过净化并获得服务端 ID，这里只装配固定逻辑画布。
     return SceneSchema.parse({

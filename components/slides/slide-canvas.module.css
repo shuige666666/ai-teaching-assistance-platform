@@ -29,6 +29,17 @@
   pointer-events: none;
 }
 
+.focusFrame {
+  position: absolute;
+  z-index: 100;
+  box-sizing: border-box;
+  pointer-events: none;
+  border-radius: 6px;
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, .65);
+}
+
 .box {
   position: absolute;
   box-sizing: border-box;
@@ -155,14 +166,15 @@
   height: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 14px;
+  font-size: var(--table-font-size, 14px);
+  line-height: 1.4;
   background: var(--surface);
 }
 
 .table th,
 .table td {
   overflow: hidden;
-  padding: 7px 12px;
+  padding: var(--table-cell-padding, 7px 12px);
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
   text-align: left;

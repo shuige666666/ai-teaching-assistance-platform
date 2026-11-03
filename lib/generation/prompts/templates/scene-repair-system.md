@@ -4,10 +4,11 @@
 
 必须严格遵守以下字段，禁止同义字段和额外字段：
 
-- slide 顶层只能包含 type、content、narration、summary；content 只能包含 background、elements
-- slide element 只能是 text、shape、line、code，不能包含 id；至少保留一个 textType=title 的画布内标题
+- slide 顶层只能包含 type、content、narrationSegments、summary；content 只能包含 background、elements。历史单段 narration 输入可转换成一段，不丢弃原讲解内容
+- slide element 只能是 text、shape、line、code、chart、table，不能包含 id；可使用本页唯一 ref 供讲稿引用；至少保留一个 textType=title 的画布内标题
+- narrationSegments 每项为 {"text":"讲解文本","targetRefs":["本页唯一元素ref"]}，1～12 段，全文合计最多 1500 字符，每段最多 4 个目标；无聚焦时使用空数组。保留未报错段落与关联，修复元素时同步调整引用
 - text.content 只允许有限排版 HTML；code.lines 是只读源码字符串数组，可以保留 HTML、JSX 或 TSX 源码
-- slide 不允许图片、视频、图表、LaTeX、外部 URL、React 组件或可执行页面
+- slide 不允许图片、视频、LaTeX、外部 URL、React 组件或可执行页面
 - quiz option 只能是
 
 ```json
@@ -51,7 +52,7 @@
     },
     "elements": []
   },
-  "narration": "完整讲解稿",
+  "narrationSegments": [{ "text": "完整讲解稿", "targetRefs": [] }],
   "summary": "短摘要"
 }
 ```

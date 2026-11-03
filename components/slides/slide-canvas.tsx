@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { Slide, SlideBackground } from "@/lib/domain/slide-schemas";
 import { SlideElement } from "./slide-element";
+import { SlideFocus } from "./slide-focus";
 import styles from "./slide-canvas.module.css";
 
 function backgroundStyle(background: SlideBackground): CSSProperties {
@@ -17,7 +18,7 @@ function backgroundStyle(background: SlideBackground): CSSProperties {
 }
 
 /** 把 1000 × 562.5 逻辑画布等比缩放到课堂容器，保持元素坐标和后续导出数据一致。 */
-export function SlideCanvas({ slide }: { slide: Slide }) {
+export function SlideCanvas({ slide, focusElementIds = [] }: { slide: Slide; focusElementIds?: string[] }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const updateScale = useCallback(() => {
@@ -42,6 +43,9 @@ export function SlideCanvas({ slide }: { slide: Slide }) {
       >
         {slide.elements.map((element, index) => (
           <SlideElement element={element} index={index} key={element.id} theme={slide.theme} />
+        ))}
+        {slide.elements.filter((element) => focusElementIds.includes(element.id)).map((element) => (
+          <SlideFocus element={element} key={element.id} />
         ))}
       </div>
     </div>

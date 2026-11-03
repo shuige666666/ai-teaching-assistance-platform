@@ -27,7 +27,7 @@ function editableScene(scene: Scene): unknown {
   return scene.type === "interactive" ? { ...scene, content: { ...scene.content, html: extractInteractiveAuthorHtml(scene.content.html) } } : scene;
 }
 const structureGuides = {
-  slide: "可编辑 content.canvas.theme/background/elements 与 actions。已有元素 id/type 必须保留；新增或删除元素使用 add_element/delete_element。",
+  slide: "可编辑 content.canvas.theme/background/elements 与 actions。已有元素 id/type 必须保留；新增或删除元素使用 add_element/delete_element。每个 speech 对应一段讲稿，focusElementIds 可引用本页最多 4 个元素 ID；修改讲稿时保留或同步调整聚焦。新增可选字段可整体 set 对应 action 或 actions；不要把生成期 ref 写入课程。删除目标后需复查讲稿。",
   quiz: "questions 为 1～3 题。选项 ID 与 correctOptionIds 必须对应；题目实际变化需要用户确认并清理旧作答。",
   interactive: "html 为作者源码，保存时平台会重新注入 CSP 与运行时。可编辑 fallback、html 与 actions，不能改变 widgetType/runtimeContractVersion。",
 };
@@ -35,7 +35,7 @@ const schemaExamples: Record<string, unknown> = {
   text: { type: "text", left: 80, top: 80, width: 420, height: 120, rotate: 0, content: "正文", defaultFontName: "Microsoft YaHei", defaultColor: "#143f59", textType: "content" },
   chart: { type: "chart", left: 500, top: 120, width: 400, height: 260, rotate: 0, chartType: "column", data: { labels: ["A", "B"], series: [{ name: "系列", values: [1, 2] }] } },
   table: { type: "table", left: 100, top: 140, width: 800, height: 260, rotate: 0, colWidths: [1, 2], rows: [["字段", "说明"], ["A", "示例"]], header: true },
-  actions: [{ type: "speech", text: "讲解文本" }],
+  actions: [{ type: "speech", text: "当前段讲解文本", focusElementIds: [] }],
 };
 
 export class CourseAgentQueryService {

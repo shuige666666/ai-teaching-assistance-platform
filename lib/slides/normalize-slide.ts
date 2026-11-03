@@ -125,8 +125,20 @@ const GeneratedSlideSceneSchema = z.object({
     background: z.unknown().optional(),
     elements: z.array(z.unknown()).min(1).max(80),
   }),
-  narration: z.string().trim().min(1).max(1_500),
+  // 兼容历史单段输出；新 Prompt 使用分段讲稿，两者同时存在时以分段为准。
+  narration: z.string().trim().min(1).max(1_500).optional(),
+  narrationSegments: z.array(z.object({
+    text: z.string().trim().min(1).max(1_500),
+    targetRefs: z.array(z.string().trim().min(1).max(80)).max(4).default([]),
+  })).min(1).max(12).optional(),
   summary: z.string().trim().min(1).max(300),
+}).superRefine((output, context) => {
+  if (!output.narrationSegments && !output.narration) {
+    context.addIssue({ code: "custom", path: ["narrationSegments"], message: "必须提供分段讲稿或历史 narration" });
+  }
+  if (output.narrationSegments && output.narrationSegments.reduce((total, segment) => total + segment.text.length, 0) > 1_500) {
+    context.addIssue({ code: "custom", path: ["narrationSegments"], message: "整页分段讲稿合计不能超过 1500 字符" });
+  }
 });
 
 export type SlideNormalizationIssue = { path: string; message: string };
@@ -134,6 +146,7 @@ export type NormalizedSlideSceneOutput = {
   type: "slide";
   content: { background: SlideBackground; elements: PPTElement[] };
   narration: string;
+  narrationSegments: Array<{ text: string; focusElementIds: string[] }>;
   summary: string;
   theme: SlideThemePreset["theme"];
   normalizationIssues: SlideNormalizationIssue[];
@@ -336,6 +349,13 @@ function normalizeElement(value: unknown, index: number, theme: SlideThemePreset
   });
 }
 
+/** 读取仅用于本次生成的临时引用，不把模型提供的 ref 当成领域 ID。 */
+function readElementRef(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("ref" in value)) return undefined;
+  const parsed = z.string().trim().min(1).max(80).safeParse(value.ref);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /** 解析并规范化整个 slide 响应；坏元素可局部降级，空页和无标题页面仍明确失败。 */
 export function normalizeGeneratedSlideScene(value: unknown, theme: SlideThemePreset = SLIDE_THEME_PRESETS[0]): NormalizedSlideSceneOutput {
   const parsed = GeneratedSlideSceneSchema.safeParse(value);
@@ -343,11 +363,30 @@ export function normalizeGeneratedSlideScene(value: unknown, theme: SlideThemePr
     throw new InvalidGeneratedSlideError(parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })));
   }
   const issues: SlideNormalizationIssue[] = [];
-  const elements = parsed.data.content.elements
-    .map((element, index) => normalizeElement(element, index, theme, issues))
-    .filter((element): element is PPTElement => element !== null)
+  // 1. 保留原始引用与规范化元素的配对，过滤和截断不会改变讲稿的关联对象。
+  const refs = parsed.data.content.elements.map(readElementRef);
+  const refCounts = new Map<string, number>();
+  refs.forEach((ref) => { if (ref) refCounts.set(ref, (refCounts.get(ref) ?? 0) + 1); });
+  const retained = parsed.data.content.elements
+    .map((element, index) => ({ element: normalizeElement(element, index, theme, issues), ref: refs[index] }))
+    .filter((item): item is { element: PPTElement; ref: string | undefined } => item.element !== null)
     .slice(0, 40);
+  const elements = retained.map((item) => item.element);
   if (elements.length === 0) throw new InvalidGeneratedSlideError([...issues, { path: "content.elements", message: "规范化后没有可显示元素" }]);
+
+  // 2. 只有唯一且最终可见的目标可以被引用，不猜测重复 ref 或回退到第一个元素。
+  const refToId = new Map(retained.flatMap(({ element, ref }) => ref && refCounts.get(ref) === 1 ? [[ref, element.id] as const] : []));
+  const narrationSegments = parsed.data.narrationSegments
+    ? parsed.data.narrationSegments.map((segment, index) => ({
+        text: segment.text,
+        focusElementIds: [...new Set(segment.targetRefs.flatMap((ref) => {
+          const id = refToId.get(ref);
+          if (id) return [id];
+          issues.push({ path: `narrationSegments.${index}.targetRefs`, message: `聚焦引用 ${ref} 不存在、已被过滤或存在歧义，已取消该目标高亮` });
+          return [];
+        }))],
+      }))
+    : [{ text: parsed.data.narration!, focusElementIds: [] }];
 
   const explicitTitle = elements.find((element): element is PPTTextElement => element.type === "text" && element.textType === "title");
   if (!explicitTitle) {
@@ -361,7 +400,9 @@ export function normalizeGeneratedSlideScene(value: unknown, theme: SlideThemePr
   return {
     type: "slide",
     content: { background: normalizeBackground(parsed.data.content.background, theme, issues), elements },
-    narration: parsed.data.narration,
+    // 合并文本只供生成期校验使用，持久化仍只保存 actions 中的分段文本。
+    narration: narrationSegments.map((segment) => segment.text).join("\n"),
+    narrationSegments,
     summary: parsed.data.summary,
     theme: theme.theme,
     normalizationIssues: issues,

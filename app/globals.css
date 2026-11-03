@@ -614,6 +614,22 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .runtime-wait i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: runtime-pulse 1.4s infinite; }
 .runtime-track { height: 3px; margin-top: 12px; overflow: hidden; background: var(--line); }
 .runtime-track i { display: block; height: 100%; background: var(--accent); transition: width .25s ease; }
+.narration-segments { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 120px; margin: 18px 0; overflow: hidden; }
+.narration-segment-heading { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
+.narration-segment-heading small { color: var(--muted); font-size: 11px; }
+.narration-segment-tools { display: grid; flex: 0 0 auto; grid-template-columns: 1fr 1.2fr 1fr; gap: 5px; margin-bottom: 12px; }
+.narration-segment-tools button { min-height: 34px; padding: 4px; border: 1px solid var(--line); background: var(--white); color: var(--ink); font-size: 11px; cursor: pointer; }
+.narration-segment-tools button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
+.narration-segment-tools button:disabled { opacity: .4; cursor: default; }
+.narration-segment-list { flex: 1 1 auto; min-height: 0; margin: 0; padding: 3px; list-style: none; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--accent) var(--line); }
+.narration-segment-list li + li { margin-top: 10px; }
+.narration-segment-list button { display: block; width: 100%; padding: 12px; border: 1px solid transparent; border-left: 3px solid var(--line); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.narration-segment-list button:hover { background: var(--paper); }
+.narration-segment-list button.is-current { border-color: var(--line); border-left-color: var(--accent); background: var(--white); }
+.narration-segment-number { display: block; margin-bottom: 6px; color: var(--muted); font: 11px/1.4 var(--font-mono); }
+.narration-segment-list button.is-current .narration-segment-number { color: var(--accent-dark); }
+.narration-segment-text { display: block; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.narration-segment-list button:focus-visible, .narration-segment-tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .narration-panel blockquote {
   flex: 1 1 auto; min-height: 120px; margin: 24px 0 18px; padding: 20px 12px 20px 0; overflow-y: auto;
   overscroll-behavior: contain; scrollbar-color: var(--accent) var(--line); scrollbar-width: thin;
@@ -803,6 +819,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .narration-panel { contain: none; grid-column: 2; overflow: visible; border-left: 0; border-top: 1px solid var(--line); }
   .narration-panel-resize { display: none; }
   .narration-panel blockquote { flex: none; width: 100%; max-width: 760px; max-height: 46vh; }
+  .narration-segments { flex: none; width: 100%; max-width: 760px; height: 360px; }
   .usage-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .usage-grid { grid-template-columns: 1fr; }
 }

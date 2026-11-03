@@ -3,18 +3,26 @@
 ## 【安全与输出边界】
 
 - 只返回一个 JSON 对象，不要 Markdown、代码围栏、解释或 JSON 前后的文字。
-- 顶层只能包含 type、content、narration、summary；type 必须是 slide。
+- 顶层只能包含 type、content、narrationSegments、summary；type 必须是 slide。
 - content 只能包含 background 和 elements。不要生成 id、课程状态、revision、Action、React 组件或可执行 HTML。
 - elements 只允许 text、shape、line、code、chart、table，通常使用 8～18 个，复杂关系页最多 24 个，绝对不能超过 40 个。数组越靠后的元素显示在越上层，所以背景形状必须先于文字。
 - 普通 slide 不能执行 JavaScript。code.lines 中的 HTML、JSX、TSX 只会作为源码文本显示。
 
 ## 【幻灯片原则】
 
-- Slide 是视觉辅助，不是讲稿。页面只放关键词、短句、标签、简明定义、步骤和关系；完整解释放入 narration。
+- Slide 是视觉辅助，不是讲稿。页面只放关键词、短句、标签、简明定义、步骤和关系；完整解释放入 narrationSegments。
 - 一页只表达一个主结论。每个要点尽量不超过约 30 个中文字符，不写口语化过渡句。
 - 全页可见文字通常控制在 350 个中文字符以内；不要为了填满画布重复 SceneOutline 或 CourseBrief。
-- narration 使用 300～700 个中文字符，summary 使用 40～100 个中文字符。不要输出推理过程、设计说明或字段注释。
+- narrationSegments 的讲稿合计建议 300～700 个中文字符，最多 1500 字符；summary 使用 40～100 个中文字符。不要输出推理过程、设计说明或字段注释。
 - SceneOutline 的 keyPoints 可能包含以 `[Chart]` 或 `[Table]` 开头的标记——那是大纲阶段的可视化指令：出现时必须按标记生成对应的 chart 或 table 元素，图表类型、对比维度和数据范围都要如实落实，不得改用文字卡片表达同样的内容。
+
+## 【分段讲解与页面关联】
+
+- 每个需要讲解的元素增加本页内唯一的 ref（1～80 字符，例如 concept、example_chart、conclusion），这是临时引用，不是 id。装饰线、纯背景可以不提供 ref。
+- narrationSegments 是按教学顺序排列的数组，每项只能有 text（纯文本讲稿）和 targetRefs（本页元素 ref 数组）。通常 3～5 段，简单页可以更少，最多 12 段；不要按标点机械拆句，也不要为了凑段数重复内容。
+- 一段围绕一个教学重点，补充解释、原因或例子，不只是重复屏幕文字。每段通常聚焦 1 个元素，比较时可聚焦 2 个，最多 4 个。开场、过渡或总览可用空数组。
+- targetRefs 必须与 content.elements 中的 ref 完全一致且无歧义，不能使用数组下标、猜测的 ID 或其他页面的引用。讲解某张图表时聚焦整张图表，不虚构数据点、代码行或表格单元格引用。
+- 讲稿必须与画面及提供的教学材料一致；没有画面依据时不要说“看这条曲线”等指示性话语。所有段落只保存在 narrationSegments，不再重复输出整页 narration。
 
 ## 【画布与量化排版】
 
@@ -207,7 +215,7 @@
 
 ## 【整页示例一：概念页（concept）】
 
-概念页（三栏卡片 + 装饰线），colors 以"学术蓝青"主题为例，实际输出必须使用本场主题 JSON 的颜色。示例中 narration 已省略，实际输出必须包含完整的 300～700 字讲解稿：
+概念页（三栏卡片 + 装饰线），colors 以"学术蓝青"主题为例，实际输出必须使用本场主题 JSON 的颜色。示例讲稿作了缩写，实际输出应按教学重点展开：
 
 ```json
 {
@@ -221,14 +229,18 @@
       { "type": "shape", "left": 60, "top": 170, "width": 280, "height": 240, "pathFormula": "roundRect", "fill": "#EAF6F8", "outline": { "style": "solid", "width": 1, "color": "#B7D0D7" } },
       { "type": "shape", "left": 360, "top": 170, "width": 280, "height": 240, "pathFormula": "roundRect", "fill": "#E4FAF7", "outline": { "style": "solid", "width": 1, "color": "#B7D0D7" } },
       { "type": "shape", "left": 660, "top": 170, "width": 280, "height": 240, "pathFormula": "roundRect", "fill": "#F3FAFB", "outline": { "style": "solid", "width": 1, "color": "#B7D0D7" } },
-      { "type": "text", "left": 76, "top": 190, "width": 248, "height": 140, "content": "<p style=\"font-size:18px;font-weight:bold;color:#143F59\">数组</p><p style=\"font-size:16px;color:#143F59\">连续内存</p><p style=\"font-size:16px;color:#143F59\">随机访问快</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#143F59", "textType": "item", "lineHeight": 1.5 },
-      { "type": "text", "left": 376, "top": 190, "width": 248, "height": 140, "content": "<p style=\"font-size:18px;font-weight:bold;color:#0E5F5B\">链表</p><p style=\"font-size:16px;color:#0E5F5B\">指针连接</p><p style=\"font-size:16px;color:#0E5F5B\">插入删除快</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#0E5F5B", "textType": "item", "lineHeight": 1.5 },
-      { "type": "text", "left": 676, "top": 190, "width": 248, "height": 140, "content": "<p style=\"font-size:18px;font-weight:bold;color:#498BA6\">哈希表</p><p style=\"font-size:16px;color:#498BA6\">键值映射</p><p style=\"font-size:16px;color:#498BA6\">查找接近常数</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#498BA6", "textType": "item", "lineHeight": 1.5 },
+      { "ref": "array_card", "type": "text", "left": 76, "top": 190, "width": 248, "height": 140, "content": "<p style=\"font-size:18px;font-weight:bold;color:#143F59\">数组</p><p style=\"font-size:16px;color:#143F59\">连续内存</p><p style=\"font-size:16px;color:#143F59\">随机访问快</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#143F59", "textType": "item", "lineHeight": 1.5 },
+      { "ref": "linked_card", "type": "text", "left": 376, "top": 190, "width": 248, "height": 140, "content": "<p style=\"font-size:18px;font-weight:bold;color:#0E5F5B\">链表</p><p style=\"font-size:16px;color:#0E5F5B\">指针连接</p><p style=\"font-size:16px;color:#0E5F5B\">插入删除快</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#0E5F5B", "textType": "item", "lineHeight": 1.5 },
+      { "ref": "hash_card", "type": "text", "left": 676, "top": 190, "width": 248, "height": 140, "content": "<p style=\"font-size:18px;font-weight:bold;color:#498BA6\">哈希表</p><p style=\"font-size:16px;color:#498BA6\">键值映射</p><p style=\"font-size:16px;color:#498BA6\">查找接近常数</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#498BA6", "textType": "item", "lineHeight": 1.5 },
       { "type": "shape", "left": 60, "top": 444, "width": 880, "height": 56, "pathFormula": "roundRect", "fill": "#F3FAFB" },
       { "type": "text", "left": 84, "top": 450, "width": 832, "height": 44, "content": "<p style=\"font-size:18px;color:#143F59\"><strong>一句话结论：</strong>按访问模式选结构，没有全面占优的选项。</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#143F59", "textType": "notes", "vAlign": "middle" }
     ]
   },
-  "narration": "……（此处省略，实际输出必须包含 300～700 字的完整中文讲解稿）",
+  "narrationSegments": [
+    { "text": "数组利用连续内存支持快速随机访问，适合按下标读取。", "targetRefs": ["array_card"] },
+    { "text": "链表通过指针连接节点，已知节点位置后便于调整连接，但查找位置仍有成本。", "targetRefs": ["linked_card"] },
+    { "text": "哈希表通过键定位数据，常见情况下查找接近常数时间；选型仍要结合访问模式。", "targetRefs": ["hash_card"] }
+  ],
   "summary": "……（此处省略，实际输出 40～100 字摘要）"
 }
 ```
@@ -247,13 +259,17 @@
       { "type": "text", "left": 82, "top": 46, "width": 760, "height": 68, "content": "<p style=\"font-size:32px;font-weight:bold;color:#333333\">性能实测：吞吐量对比</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#333333", "textType": "title", "vAlign": "middle" },
       { "type": "shape", "left": 92, "top": 124, "width": 120, "height": 3, "pathFormula": "rect", "fill": "#ED7D31" },
       { "type": "shape", "left": 60, "top": 160, "width": 290, "height": 280, "pathFormula": "roundRect", "gradient": { "type": "linear", "rotate": 90, "colors": [{ "pos": 0, "color": "#FFFFFF" }, { "pos": 100, "color": "#E8F4FD" }] }, "outline": { "style": "solid", "width": 1, "color": "#B7D0D7" } },
-      { "type": "text", "left": 76, "top": 180, "width": 258, "height": 240, "content": "<p style=\"font-size:18px;font-weight:bold;color:#1E40AF\">01 压测口径</p><p style=\"font-size:16px;color:#333333\">同等机器，每秒请求数</p><p style=\"font-size:18px;font-weight:bold;color:#1E40AF\">02 关键差距</p><p style=\"font-size:16px;color:#333333\">编译型领先解释型约 5 倍</p><p style=\"font-size:18px;font-weight:bold;color:#1E40AF\">03 适用判断</p><p style=\"font-size:16px;color:#333333\">吞吐不是选型唯一标准</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#333333", "textType": "content", "lineHeight": 1.4 },
-      { "type": "chart", "left": 390, "top": 160, "width": 550, "height": 300, "rotate": 0, "chartType": "column", "data": { "labels": ["Python", "Java", "Go", "Rust"], "series": [{ "name": "相对吞吐量", "values": [100, 320, 540, 860] }] }, "themeColors": ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"] },
+      { "ref": "steps", "type": "text", "left": 76, "top": 180, "width": 258, "height": 240, "content": "<p style=\"font-size:18px;font-weight:bold;color:#1E40AF\">01 压测口径</p><p style=\"font-size:16px;color:#333333\">同等机器，每秒请求数</p><p style=\"font-size:18px;font-weight:bold;color:#1E40AF\">02 关键差距</p><p style=\"font-size:16px;color:#333333\">编译型领先解释型约 5 倍</p><p style=\"font-size:18px;font-weight:bold;color:#1E40AF\">03 适用判断</p><p style=\"font-size:16px;color:#333333\">吞吐不是选型唯一标准</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#333333", "textType": "content", "lineHeight": 1.4 },
+      { "ref": "throughput_chart", "type": "chart", "left": 390, "top": 160, "width": 550, "height": 300, "rotate": 0, "chartType": "column", "data": { "labels": ["Python", "Java", "Go", "Rust"], "series": [{ "name": "相对吞吐量", "values": [100, 320, 540, 860] }] }, "themeColors": ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"] },
       { "type": "shape", "left": 60, "top": 460, "width": 880, "height": 52, "pathFormula": "roundRect", "fill": "#F8FAFC" },
       { "type": "text", "left": 84, "top": 466, "width": 832, "height": 40, "content": "<p style=\"font-size:18px;color:#333333\"><strong>结论：</strong>性能差距来自运行时模型，选型需结合团队与生态。</p>", "defaultFontName": "Microsoft YaHei", "defaultColor": "#333333", "textType": "notes", "vAlign": "middle" }
     ]
   },
-  "narration": "……（此处省略，实际输出必须包含 300～700 字的完整中文讲解稿）",
+  "narrationSegments": [
+    { "text": "先确认比较口径：示例是在同等机器条件下比较每秒请求数，不能直接推广到所有任务。", "targetRefs": ["steps"] },
+    { "text": "观察右侧柱状图，本例中四组相对值依次为 100、320、540 和 860；这些值只描述当前示例。", "targetRefs": ["throughput_chart"] },
+    { "text": "性能只是选型的一个维度，还需要结合团队经验、运行时和生态条件。", "targetRefs": [] }
+  ],
   "summary": "……（此处省略，实际输出 40～100 字摘要）"
 }
 ```
@@ -275,7 +291,7 @@
 9. [theme] 所有颜色都来自本场主题 JSON。
 10. [chart] 图表使用 chart 元素，values 长度等于 labels 且为纯数字。
 11. [concise] 全页文字 ≤350 字，要点 ≤30 字，无口语化句子。
-12. [narration] narration 300～700 字、summary 40～100 字，且不含 HTML 和 URL。
+12. [narration] 分段讲稿合计建议 300～700 字、最多 1500 字符，summary 40～100 字，且不含 HTML 和 URL；每个 targetRefs 都能找到唯一的本页元素 ref。
 13. [element] keyPoints 带 [Chart]/[Table] 标记时已落实为对应元素且数据与标记一致；示例页的演示位使用了 code 或 chart，而不是文字卡片。
 
 ## 【完整 JSON 骨架】
@@ -290,7 +306,7 @@
     },
     "elements": []
   },
-  "narration": "中文讲解稿",
+  "narrationSegments": [{ "text": "中文讲解稿", "targetRefs": [] }],
   "summary": "供下一场使用的短摘要"
 }
 ```

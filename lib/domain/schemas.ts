@@ -143,6 +143,8 @@ export const ActionSchema = z.discriminatedUnion("type", [
     type: z.literal("speech"),
     text: z.string().trim().min(1).max(1500),
     rate: z.number().min(0.5).max(2).optional(),
+    // 分段讲解可聚焦本页元素；旧课程未提供时仍按普通讲稿播放。
+    focusElementIds: z.array(z.string().min(1)).max(4).optional(),
   }),
   z.object({
     id: z.string().min(1),
@@ -170,7 +172,16 @@ export const SceneSchema = z.discriminatedUnion("type", [
   SceneBaseSchema.extend({ type: z.literal("slide"), content: SlideContentSchema }),
   SceneBaseSchema.extend({ type: z.literal("quiz"), content: QuizContentSchema }),
   SceneBaseSchema.extend({ type: z.literal("interactive"), content: InteractiveContentSchema }),
-]);
+]).superRefine((scene, context) => {
+  const elementIds = new Set(scene.type === "slide" ? scene.content.canvas.elements.map((element) => element.id) : []);
+  // 聚焦只能引用本页实际存在的元素，避免 Agent 保存悬空或跨页引用。
+  scene.actions.forEach((action, index) => {
+    if (action.type !== "speech") return;
+    if (action.focusElementIds?.some((id) => !elementIds.has(id))) {
+      context.addIssue({ code: "custom", path: ["actions", index, "focusElementIds"], message: "讲解聚焦目标必须是本页幻灯片中的有效元素" });
+    }
+  });
+});
 
 export const SceneProgressSchema = z.object({
   outlineId: z.string().min(1),

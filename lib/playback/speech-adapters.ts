@@ -12,10 +12,10 @@ export interface SpeechAdapter {
 
 type TimerApi = Pick<typeof globalThis, "setTimeout" | "clearTimeout">;
 
-/** 按中文字数估算讲解时间，并设置上下限避免过快闪过或长时间卡住。 */
+/** 按中文字数估算讲解时间；长段落保留阅读时间，用户可随时手动跳段。 */
 export function estimateSpeechDuration(text: string, rate = 1): number {
   const visibleCharacters = text.replace(/\s/g, "").length;
-  return Math.max(1200, Math.min(12000, Math.round((visibleCharacters / (5 * rate)) * 1000)));
+  return Math.max(1200, Math.round((visibleCharacters / (5 * rate)) * 1000));
 }
 
 /** 创建可暂停的计时任务；恢复时只消费剩余时长，不会重复启动 Action。 */
