@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { InteractiveContent } from "@/lib/domain/schemas";
 import { HostToWidgetMessageSchema, WidgetToHostMessageSchema, isResizeObserverNotification } from "@/lib/interactive/runtime-contract";
 import { WIDGET_LABELS } from "@/lib/interactive/widget-types";
 import styles from "./interactive-renderer.module.css";
 
+// 教学互动通常按桌面双栏布局生成，窄屏保留可用的内部布局宽度。
+const MIN_INTERACTIVE_FRAME_WIDTH = 1120;
+
 type RuntimeState = "loading" | "ready" | "completed" | "failed";
 
 type InteractiveRendererProps = {
   content: InteractiveContent;
+  canvasMeta?: ReactNode;
   onCompleted?: () => void;
   onRegenerate?: (runtimeError: string) => Promise<void>;
   onCancelRegeneration?: () => void;
@@ -21,8 +25,10 @@ export function InteractiveRenderer(props: InteractiveRendererProps) {
 }
 
 /** 每份 HTML 有独立运行会话，失败后卸载脚本，重试重新初始化。 */
-function InteractiveSession({ content, onCompleted, onRegenerate, onCancelRegeneration }: InteractiveRendererProps) {
+function InteractiveSession({ content, canvasMeta, onCompleted, onRegenerate, onCancelRegeneration }: InteractiveRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [frameScale, setFrameScale] = useState(1);
   const completionReported = useRef(false);
   const onCompletedRef = useRef(onCompleted);
   const [runtimeState, setRuntimeState] = useState<RuntimeState>("loading");
@@ -32,6 +38,21 @@ function InteractiveSession({ content, onCompleted, onRegenerate, onCancelRegene
   const regenerationPending = useRef(false);
   const [attempt, setAttempt] = useState(0);
   const failed = useRef(false);
+  const hasFrame = runtimeState !== "failed";
+  const isReady = runtimeState === "ready" || runtimeState === "completed";
+
+  // 只观察外层视口，缩放不会改变它的尺寸，也不会重新挂载互动脚本。
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const updateScale = () => {
+      if (viewport.clientWidth > 0) setFrameScale(Math.min(1, viewport.clientWidth / MIN_INTERACTIVE_FRAME_WIDTH));
+    };
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [hasFrame]);
 
   useEffect(() => {
     onCompletedRef.current = onCompleted;
@@ -107,8 +128,6 @@ function InteractiveSession({ content, onCompleted, onRegenerate, onCancelRegene
     iframeRef.current?.contentWindow?.postMessage(message, "*");
   }
 
-  const showFallback = runtimeState === "loading" || runtimeState === "failed";
-
   /** 用户点击才调用模型，重复点击不发第二个请求；失败时继续保留静态内容。 */
   async function regenerate() {
     if (!onRegenerate || regenerationPending.current) return;
@@ -125,37 +144,38 @@ function InteractiveSession({ content, onCompleted, onRegenerate, onCancelRegene
     }
   }
   return (
-    <div className={styles.shell} data-testid="interactive-host" data-runtime-state={runtimeState}>
-      {runtimeState !== "failed" ? (
-        <div className={styles.viewportFrame} data-testid="interactive-viewport-frame">
-          <div className={styles.viewport} data-testid="interactive-viewport">
-            <iframe
-              key={attempt}
-              ref={iframeRef}
-              className={`${styles.frame} ${runtimeState === "ready" || runtimeState === "completed" ? styles.frameReady : ""}`}
-              srcDoc={content.html}
-              sandbox="allow-scripts"
-              title={`课程互动：${WIDGET_LABELS[content.widgetType]}`}
-              referrerPolicy="no-referrer"
-              onLoad={() => iframeRef.current?.contentWindow?.postMessage({ type: "INTERACTIVE_PING", version: 1 }, "*")}
-            />
+    <>
+      {(canvasMeta || hasFrame) && (
+        <div className="scene-canvas-meta">
+          {canvasMeta}
+          {hasFrame && <button className={styles.resetButton} type="button" disabled={!isReady} onClick={reset}>重置互动</button>}
+        </div>
+      )}
+      <div className={styles.shell} data-testid="interactive-host" data-runtime-state={runtimeState}>
+        {hasFrame ? (
+          <div className="scene-canvas-slot" data-testid="interactive-viewport-frame">
+            <div className={`scene-canvas-window ${styles.viewport} ${isReady ? styles.viewportReady : ""}`} data-testid="interactive-viewport" ref={viewportRef}>
+              <iframe
+                key={attempt}
+                ref={iframeRef}
+                className={styles.frame}
+                style={frameScale < 1 ? { width: `${100 / frameScale}%`, height: `${100 / frameScale}%`, transform: `scale(${frameScale})` } : undefined}
+                srcDoc={content.html}
+                sandbox="allow-scripts"
+                title={`课程互动：${WIDGET_LABELS[content.widgetType]}`}
+                referrerPolicy="no-referrer"
+                onLoad={() => iframeRef.current?.contentWindow?.postMessage({ type: "INTERACTIVE_PING", version: 1 }, "*")}
+              />
+              {!isReady && <span className={styles.loading} role="status">互动加载中…</span>}
+            </div>
           </div>
-        </div>
-      ) : null}
-      {!showFallback ? (
-        <div className={styles.toolbar}>
-          <span>{runtimeState === "completed" ? "COMPLETED" : WIDGET_LABELS[content.widgetType]}</span>
-          <small>页面可联网，请勿输入密钥或敏感数据</small>
-          <button type="button" onClick={reset}>重置互动</button>
-        </div>
-      ) : null}
-      {showFallback ? (
-        <section className={styles.fallback} role={runtimeState === "failed" ? "alert" : "status"}>
-          <div>
-            <span className={styles.fallbackMark}>{runtimeState === "loading" ? "LOADING INTERACTIVE" : "STATIC FALLBACK"}</span>
-            <h2>{content.fallback.title}</h2>
-            <p>{runtimeState === "failed" && failureMessage ? failureMessage : content.fallback.description}</p>
-            {runtimeState === "failed" ? <>
+        ) : null}
+        {!hasFrame && (
+          <section className={styles.fallback} role="alert">
+            <div>
+              <span className={styles.fallbackMark}>STATIC FALLBACK</span>
+              <h2>{content.fallback.title}</h2>
+              {failureMessage && <p>{failureMessage}</p>}
               <p>{content.fallback.description}</p>
               <div className={styles.fallbackActions}>
                 {onRegenerate ? <button type="button" disabled={regenerating} onClick={regenerate}>{regenerating ? "正在重新生成…" : "重新生成本场互动"}</button> : null}
@@ -166,11 +186,11 @@ function InteractiveSession({ content, onCompleted, onRegenerate, onCancelRegene
               {onRegenerate ? <small className={styles.regenerationNote}>重新生成会调用模型；成功后仅替换本场互动，失败保留原内容。</small> : null}
               {regenerating ? <p role="status">正在生成新的互动，请稍候。不会自动反复生成。</p> : null}
               {regenerationError ? <p role="alert">{regenerationError}</p> : null}
-            </> : null}
-          </div>
-          <ol>{content.fallback.steps.map((step) => <li key={step}>{step}</li>)}</ol>
-        </section>
-      ) : null}
-    </div>
+            </div>
+            <ol>{content.fallback.steps.map((step) => <li key={step}>{step}</li>)}</ol>
+          </section>
+        )}
+      </div>
+    </>
   );
 }

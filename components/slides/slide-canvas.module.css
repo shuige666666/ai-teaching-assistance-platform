@@ -1,7 +1,5 @@
 .shell {
   position: relative;
-  width: min(100%, 1000px);
-  aspect-ratio: 16 / 9;
   margin: auto;
   overflow: hidden;
   border: 1px solid rgba(20, 63, 89, 0.18);

@@ -158,8 +158,9 @@ test("mock 课程从创建、导出、互动、测验到刷新恢复", async ({ 
     const interactiveHost = page.getByTestId("interactive-host");
     await expect(interactiveHost).toHaveAttribute("data-runtime-state", "ready");
     const widget = page.frameLocator('[data-testid="interactive-host"] iframe');
-    for (const node of await widget.locator(".node").all()) await node.click();
-    await widget.getByRole("button", { name: "完成探索" }).click();
+    // 在等比缩放的 iframe 中通过原生键盘操作激活按钮。
+    for (const node of await widget.locator(".node").all()) await node.press("Enter");
+    await widget.getByRole("button", { name: "完成探索" }).press("Enter");
     await expect(interactiveHost).toHaveAttribute("data-runtime-state", "completed");
     await page.getByRole("button", { name: "重置互动" }).click();
     await expect(widget.getByRole("button", { name: "完成探索" })).toBeDisabled();

@@ -47,6 +47,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   const [quizEditorOpen, setQuizEditorOpen] = useState(false);
   const regenerationRequest = useRef<AbortController | null>(null);
   const [sceneIndex, setSceneIndex] = useState(0);
+  const sceneRailRef = useRef<HTMLElement>(null);
   const [continuousPlay, setContinuousPlay] = useState(false);
   const [browserSpeechEnabled, setBrowserSpeechEnabled] = useState(false);
   const [browserSpeechSupported, setBrowserSpeechSupported] = useState(false);
@@ -224,6 +225,17 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
     return () => window.clearTimeout(timeout);
   }, [continuousPlay, course.scenes.length, playback.state.status, sceneIndex]);
 
+  // 自动播放和底栏切页时只滚动左栏，让当前项保持在可视范围内。
+  useEffect(() => {
+    const rail = sceneRailRef.current;
+    const selected = rail?.querySelector('[aria-current="step"]');
+    if (!rail || !selected) return;
+    const bounds = rail.getBoundingClientRect();
+    const item = selected.getBoundingClientRect();
+    if (item.top < bounds.top) rail.scrollTop += item.top - bounds.top;
+    else if (item.bottom > bounds.bottom) rail.scrollTop += item.bottom - bounds.bottom;
+  }, [scene.id]);
+
   /** 手工切页会停止连续播放，旧 Action 由 controller 在 scene 变化时取消。 */
   function moveTo(index: number) {
     // 5. 手动切页时，停止连续播放。
@@ -315,10 +327,10 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
       <div className="classroom-progress"><i style={{ width: `${courseProgress}%` }} /></div>
 
       <div className="classroom-layout">
-        <nav className="scene-rail" aria-label="课程场景">
+        <nav ref={sceneRailRef} className="scene-rail" aria-label="课程场景">
           <p>SCENES</p>
           {course.scenes.map((item, index) => (
-            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} onClick={() => moveTo(index)} aria-label={`打开场景 ${item.order}：${item.title}`}>
+            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} onClick={() => moveTo(index)} aria-current={index === sceneIndex ? "step" : undefined} aria-label={`打开场景 ${item.order}：${item.title}`}>
               <span>{String(item.order).padStart(2, "0")}</span><i /><small>{item.type === "quiz" ? "测验" : item.type === "interactive" ? "互动" : "讲解"}</small>
             </button>
           ))}
@@ -332,16 +344,12 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
               <Link href={`/generation/${course.id}`}>返回生成页 →</Link>
             </div>
           ) : null}
-          {scene.type === "slide" ? (
-            <div className="scene-slide-meta" aria-label={`当前场景：${scene.title}`}>
-              <span>SLIDE · SCENE {String(scene.order).padStart(2, "0")}</span>
-              <span>{String(scene.order).padStart(2, "0")} / {String(course.requestedSceneCount).padStart(2, "0")}</span>
-            </div>
-          ) : (
+          {scene.type === "quiz" ? (
             <div className="scene-heading"><div><p className="eyebrow">{scene.type.toUpperCase()} · SCENE {String(scene.order).padStart(2, "0")}</p><h1>{scene.title}</h1></div><span>{String(scene.order).padStart(2, "0")} / {String(course.requestedSceneCount).padStart(2, "0")}</span></div>
-          )}
+          ) : null}
           <SceneRenderer
             scene={scene}
+            sceneCount={course.requestedSceneCount}
             focusElementIds={playback.focusElementIds}
             quizSessionId={playback.state.runId}
             onQuizSubmit={submitQuiz}
@@ -352,7 +360,7 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
           />
         </section>
 
-        <aside className="narration-panel">
+        <aside className="narration-panel" aria-label="课堂调度台">
           <button
             className="narration-panel-resize"
             type="button"
@@ -365,9 +373,24 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             onPointerUp={finishNarrationResize}
             onPointerCancel={finishNarrationResize}
           />
-          <div className="runtime-heading"><div><p className="eyebrow">ACTION RUNTIME</p><h2>课堂调度台</h2></div><span className={`runtime-lamp runtime-lamp--${playback.state.status}`} aria-hidden="true" /></div>
-          <div className="runtime-status" aria-live="polite"><span>{statusLabels[playback.state.status]}</span><small>{scene.type === "slide" ? "分段讲解" : `ACTION ${Math.min(playback.state.actionIndex + 1, playback.state.actionCount)} / ${playback.state.actionCount}`}</small></div>
-          {primaryControl()}
+          <span className="runtime-status" role="status">
+            {continuousPlay && playback.state.status === "playing" ? "连续播放中" : statusLabels[playback.state.status]}
+          </span>
+          <div className="runtime-toolbar">
+            {primaryControl()}
+            <button
+              type="button"
+              role="switch"
+              className={`speech-switch${browserSpeechEnabled ? " is-on" : ""}`}
+              aria-label="浏览器朗读"
+              aria-checked={browserSpeechEnabled}
+              disabled={!browserSpeechSupported}
+              title={browserSpeechSupported ? undefined : "当前浏览器不支持朗读"}
+              onClick={toggleBrowserSpeech}
+            >
+              浏览器朗读<span className="speech-switch-track" aria-hidden="true"><i /></span>
+            </button>
+          </div>
           <div className="runtime-track"><i style={{ width: `${playback.progress}%` }} /></div>
           {scene.type === "slide" ? (
             <NarrationSegments
@@ -377,14 +400,9 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
               onSelect={(actionIndex, play) => { setContinuousPlay(false); playback.seekToAction(actionIndex, play); }}
             />
           ) : <blockquote tabIndex={0} aria-label="当前场景讲解文本，可上下滚动">{speech?.type === "speech" ? speech.text : "当前场景没有讲解动作。"}</blockquote>}
-          <div className="speech-switch">
-            <div><span>浏览器朗读</span><small>{browserSpeechSupported ? "可选增强 · 失败自动回退文本" : "当前浏览器不支持，使用文本计时"}</small></div>
-            <button type="button" role="switch" aria-label="浏览器朗读" aria-checked={browserSpeechEnabled} disabled={!browserSpeechSupported} className={browserSpeechEnabled ? "is-on" : ""} onClick={toggleBrowserSpeech}><i /></button>
-          </div>
           {scene.type === "quiz" ? <button className="scene-quiz-edit-toggle" type="button" disabled={regenerating} onClick={() => setQuizEditorOpen(true)}><span>✎</span>手动调整题目</button> : null}
-          {regenerating ? <p className="scene-regenerate-status" role="status">课程仍可浏览；完成后将自动刷新。</p> : null}
+          {regenerating ? <p className="scene-regenerate-status" role="status">正在修订当前场景…</p> : null}
           {!regenerating && manualRegenerationError ? <p className="scene-regenerate-status is-error" role="alert">{manualRegenerationError}</p> : null}
-          <div className="runtime-note"><span>PLAYBACK POLICY</span><strong>{continuousPlay ? "连续播放已开启" : "手动场景导航"}</strong><p>切换场景会取消旧语音与计时器；测验提交或互动场景完成后，播放器才会结束学习者等待。</p></div>
         </aside>
       </div>
 
@@ -426,9 +444,9 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
       />
 
       <footer className="classroom-controls">
-        <button className="control-button" type="button" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>
+        <button className="control-button" type="button" aria-label="上一场景" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>
         <div className="control-center"><span className="control-index">{String(scene.order).padStart(2, "0")}</span><span className="control-divider" /><span>{statusLabels[playback.state.status]}</span></div>
-        <button className="control-button" type="button" disabled={sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span> →</button>
+        <button className="control-button" type="button" aria-label="下一场景" disabled={sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span> →</button>
       </footer>
     </main>
   );

@@ -36,7 +36,7 @@ export function SlideCanvas({ slide, focusElementIds = [] }: { slide: Slide; foc
   }, [updateScale]);
 
   return (
-    <div className={styles.shell} ref={shellRef} data-testid="slide-canvas">
+    <div className={`scene-canvas-window ${styles.shell}`} ref={shellRef} data-testid="slide-canvas">
       <div
         className={styles.viewport}
         style={{ ...backgroundStyle(slide.background), transform: `scale(${scale})` }}

@@ -9,7 +9,7 @@ type SlideRendererProps = {
 /** 渲染已经过服务端净化和领域 Schema 校验的只读 PPT 式画布。 */
 export function SlideRenderer({ content, focusElementIds }: SlideRendererProps) {
   return (
-    <article className="ppt-slide" data-testid="slide-renderer">
+    <article className="scene-canvas-slot" data-testid="slide-renderer">
       <SlideCanvas slide={content.canvas} focusElementIds={focusElementIds} />
     </article>
   );

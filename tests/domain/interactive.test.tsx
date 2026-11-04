@@ -104,10 +104,11 @@ describe("M9 interactive boundary", () => {
     expect(scene.content.html).toContain("Content-Security-Policy");
   });
 
-  it("首屏先显示 React fallback，iframe 只开放 allow-scripts", () => {
+  it("初始化保留画布且不渲染失败说明，iframe 只开放 allow-scripts", () => {
     const content: InteractiveContent = { type: "interactive", widgetType: "diagram", runtimeContractVersion: 1, html: postProcessInteractiveHtml(rawHtml), fallback };
     const html = renderToStaticMarkup(<InteractiveRenderer content={content} />);
-    expect(html).toContain("LOADING INTERACTIVE");
+    expect(html).toContain("互动加载中…");
+    expect(html).not.toContain(fallback.title);
     expect(html).toContain("data-testid=\"interactive-viewport\"");
     expect(html).toContain("sandbox=\"allow-scripts\"");
     expect(html).not.toContain("allow-same-origin");

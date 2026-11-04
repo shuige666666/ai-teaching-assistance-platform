@@ -3,33 +3,18 @@
   flex-direction: column;
   position: relative;
   min-height: 0;
-  height: 100%;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--paper);
-}
-
-.viewportFrame {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  min-height: 0;
+  flex: 1 1 0;
   overflow: hidden;
 }
 
-/* 课堂内只把这块作为固定比例的阅读窗口；独立 HTML 仍由自身 CSS 决定高度。 */
+/* 画布尺寸来自共用样式，内部 iframe 仍可等比缩放。 */
 .viewport {
   position: relative;
-  width: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: 16 / 9;
   overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--white);
+  border: 1px solid transparent;
 }
+
+.viewportReady { border-color: var(--line); }
 
 .frame {
   display: block;
@@ -38,37 +23,47 @@
   min-height: 0;
   border: 0;
   background: var(--white);
-  opacity: 0;
-  transition: opacity 180ms ease;
+  visibility: hidden;
+  transform-origin: top left;
 }
 
-.frameReady { opacity: 1; }
+.viewportReady .frame { visibility: visible; }
+
+/* 短暂初始化时保持画布底色，加载稍慢时才显示提示。 */
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  visibility: hidden;
+  animation: showLoading 0s 250ms forwards;
+}
+
+@keyframes showLoading {
+  to { visibility: visible; }
+}
 
 .regenerationNote { display: block; margin-top: 12px; color: var(--muted); line-height: 1.6; }
 .fallback button:disabled { opacity: .5; cursor: wait; }
 
-.toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border: 1px solid rgba(20, 63, 89, .24);
-  background: rgba(255, 255, 255, .94);
-  box-shadow: 0 7px 24px rgba(20, 63, 89, .12);
-  backdrop-filter: blur(8px);
+.resetButton {
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
+  font: 600 11px/1 var(--font-body);
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.toolbar small { flex: 1; color: var(--muted); font-size: 11px; }
+/* 初始化时预留按钮宽度，场景编号在脚本就绪时不跳动。 */
+.resetButton:disabled { visibility: hidden; }
+.resetButton:hover, .resetButton:focus-visible { border-color: var(--accent); }
 
-.toolbar span {
-  padding: 0 7px;
-  color: var(--muted);
-  font: 10px/1.2 "SFMono-Regular", Consolas, monospace;
-  letter-spacing: .1em;
-}
-
-.toolbar button, .fallback button {
+.fallback button {
   border: 1px solid var(--ink);
   background: var(--ink);
   color: #fff;
@@ -77,7 +72,7 @@
   cursor: pointer;
 }
 
-.toolbar button:hover, .fallback button:hover { background: var(--accent); border-color: var(--accent); }
+.fallback button:hover { background: var(--accent); border-color: var(--accent); }
 
 .fallback {
   position: absolute;
