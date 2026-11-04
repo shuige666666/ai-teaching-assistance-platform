@@ -156,6 +156,53 @@ describe("scene generation boundary", () => {
     expect(scene.generation).toMatchObject({ repaired: true, upstreamCalls: 2, requestId: "scene-repair-request" });
   });
 
+  it.each([
+    (json: string) => json.replace(']},"narrationSegments"', '],"narrationSegments"'),
+    (json: string) => json.replaceAll('"targetRefs":', 'targetRefs":'),
+  ])("修复模型实际出现的幻灯片 JSON 标点错误，保持讲稿和焦点", async (damage) => {
+    const course = createFixtureCourse("幻灯片标点恢复", 4);
+    const { narration, content, summary } = validSlide;
+    const raw = JSON.stringify({
+      type: "slide",
+      content: { elements: [{ ...content.elements[0], ref: "title" }] },
+      narrationSegments: [
+        { text: narration, targetRefs: ["title"] },
+        { text: "观察标题并回顾本页目标。", targetRefs: ["title"] },
+      ],
+      summary,
+    });
+    const broken = damage(raw);
+    expect(broken).not.toBe(raw);
+    const scene = await generateScene(new MockAIAdapter([broken]), {
+      course, outline: course.outlines[0], requestId: "slide-json-recovery", signal: new AbortController().signal,
+    });
+    expect(scene.generation).toMatchObject({ repaired: false, upstreamCalls: 1 });
+    expect(scene.actions).toMatchObject([
+      { text: narration, focusElementIds: [expect.any(String)] },
+      { text: "观察标题并回顾本页目标。", focusElementIds: [expect.any(String)] },
+    ]);
+  });
+
+  it("截断正文进入一次精简修复，场景修复沿用关闭思考的配置", async () => {
+    const course = createFixtureCourse("截断场景修复", 4);
+    const requests: Parameters<AIAdapter["generateText"]>[0][] = [];
+    const adapter: AIAdapter = {
+      async generateText(input) {
+        requests.push(input);
+        return input.stage === "scene"
+          ? { text: "不应续写的截断正文", finishReason: "length", provider: "deepseek", model: "test" }
+          : { text: JSON.stringify(validSlide), finishReason: "stop", provider: "deepseek", model: "test" };
+      },
+    };
+    const scene = await generateScene(adapter, {
+      course, outline: course.outlines[0], requestId: "scene-length", signal: new AbortController().signal,
+    });
+    expect(scene.generation).toMatchObject({ repaired: true, upstreamCalls: 2 });
+    expect(requests).toMatchObject([{ stage: "scene", disableThinking: true }, { stage: "repair", disableThinking: true }]);
+    expect(requests[1].userPrompt).toContain("重新生成精简的完整页面");
+    expect(requests[1].userPrompt).not.toContain("不应续写的截断正文");
+  });
+
   it("场景首次返回空 content 时在预算内恢复", async () => {
     const course = createFixtureCourse("场景远端恢复测试", 3);
     let calls = 0;

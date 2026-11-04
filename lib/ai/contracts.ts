@@ -11,6 +11,7 @@ export interface GenerateTextInput {
   signal: AbortSignal;
   maxOutputTokens: number;
   outputFormat?: "json" | "text";
+  disableThinking?: boolean;
 }
 
 export interface GenerateTextResult {
@@ -30,6 +31,7 @@ export type AIErrorCode =
   | "AI_AUTH_FAILED"
   | "AI_RATE_LIMITED"
   | "AI_TIMEOUT"
+  | "AI_OUTPUT_TRUNCATED"
   | "AI_UPSTREAM_ERROR";
 
 export type AIResponseKind =

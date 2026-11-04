@@ -4,7 +4,7 @@ import { InteractiveRenderer } from "@/components/interactive/interactive-render
 import type { InteractiveContent, SceneOutline } from "@/lib/domain/schemas";
 import { InvalidInteractiveHtmlError, postProcessInteractiveHtml } from "@/lib/interactive/html-policy";
 import { HostToWidgetMessageSchema, WidgetToHostMessageSchema } from "@/lib/interactive/runtime-contract";
-import { assembleScene, parseSceneResponse, validateSceneOutput } from "@/lib/generation/scene-schema";
+import { assembleScene, InvalidSceneError, parseSceneResponse, validateSceneOutput } from "@/lib/generation/scene-schema";
 import { createCourseDraft } from "@/lib/domain/fixture";
 import { buildInteractivePrompt } from "@/lib/generation/prompts/scene-interactive.v2";
 import { WidgetTypeSchema } from "@/lib/interactive/widget-types";
@@ -23,6 +23,20 @@ describe("M9 interactive boundary", () => {
     const withMeta = rawHtml.replace("<head>", '<head><script type="application/json" id="scene-meta">{"narration":"实验讲解","summary":"实验摘要"}</script>');
     expect(parseSceneResponse(withMeta, outline)).toMatchObject({ narration: "实验讲解", summary: "实验摘要" });
     expect(() => parseSceneResponse(rawHtml.replace("<head>", '<head><script id="scene-meta">{bad}</script>'), outline)).toThrow();
+  });
+
+  it("互动文档有前导说明、注释或围栏时仍保留完整 HTML，残缺文档继续失败", () => {
+    const outline: SceneOutline = { id: "wrapped", type: "interactive", widgetType: "diagram", role: "mechanism", title: "阶梯图", teachingObjective: "比较三个阶梯", keyPoints: ["观察高度", "比较流向"], order: 3 };
+    for (const text of [
+      "<!-- 页面说明 -->\n" + rawHtml,
+      "以下是页面：\n```html\n" + rawHtml + "\n```\n生成完成",
+    ]) {
+      expect(validateSceneOutput(parseSceneResponse(text, outline), outline)).toMatchObject({
+        content: { widgetType: "diagram", html: expect.stringContaining('id="done"') },
+      });
+    }
+    expect(() => validateSceneOutput(parseSceneResponse("说明\n" + rawHtml.replace("</html>", ""), outline), outline))
+      .toThrow(InvalidSceneError);
   });
 
   it("注入 CSP 与错误转发脚本，保留原始互动协议", () => {
@@ -53,7 +67,8 @@ describe("M9 interactive boundary", () => {
     const course = createCourseDraft("Agent 开发", 4, { interactionMode: "required" });
     const outline: SceneOutline = { id: "interactive-1", type: "interactive", widgetType, widgetOutline: { designIdea: "选择工具改变结果并获得反馈", language: "python" }, role: "practice", title: "操作实验", teachingObjective: "理解运行过程", keyPoints: ["观察", "验证"], order: 3 };
     const prompt = buildInteractivePrompt(course, outline);
-    expect(prompt.version).toBe(widgetType === "code" ? "scene-code.v2.4" : `scene-${widgetType}.v2.3`);
+    const version = widgetType === "code" || widgetType === "simulation" ? "v2.4" : "v2.3";
+    expect(prompt.version).toBe(`scene-${widgetType}.${version}`);
     expect(prompt.user).toContain(outline.widgetOutline!.designIdea);
     expect(prompt.system).toContain(`本次 widgetType 必须为 ${widgetType}`);
     expect(prompt.system).toContain("min-height:0");

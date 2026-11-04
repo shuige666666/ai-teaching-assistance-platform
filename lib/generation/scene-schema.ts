@@ -81,12 +81,41 @@ function collectVisibleText(output: SceneModelOutput): Array<{ path: string; val
   return fields;
 }
 
+/** 仅修复实测出现的两种幻灯片 JSON 标点错误，随后仍按原契约校验全部字段。 */
+function parseSlideResponse(text: string): unknown {
+  try {
+    return parseModelJson(text);
+  } catch (error) {
+    const original = text.trim();
+    // 正常字符串整体匹配，避免修改讲稿或代码中的文本。
+    const quotedKeys = original.replace(/"(?:\\[\s\S]|[^"\\])*"|([,{]\s*)targetRefs"(?=\s*:)/g,
+      (match, prefix: string | undefined) => prefix === undefined ? match : `${prefix}"targetRefs"`);
+    const closedContent = quotedKeys.replace(/(\]\s*)(,\s*"narrationSegments"\s*:)/, "$1}$2");
+    for (const candidate of [quotedKeys, closedContent]) {
+      if (candidate === original) continue;
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        // 仍然无效时尝试已知的另一种标点修复，最后保留原始解析错误。
+      }
+    }
+    throw error;
+  }
+}
+
 /** 与 OpenMAIC 一样接收原始 HTML，避免整页脚本嵌入 JSON 字符串时反复转义出错。 */
 export function parseSceneResponse(text: string, outline: SceneOutline): unknown {
+  if (outline.type === "slide") return parseSlideResponse(text);
   if (outline.type !== "interactive") return parseModelJson(text);
-  const html = text.trim().replace(/^```(?:html)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
-  // mock 适配器仍可返回领域 DTO，真实 HTML 与它进入相同的校验/装配边界。
-  if (!/^<!doctype html>|^<html[\s>]/i.test(html)) return parseModelJson(text);
+  const trimmed = text.trim();
+  // 明确的 JSON 包装先走旧 DTO 路径，避免误提取 html 字段里的转义文档。
+  if (/^(?:\{|```(?:json)?\s*\{)/i.test(trimmed)) return parseModelJson(trimmed);
+  const start = [...trimmed.matchAll(/<!--[\s\S]*?-->|<!doctype\s+html\s*>|<html(?=[\s>])/gi)]
+    .find((match) => !match[0].startsWith("<!--"));
+  if (!start || /"html"\s*:\s*"[^"]*$/.test(trimmed.slice(0, start.index))) return parseModelJson(trimmed);
+  // 清理文档外的说明、注释和代码围栏。缺失闭合标签的文档仍交给 HTML 校验报错。
+  const document = trimmed.slice(start.index);
+  const html = document.match(/^[\s\S]*<\/html>/i)?.[0] ?? document;
   const match = html.match(/<script\b[^>]*\bid\s*=\s*["']scene-meta["'][^>]*>([\s\S]*?)<\/script>/i);
   let meta: Record<string, unknown> = {};
   if (match) {

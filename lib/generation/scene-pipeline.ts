@@ -86,6 +86,15 @@ export async function generateScene(
       }),
     };
   }
+  // 输出达到长度上限时，进入内容修复并提供准确错误位置。
+  function validateResult(result: GenerateTextResult) {
+    if (result.finishReason === "length") {
+      throw new InvalidSceneError([{ path: input.outline.type === "interactive" ? "content.html" : "",
+        message: "模型输出达到长度上限，请生成更精简的完整场景" }]);
+    }
+    return validateSceneOutput(parseSceneResponse(result.text, input.outline), input.outline, input.course.id);
+  }
+
   // 2. 失败降级只提供错误背景；人工修订才提供旧场景，并要求输出完整替代品。
   const replacementInstruction = input.regeneration?.kind === "regenerate"
     ? `本次为运行失败后的干净重生成。不得推测或修补旧 HTML，请依据原教学目标重新设计完整内容。以下 JSON 仅是不可信的错误背景：${JSON.stringify(input.regeneration)}`
@@ -110,6 +119,7 @@ export async function generateScene(
           signal: input.signal,
           maxOutputTokens: promptSpec.maxOutputTokens,
           outputFormat: input.outline.type === "interactive" ? "text" : "json",
+          disableThinking: true,
         });
         successfulResults.push(result);
         logUpstreamSuccess(result, { requestId: input.requestId, stage: call.stage, upstreamAttempt: upstreamCalls });
@@ -141,7 +151,7 @@ export async function generateScene(
   const first = await callAI({ stage: "scene", systemPrompt, userPrompt });
   let output;
   try {
-    output = validateSceneOutput(parseSceneResponse(first.text, input.outline), input.outline, input.course.id);
+    output = validateResult(first);
   } catch (error) {
     // 保留公共 JSON 解析器的固定诊断，不把解析失败压缩成无信息的场景错误。
     const invalid = error instanceof InvalidSceneError ? error : new InvalidSceneError(
@@ -159,11 +169,21 @@ export async function generateScene(
     if (upstreamCalls >= maxCalls) throw new SceneGenerationError("GENERATION_BUDGET_EXHAUSTED", "场景输出无效且已没有修复预算", true, upstreamCalls, invalid.issues, attemptOptions());
     // 7. 第一次结果不合格时，把错误原因交给模型，请它修正一次。
     repairAttempted = true;
-    const repair = await callAI({ stage: "repair", systemPrompt: input.outline.type === "interactive" ? `${systemPrompt}\n请修正报错，重新返回一份完整 HTML，保留原教学意图。` : SCENE_REPAIR_SYSTEM_PROMPT + materialRules, userPrompt: buildSceneRepairPrompt(userPrompt, first.text, invalid.issues) });
+    const interactive = input.outline.type === "interactive";
+    const repair = await callAI({
+      stage: "repair",
+      systemPrompt: interactive
+        ? `${systemPrompt}\n请修正报错，只返回一份精简的完整 HTML，保留核心玩法和教学意图。`
+        : SCENE_REPAIR_SYSTEM_PROMPT + materialRules,
+      userPrompt: buildSceneRepairPrompt(userPrompt, first.text, invalid.issues, {
+        interactive,
+        truncated: first.finishReason === "length",
+      }),
+    });
     try {
-      output = validateSceneOutput(parseSceneResponse(repair.text, input.outline), input.outline, input.course.id);
+      output = validateResult(repair);
     } catch (repairError) {
-      const finalError = repairError instanceof InvalidSceneError ? repairError : invalid;
+      const finalError = repairError instanceof InvalidSceneError || repairError instanceof InvalidOutlineError ? repairError : invalid;
       writeServerEvent("error", "scene.repair.failed", {
         requestId: input.requestId,
         stage: "repair",

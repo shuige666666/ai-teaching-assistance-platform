@@ -47,14 +47,28 @@ describe("OpenAICompatibleAdapter", () => {
     expect(result).toMatchObject({ provider: "deepseek", model: "remote-model-version", usage: { inputTokens: 12, outputTokens: 5 } });
   });
 
-  it("仅 DeepSeek 首轮场景生成关闭思考模式", async () => {
+  it("DeepSeek 场景修复可显式关闭思考，大纲修复仍沿用默认策略", async () => {
     let requestBody: Record<string, unknown> = {};
     const adapter = new OpenAICompatibleAdapter(config, async (_input, options) => {
       requestBody = JSON.parse(String(options?.body)) as Record<string, unknown>;
       return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "{\"ok\":true}" } }] }), { status: 200 });
     });
-    await adapter.generateText({ ...input(), stage: "scene" });
+    await adapter.generateText({ ...input(), stage: "repair", disableThinking: true });
     expect(requestBody).toMatchObject({ thinking: { type: "disabled" } });
+    await adapter.generateText({ ...input(), stage: "repair" });
+    expect(requestBody).not.toHaveProperty("thinking");
+  });
+
+  it("长度耗尽导致正文为空时不执行同参数自动重试", async () => {
+    const adapter = new OpenAICompatibleAdapter(config, async () => Response.json({
+      choices: [{ finish_reason: "length", message: { content: null } }],
+    }));
+    await expect(adapter.generateText({ ...input(), stage: "repair" })).rejects.toMatchObject({
+      code: "AI_OUTPUT_TRUNCATED",
+      retryable: true,
+      automaticRetryable: false,
+      diagnostics: { finishReason: "length", responseKind: "empty_content" },
+    });
   });
 
   it("不向非 DeepSeek Provider 发送专有 thinking 参数", async () => {

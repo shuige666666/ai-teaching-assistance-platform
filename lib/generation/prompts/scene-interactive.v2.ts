@@ -31,7 +31,8 @@ export function buildInteractivePrompt(course: Course, outline: SceneOutline, pr
     outline.widgetType === "code" ? CODE_HELP_REQUIREMENTS : "",
   ].filter(Boolean).join("\n\n");
   return {
-    version: outline.widgetType === "code" ? "scene-code.v2.4" : `scene-${outline.widgetType}.v2.3`,
+    version: outline.widgetType === "simulation" ? "scene-simulation.v2.4"
+      : outline.widgetType === "code" ? "scene-code.v2.4" : `scene-${outline.widgetType}.v2.3`,
     system: `${COMMON}\n\n本次 widgetType 必须为 ${outline.widgetType}。\n${TYPE_PROMPTS[outline.widgetType]}\n\n参考布局骨架（必须根据本场景改写，不能原样照抄）：\n${layoutTemplate}\n\n参考实现片段（按需采用并与真实状态绑定）：\n${implementationExamples}`,
     user: [
       `课程描述 JSON：${JSON.stringify(course.topic)}`,

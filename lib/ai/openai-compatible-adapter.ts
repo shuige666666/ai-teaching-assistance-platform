@@ -49,8 +49,9 @@ export class OpenAICompatibleAdapter implements AIAdapter {
           temperature: 0.2,
           stream: false,
           ...(input.outputFormat === "text" ? {} : { response_format: { type: "json_object" } }),
-          // 大纲仍需要规划推理；结构契约明确的首轮场景生成关闭思考，把预算留给最终 JSON。
-          ...(this.config.provider === "deepseek" && input.stage === "scene" ? { thinking: { type: "disabled" } } : {}),
+          // 场景生成和场景修复显式保留正文预算，大纲仍沿用 Provider 的推理策略。
+          ...(this.config.provider === "deepseek" && (input.stage === "scene" || input.disableThinking)
+            ? { thinking: { type: "disabled" } } : {}),
         }),
         signal: input.signal,
       });
@@ -107,12 +108,20 @@ export class OpenAICompatibleAdapter implements AIAdapter {
 
     const choice = parsed.data.choices[0];
     if (!choice.message.content?.trim()) {
-      throw new AIAdapterError("AI_UPSTREAM_ERROR", "模型服务本次没有返回可用内容，请重试", true, {
-        diagnostics: {
-          ...responseDiagnostics(response, "empty_content", responseBytes),
-          finishReason: choice.finish_reason ?? undefined,
+      // 长度耗尽且无正文时，没有可供校验的候选内容。停止同参数自动重试。
+      const truncated = choice.finish_reason === "length";
+      throw new AIAdapterError(
+        truncated ? "AI_OUTPUT_TRUNCATED" : "AI_UPSTREAM_ERROR",
+        truncated ? "模型在返回正文前已达到输出上限" : "模型服务本次没有返回可用内容，请重试",
+        true,
+        {
+          automaticRetryable: !truncated,
+          diagnostics: {
+            ...responseDiagnostics(response, "empty_content", responseBytes),
+            finishReason: choice.finish_reason ?? undefined,
+          },
         },
-      });
+      );
     }
 
     return {
