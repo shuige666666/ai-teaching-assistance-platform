@@ -102,8 +102,6 @@ export class CourseAgentService {
           messages: history,
           tools: this.tools.definitions(),
           signal: controller.signal,
-          // 可见思考、正文和工具参数共享这一预算；不单独限制思考长度。
-          maxOutputTokens: 16_384,
         })) {
           if (event.type === "reasoning_delta") {
             if (!thinkingId) { thinkingId = randomUUID(); thinkingStartedAt = this.now(); emit({ type: "thinking_started", blockId: thinkingId }); }

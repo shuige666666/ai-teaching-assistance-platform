@@ -23,11 +23,13 @@
   min-height: 0;
   border: 0;
   background: var(--white);
-  visibility: hidden;
+  /* 初始化时保留动画帧，等待脚本主动报告就绪。 */
+  opacity: 0;
+  pointer-events: none;
   transform-origin: top left;
 }
 
-.viewportReady .frame { visibility: visible; }
+.viewportReady .frame { opacity: 1; pointer-events: auto; }
 
 /* 短暂初始化时保持画布底色，加载稍慢时才显示提示。 */
 .loading {

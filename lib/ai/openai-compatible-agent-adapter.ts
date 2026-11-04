@@ -58,7 +58,6 @@ export class OpenAICompatibleAgentAdapter implements AgentAdapter {
           messages: [{ role: "system", content: input.systemPrompt }, ...input.messages.map(toProviderMessage)],
           tools: input.tools,
           tool_choice: "auto",
-          max_tokens: input.maxOutputTokens,
           temperature: 0.2,
           stream: true,
           stream_options: { include_usage: true },

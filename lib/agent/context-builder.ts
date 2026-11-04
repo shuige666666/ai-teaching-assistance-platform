@@ -20,6 +20,8 @@ function assistantMessageGroups(content: { blocks: AgentContentBlock[] }): Agent
   return [...turns.values()].map((blocks) => {
     const text = blocks.filter((block) => block.type === "text").map((block) => block.text).join("");
     const tools = blocks.filter((block): block is AgentToolBlock => block.type === "tool");
+    // 只有思考的失败轮次没有可发送的助手消息，避免模型服务拒绝空内容。
+    if (!text.trim() && tools.length === 0) return [];
     const output: AgentModelMessage[] = [{
       role: "assistant",
       content: text || null,

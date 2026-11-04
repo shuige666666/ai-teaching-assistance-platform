@@ -21,7 +21,7 @@ export type AgentModelEvent =
   | { type: "text_delta"; text: string }
   | { type: "tool_call_delta"; index: number; id?: string; name?: string; argumentsDelta?: string }
   | { type: "finish"; finishReason?: string; usage?: { inputTokens?: number; outputTokens?: number } };
-export interface AgentTurnInput { requestId: string; systemPrompt: string; messages: AgentModelMessage[]; tools: AgentToolDefinition[]; signal: AbortSignal; maxOutputTokens: number }
+export interface AgentTurnInput { requestId: string; systemPrompt: string; messages: AgentModelMessage[]; tools: AgentToolDefinition[]; signal: AbortSignal }
 export interface AgentAdapter { streamTurn(input: AgentTurnInput): AsyncIterable<AgentModelEvent> }
 
 export type AgentThinkingBlock = { type: "thinking"; id: string; text: string; durationMs: number; modelTurn: number };

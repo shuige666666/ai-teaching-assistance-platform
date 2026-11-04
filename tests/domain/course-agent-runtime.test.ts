@@ -14,12 +14,17 @@ describe("Agent runtime", () => {
       { choices: [{ delta: { reasoning_content: "先读取", tool_calls: [{ index: 0, id: "call-1", function: { name: "read_stage", arguments: "{\"path\":" } }] }, finish_reason: null }] },
       { choices: [{ delta: { content: "处理中", tool_calls: [{ index: 0, function: { arguments: "\"/outline\"}" } }] }, finish_reason: "tool_calls" }] },
     ].map((item) => `data: ${JSON.stringify(item)}\n\n`).join("");
-    const fetcher = async () => new Response(frames, { status: 200, headers: { "content-type": "text/event-stream" } });
+    let requestBody: Record<string, unknown> = {};
+    const fetcher = async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(frames, { status: 200, headers: { "content-type": "text/event-stream" } });
+    };
     const config: ProviderConfig = { mode: "remote", provider: "deepseek", apiKey: "test", baseUrl: "https://example.com", model: "deepseek-chat", timeoutMs: 120000, sceneTimeoutMs: 120000 };
     const events = [];
     for await (const event of new OpenAICompatibleAgentAdapter(config, fetcher as typeof fetch).streamTurn({
-      requestId: "r", systemPrompt: "s", messages: [{ role: "user", content: "读课程" }], tools: [], signal: new AbortController().signal, maxOutputTokens: 100,
+      requestId: "r", systemPrompt: "s", messages: [{ role: "user", content: "读课程" }], tools: [], signal: new AbortController().signal,
     })) events.push(event);
+    expect(requestBody).not.toHaveProperty("max_tokens");
     expect(events).toContainEqual({ type: "reasoning_delta", text: "先读取" });
     expect(events).toContainEqual({ type: "text_delta", text: "处理中" });
     expect(events.filter((event) => event.type === "tool_call_delta").map((event) => event.type === "tool_call_delta" ? event.argumentsDelta : "").join("")).toBe('{"path":"/outline"}');
@@ -76,16 +81,14 @@ describe("Agent runtime", () => {
     expect(await sessions.listMessages(session.id)).toHaveLength(2);
   });
 
-  it("为可见思考保留较大单轮输出预算，并明确报告长度截断", async () => {
+  it("模型服务返回长度截断时明确报告错误", async () => {
     const courses = new InMemoryCourseRepository();
     const course = materializeFixtureCourse(createFixtureCourse("输出预算", 4));
     await courses.create(course);
     const sessions = new InMemoryAgentSessionRepository();
     const session = await sessions.createSession(course.id, "预算会话");
-    let receivedBudget = 0;
     const adapter: AgentAdapter = {
-      async *streamTurn(input) {
-        receivedBudget = input.maxOutputTokens;
+      async *streamTurn() {
         yield { type: "reasoning_delta", text: "仍在分析页面" };
         yield { type: "finish", finishReason: "length" };
       },
@@ -100,7 +103,6 @@ describe("Agent runtime", () => {
       (event) => events.push(event),
     );
 
-    expect(receivedBudget).toBe(16_384);
     expect(events.at(-1)).toMatchObject({ type: "run_finished", status: "failed", error: expect.stringContaining("长度上限") });
   });
 

@@ -238,6 +238,8 @@ export function CourseAgentDrawer(props: Props) {
       setSession(payload.data.session);
       setMessages(payload.data.messages);
       setLatestRun(payload.data.latestRun ?? null);
+      // 恢复会话时展示已持久化的最近失败原因。
+      setError(payload.data.latestRun?.status === "failed" ? payload.data.latestRun.error ?? "上一轮请求失败" : null);
       setContextInfo(payload.data.context ?? null);
       setLiveBlocks([]);
     } finally {
@@ -285,9 +287,6 @@ export function CourseAgentDrawer(props: Props) {
         setSessions([selected]);
       }
       await loadMessages(selected.id);
-      if (!cancelled) {
-        setError(null);
-      }
     })().catch((reason) => {
       if (!cancelled) {
         setError(reason instanceof Error ? reason.message : "对话初始化失败");

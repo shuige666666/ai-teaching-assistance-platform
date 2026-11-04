@@ -26,6 +26,21 @@ describe("M12.3 会话体验与轻量上下文", () => {
     expect(context.messages.some((message) => message.role === "tool")).toBe(false);
   });
 
+  it("恢复会话时跳过只有思考内容的失败轮次", () => {
+    const messages: AgentMessage[] = [
+      userMessage("s", 1, "调整页面"),
+      { id: "a-thinking", sessionId: "s", sequence: 2, role: "assistant", content: { blocks: [
+        { type: "thinking", id: "thinking", modelTurn: 0, text: "继续分析", durationMs: 100 },
+      ] }, createdAt: 2 },
+      userMessage("s", 3, "再试一次"),
+    ];
+
+    expect(buildAgentModelContext(messages).messages).toEqual([
+      { role: "user", content: "调整页面" },
+      { role: "user", content: "再试一次" },
+    ]);
+  });
+
   it("保留旧 not_executed 工具的原始 JSON 参数，不做二次字符串编码", () => {
     const messages: AgentMessage[] = [
       userMessage("s", 1, "检查后修改"),
