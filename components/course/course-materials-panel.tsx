@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { BookOpenText, CircleAlert, CircleCheck, FileText, Lock, RefreshCw, Trash2, TriangleAlert, Upload } from "lucide-react";
 import type { Course } from "@/lib/domain/schemas";
 import type { CourseMaterial, MaterialBlock } from "@/lib/materials/types";
 import { MaterialFilePicker, materialUploadBody, type MaterialUpload } from "./material-file-picker";
@@ -56,22 +57,46 @@ export function CourseMaterialsPanel({ course, disabled, onCourseChange, onBusyC
     } finally { setSaving(false); onBusyChange(false); mutation.current = null; }
   }
 
-  return <section className="course-materials-panel" aria-label="课程教学材料">
-    <div className="material-panel-heading"><h2>教学材料</h2><span>{materials.length} / 3 份</span></div>
-    {loading ? <p role="status">正在读取材料…</p> : null}
-    {materials.map((material) => <div className="material-saved" key={material.id}>
-      <details><summary><strong>{material.fileName}</strong><small>{material.blocks.reduce((sum, block) => sum + block.text.length, 0).toLocaleString()} 字符{material.pageCount ? ` · 共 ${material.pageCount} 页，使用 ${material.selectedPages?.length} 页` : ""} · 查看解析原文</small></summary>
-        {material.selectedPages ? <p className="material-hint">已使用 PDF 实际页码：{material.selectedPages.join("、")}</p> : null}
-        {material.warnings.map((warning) => <p className="material-warning" key={warning}>{warning}</p>)}
-        <div className="material-preview">{material.blocks.map((block) => <MaterialText key={block.id} block={block} />)}</div>
-      </details>
-      {editable ? <button type="button" className="material-text-button" disabled={disabled || saving || loading} onClick={() => void saveMaterials(material.id)} aria-label={`删除材料 ${material.fileName}`}>删除</button> : null}
-    </div>)}
-    {editable ? <>
-      <MaterialFilePicker uploads={uploads} onChange={changeUploads} disabled={disabled || saving || loading} />
-      {uploads.length ? <><p className="material-hint">{materials.length ? "保存后将替换当前全部材料，并清空旧大纲。" : "请先解析并保存材料，再生成课程大纲。"}</p><button type="button" className="button button--accent" disabled={disabled || saving || loading} onClick={() => void saveMaterials()}>{saving ? "正在解析并保存…" : "解析并保存材料"}</button></> : null}
-    </> : materials.length ? <p className="material-hint">材料已随课程固定，重生成页面时会继续参考对应原文。</p> : <p className="material-hint">这门课程使用主题生成，没有上传教学材料。</p>}
-    {error ? <p className="form-error" role="alert">{error} <button type="button" className="material-text-button" disabled={saving} onClick={() => setRefresh((value) => value + 1)}>重新读取</button></p> : null}
-    {notice ? <p className="material-notice" role="status">{notice}</p> : null}
+  return <section className="panel course-materials-panel" aria-label="课程教学材料">
+    <header className="panel__head">
+      <div className="panel__title">
+        <span className="panel__icon panel__icon--amber" aria-hidden="true"><BookOpenText /></span>
+        <div>
+          <h2>教学材料</h2>
+          <p>{editable ? "生成大纲前可以上传或替换讲义，AI 会优先依据原文生成" : materials.length ? "材料已随课程固定，修订页面时会继续参考对应原文" : "这门课程使用主题生成，没有上传教学材料"}</p>
+        </div>
+      </div>
+      <span className="meta-chip">{editable ? null : <Lock aria-hidden="true" />}{materials.length} / 3 份</span>
+    </header>
+    {loading || materials.length || editable || error || notice ? <div className="panel__body material-panel-body">
+      {loading ? <p className="loading-line" role="status"><span className="spinner" aria-hidden="true" />正在读取材料…</p> : null}
+      {materials.length ? <ul className="file-list">
+        {materials.map((material) => <li className="material-saved" key={material.id}>
+          <details>
+            <summary>
+              <span className="file-row__icon" aria-hidden="true"><FileText /></span>
+              <span className="file-row__info"><strong>{material.fileName}</strong><small>{material.blocks.reduce((sum, block) => sum + block.text.length, 0).toLocaleString()} 字符{material.pageCount ? ` · 共 ${material.pageCount} 页，使用 ${material.selectedPages?.length} 页` : ""} · 点击查看解析原文</small></span>
+            </summary>
+            <div className="material-saved__detail">
+              {material.selectedPages ? <p className="material-hint">已使用 PDF 实际页码：{material.selectedPages.join("、")}</p> : null}
+              {material.warnings.map((warning) => <p className="notice notice--warning" key={warning}><TriangleAlert aria-hidden="true" />{warning}</p>)}
+              <div className="material-preview">{material.blocks.map((block) => <MaterialText key={block.id} block={block} />)}</div>
+            </div>
+          </details>
+          {editable ? <button type="button" className="icon-btn icon-btn--danger" disabled={disabled || saving || loading} onClick={() => void saveMaterials(material.id)} aria-label={`删除材料 ${material.fileName}`} title="删除材料"><Trash2 aria-hidden="true" /></button> : null}
+        </li>)}
+      </ul> : null}
+      {editable ? <>
+        <MaterialFilePicker uploads={uploads} onChange={changeUploads} disabled={disabled || saving || loading} />
+        {uploads.length ? <div className="material-actions">
+          <p className="form-note">{materials.length ? "保存后将替换当前全部材料，并清空旧大纲。" : "请先解析并保存材料，再生成课程大纲。"}</p>
+          <button type="button" className="btn btn--primary" disabled={disabled || saving || loading} onClick={() => void saveMaterials()}>
+            {saving ? <span className="spinner" aria-hidden="true" /> : <Upload aria-hidden="true" />}{saving ? "正在解析并保存…" : "解析并保存材料"}
+          </button>
+        </div> : null}
+      </> : null}
+      {error ? <div className="notice notice--danger" role="alert"><CircleAlert aria-hidden="true" /><div className="notice__body"><p>{error}</p></div><button type="button" className="btn btn--secondary btn--sm" disabled={saving} onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}><RefreshCw aria-hidden="true" />重新读取</button></div> : null}
+      {notice ? <p className="notice notice--success" role="status"><CircleCheck aria-hidden="true" />{notice}</p> : null}
+    </div> : null}
   </section>;
 }

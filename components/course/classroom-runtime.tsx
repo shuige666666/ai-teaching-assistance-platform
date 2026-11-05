@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  Bot, ChevronLeft, ChevronRight, CircleAlert, ListChecks, LogOut, Pause, Play, Presentation, Puzzle, RotateCcw, SquarePen,
+  TriangleAlert, Volume2, VolumeX, X,
+} from "lucide-react";
 import { CourseAgentDrawer } from "@/components/agent/course-agent-drawer";
+import { Brand } from "@/components/layout/app-header";
 import { QuizEditDialog } from "@/components/course/quiz-edit-dialog";
 import { ExportButton } from "@/components/export/export-button";
 import { SceneRenderer } from "@/components/renderers/scene-renderer";
@@ -28,6 +33,12 @@ const statusLabels = {
   paused: "已暂停",
   awaitingLearner: "等待学习者",
   completed: "本场景完成",
+} as const;
+
+const sceneTypes = {
+  slide: { label: "讲解", icon: Presentation },
+  quiz: { label: "测验", icon: ListChecks },
+  interactive: { label: "互动", icon: Puzzle },
 } as const;
 
 export function ClassroomRuntime({ course: initialCourse }: { course: Course }) {
@@ -291,12 +302,14 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
   }
 
   function primaryControl() {
-    if (playback.state.status === "playing") return <button className="runtime-primary" type="button" onClick={playback.pause}><span>Ⅱ</span>暂停讲解</button>;
-    if (playback.state.status === "paused") return <button className="runtime-primary" type="button" onClick={playback.resume}><span>▶</span>继续讲解</button>;
-    if (playback.state.status === "completed") return <button className="runtime-primary" type="button" onClick={() => { setContinuousPlay(false); playback.replay(); }}><span>↻</span>重新播放</button>;
+    if (playback.state.status === "playing") return <button className="runtime-primary" type="button" onClick={playback.pause}><Pause aria-hidden="true" />暂停讲解</button>;
+    if (playback.state.status === "paused") return <button className="runtime-primary" type="button" onClick={playback.resume}><Play aria-hidden="true" />继续讲解</button>;
+    if (playback.state.status === "completed") return <button className="runtime-primary runtime-primary--soft" type="button" onClick={() => { setContinuousPlay(false); playback.replay(); }}><RotateCcw aria-hidden="true" />重新播放</button>;
     if (playback.state.status === "awaitingLearner") return <div className="runtime-wait"><i />{scene.type === "interactive" ? "请完成当前互动" : "请完成当前测验"}</div>;
-    return <button className="runtime-primary" type="button" onClick={() => { setContinuousPlay(true); playback.play(); }}><span>▶</span>开始课堂</button>;
+    return <button className="runtime-primary" type="button" onClick={() => { setContinuousPlay(true); playback.play(); }}><Play aria-hidden="true" />开始课堂</button>;
   }
+
+  const pad = (value: number) => String(value).padStart(2, "0");
 
   return (
     <main
@@ -304,8 +317,11 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
       style={{ "--agent-drawer-width": `${agentDrawerWidth}px`, "--narration-panel-width": `${narrationPanelWidth}px` } as CSSProperties}
     >
       <header className="classroom-header">
-        <Link className="brand brand--inverse" href="/"><span className="brand-mark">课</span><span><strong>课序</strong><small>CLASSROOM</small></span></Link>
-        <div className="classroom-course"><span>{course.title}</span><small>REV.{course.revision} · {(course.scenes[0]?.generation.provider ?? "unknown").toUpperCase()}{isPartialPreview ? " · PARTIAL PREVIEW" : ""}</small></div>
+        <Brand subtitle="课堂模式" />
+        <div className="classroom-course">
+          <span title={course.title}>{course.title}</span>
+          <small>REV.{course.revision} · {(course.scenes[0]?.generation.provider ?? "unknown").toUpperCase()}{isPartialPreview ? " · PARTIAL PREVIEW" : ""}</small>
+        </div>
         <div className="classroom-actions">
           <button
             className={`classroom-agent-switch${agentOpen ? " is-active" : ""}`}
@@ -313,39 +329,52 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             role="switch"
             aria-checked={agentOpen}
             aria-label="智能修订"
+            title="用对话方式修改当前课程"
             onClick={() => setAgentOpen((current) => !current)}
           >
+            <Bot aria-hidden="true" />
             <span className="classroom-agent-switch__label">智能修订</span>
             <span className="classroom-agent-switch__track" aria-hidden="true"><i /></span>
           </button>
           <SceneMaterialSources key={scene.id} scene={scene} />
           <ExportButton course={course} />
-          <Link className="exit-link" href={`/generation/${course.id}`}>退出课堂</Link>
+          <Link className="toolbar-button exit-link" href={`/generation/${course.id}`} title="返回课程制作页"><LogOut aria-hidden="true" /><span className="toolbar-button__label">退出课堂</span></Link>
         </div>
       </header>
 
-      <div className="classroom-progress"><i style={{ width: `${courseProgress}%` }} /></div>
+      <div className="classroom-progress" role="progressbar" aria-label="课程整体进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(courseProgress)}><i style={{ width: `${courseProgress}%` }} /></div>
 
       <div className="classroom-layout">
         <nav ref={sceneRailRef} className="scene-rail" aria-label="课程场景">
-          <p>SCENES</p>
-          {course.scenes.map((item, index) => (
-            <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} onClick={() => moveTo(index)} aria-current={index === sceneIndex ? "step" : undefined} aria-label={`打开场景 ${item.order}：${item.title}`}>
-              <span>{String(item.order).padStart(2, "0")}</span><i /><small>{item.type === "quiz" ? "测验" : item.type === "interactive" ? "互动" : "讲解"}</small>
-            </button>
-          ))}
+          <p className="scene-rail__title">课程目录<small>{course.scenes.length} 个场景</small></p>
+          {course.scenes.map((item, index) => {
+            const TypeIcon = sceneTypes[item.type].icon;
+            return (
+              <button className={index === sceneIndex ? "is-active" : index < sceneIndex ? "is-passed" : ""} type="button" key={item.id} title={`${pad(item.order)} · ${item.title}`} onClick={() => moveTo(index)} aria-current={index === sceneIndex ? "step" : undefined} aria-label={`打开场景 ${item.order}：${item.title}`}>
+                <span className="scene-rail__index">{pad(item.order)}</span>
+                <span className="scene-rail__text">
+                  <strong>{item.title}</strong>
+                  <small><TypeIcon aria-hidden="true" />{sceneTypes[item.type].label}</small>
+                </span>
+              </button>
+            );
+          })}
         </nav>
 
         <section className={`classroom-stage${scene.type === "slide" ? " classroom-stage--slide" : scene.type === "interactive" ? " classroom-stage--interactive" : ""}`}>
           {isPartialPreview ? (
             <div className="partial-course-notice" role="status">
-              <div><span>PARTIAL COURSE PREVIEW</span><strong>已生成 {course.scenes.length} / {course.requestedSceneCount} 个场景</strong></div>
-              <p>这里只显示已经校验并保存成功的场景；失败或待生成项仍需返回生成页处理。</p>
-              <Link href={`/generation/${course.id}`}>返回生成页 →</Link>
+              <TriangleAlert aria-hidden="true" />
+              <div>
+                <span>PARTIAL COURSE PREVIEW</span>
+                <strong>已生成 {course.scenes.length} / {course.requestedSceneCount} 个场景</strong>
+                <p>这里只显示已经校验并保存成功的场景；失败或待生成项需要返回制作页处理。</p>
+              </div>
+              <Link className="btn btn--secondary btn--sm" href={`/generation/${course.id}`}>返回制作页</Link>
             </div>
           ) : null}
           {scene.type === "quiz" ? (
-            <div className="scene-heading"><div><p className="eyebrow">{scene.type.toUpperCase()} · SCENE {String(scene.order).padStart(2, "0")}</p><h1>{scene.title}</h1></div><span>{String(scene.order).padStart(2, "0")} / {String(course.requestedSceneCount).padStart(2, "0")}</span></div>
+            <div className="scene-heading"><div><p className="eyebrow">{scene.type.toUpperCase()} · SCENE {pad(scene.order)}</p><h1>{scene.title}</h1></div><span>{pad(scene.order)} / {pad(course.requestedSceneCount)}</span></div>
           ) : null}
           <SceneRenderer
             scene={scene}
@@ -373,9 +402,12 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
             onPointerUp={finishNarrationResize}
             onPointerCancel={finishNarrationResize}
           />
-          <span className="runtime-status" role="status">
-            {continuousPlay && playback.state.status === "playing" ? "连续播放中" : statusLabels[playback.state.status]}
-          </span>
+          <div className="narration-panel__head">
+            <h2>讲解台</h2>
+            <span className={`runtime-status runtime-status--${playback.state.status}`} role="status">
+              {continuousPlay && playback.state.status === "playing" ? "连续播放中" : statusLabels[playback.state.status]}
+            </span>
+          </div>
           <div className="runtime-toolbar">
             {primaryControl()}
             <button
@@ -385,13 +417,13 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
               aria-label="浏览器朗读"
               aria-checked={browserSpeechEnabled}
               disabled={!browserSpeechSupported}
-              title={browserSpeechSupported ? undefined : "当前浏览器不支持朗读"}
+              title={browserSpeechSupported ? "开启后用浏览器语音朗读讲稿" : "当前浏览器不支持朗读"}
               onClick={toggleBrowserSpeech}
             >
-              浏览器朗读<span className="speech-switch-track" aria-hidden="true"><i /></span>
+              {browserSpeechEnabled ? <Volume2 aria-hidden="true" /> : <VolumeX aria-hidden="true" />}朗读<span className="speech-switch-track" aria-hidden="true"><i /></span>
             </button>
           </div>
-          <div className="runtime-track"><i style={{ width: `${playback.progress}%` }} /></div>
+          <div className="runtime-track" aria-hidden="true"><i style={{ width: `${playback.progress}%` }} /></div>
           {scene.type === "slide" ? (
             <NarrationSegments
               actions={scene.actions}
@@ -400,26 +432,26 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
               onSelect={(actionIndex, play) => { setContinuousPlay(false); playback.seekToAction(actionIndex, play); }}
             />
           ) : <blockquote tabIndex={0} aria-label="当前场景讲解文本，可上下滚动">{speech?.type === "speech" ? speech.text : "当前场景没有讲解动作。"}</blockquote>}
-          {scene.type === "quiz" ? <button className="scene-quiz-edit-toggle" type="button" disabled={regenerating} onClick={() => setQuizEditorOpen(true)}><span>✎</span>手动调整题目</button> : null}
-          {regenerating ? <p className="scene-regenerate-status" role="status">正在修订当前场景…</p> : null}
-          {!regenerating && manualRegenerationError ? <p className="scene-regenerate-status is-error" role="alert">{manualRegenerationError}</p> : null}
+          {scene.type === "quiz" ? <button className="btn btn--secondary btn--block scene-quiz-edit-toggle" type="button" disabled={regenerating} onClick={() => setQuizEditorOpen(true)}><SquarePen aria-hidden="true" />手动调整题目</button> : null}
+          {regenerating ? <p className="scene-regenerate-status" role="status"><span className="spinner" aria-hidden="true" />正在修订当前场景…</p> : null}
+          {!regenerating && manualRegenerationError ? <p className="scene-regenerate-status is-error" role="alert"><CircleAlert aria-hidden="true" />{manualRegenerationError}</p> : null}
         </aside>
       </div>
 
       {regenerationOpen ? (
         <div className="scene-regeneration-backdrop" role="presentation">
-          <section className="scene-regeneration-dialog" role="dialog" aria-modal="true" aria-labelledby="scene-regeneration-title">
-            <header><div><p className="eyebrow">SCENE REVISION · {scene.type.toUpperCase()}</p><h2 id="scene-regeneration-title">修订本场</h2></div><button type="button" aria-label="关闭修订面板" disabled={regenerating} onClick={() => setRegenerationOpen(false)}>×</button></header>
-            <p>新内容完整生成并保存成功后才会替换当前场景；失败、取消或版本冲突都会保留原内容。</p>
-            <form onSubmit={submitManualRegeneration}>
-              <label htmlFor="scene-regeneration-instruction">修改意见 <small>必填 · 最多 500 字</small></label>
-              <textarea id="scene-regeneration-instruction" maxLength={500} value={regenerationInstruction} disabled={regenerating} onChange={(event) => setRegenerationInstruction(event.target.value)} placeholder="例如：减少文字，增加一个贴近实际开发的案例，并突出关键结论。" />
+          <section className="scene-regeneration-dialog dialog" role="dialog" aria-modal="true" aria-labelledby="scene-regeneration-title">
+            <header className="dialog-head"><div><p className="eyebrow">修订 · {sceneTypes[scene.type].label}</p><h2 id="scene-regeneration-title">修订本场</h2></div><button className="icon-btn" type="button" aria-label="关闭修订面板" disabled={regenerating} onClick={() => setRegenerationOpen(false)}><X aria-hidden="true" /></button></header>
+            <form className="dialog-body" onSubmit={submitManualRegeneration}>
+              <p className="form-note">新内容完整生成并保存成功后才会替换当前场景；失败、取消或版本冲突都会保留原内容。</p>
+              <label className="field" htmlFor="scene-regeneration-instruction"><span>修改意见 <small className="field-optional">必填 · 最多 500 字</small></span></label>
+              <textarea id="scene-regeneration-instruction" className="input" maxLength={500} value={regenerationInstruction} disabled={regenerating} onChange={(event) => setRegenerationInstruction(event.target.value)} placeholder="例如：减少文字，增加一个贴近实际开发的案例，并突出关键结论。" />
               <div className="scene-regeneration-count">{regenerationInstruction.length} / 500</div>
               {scene.type === "quiz" ? (
-                <label className="scene-regeneration-confirm"><input type="checkbox" checked={quizDeletionConfirmed} disabled={regenerating} onChange={(event) => setQuizDeletionConfirmed(event.target.checked)} /><span><strong>确认清理本场旧作答记录</strong><small>新测验的问题和选项会使用新的 ID，旧作答不能继续对应。</small></span></label>
+                <label className="confirm-check"><input type="checkbox" checked={quizDeletionConfirmed} disabled={regenerating} onChange={(event) => setQuizDeletionConfirmed(event.target.checked)} /><span><strong>确认清理本场旧作答记录</strong><small>新测验的问题和选项会使用新的 ID，旧作答不能继续对应。</small></span></label>
               ) : null}
-              {manualRegenerationError ? <p className="scene-regeneration-error" role="alert">{manualRegenerationError}</p> : null}
-              <footer><button type="button" disabled={regenerating} onClick={() => setRegenerationOpen(false)}>保留原场景</button><button type="submit" disabled={regenerating || !regenerationInstruction.trim() || (scene.type === "quiz" && !quizDeletionConfirmed)}>{regenerating ? "正在修订…" : "确认修订"}</button></footer>
+              {manualRegenerationError ? <p className="notice notice--danger" role="alert"><CircleAlert aria-hidden="true" />{manualRegenerationError}</p> : null}
+              <footer className="dialog-foot"><button className="btn btn--ghost" type="button" disabled={regenerating} onClick={() => setRegenerationOpen(false)}>保留原场景</button><button className="btn btn--primary" type="submit" disabled={regenerating || !regenerationInstruction.trim() || (scene.type === "quiz" && !quizDeletionConfirmed)}>{regenerating ? "正在修订…" : "确认修订"}</button></footer>
             </form>
           </section>
         </div>
@@ -444,9 +476,14 @@ export function ClassroomRuntime({ course: initialCourse }: { course: Course }) 
       />
 
       <footer className="classroom-controls">
-        <button className="control-button" type="button" aria-label="上一场景" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}>← <span>上一场景</span></button>
-        <div className="control-center"><span className="control-index">{String(scene.order).padStart(2, "0")}</span><span className="control-divider" /><span>{statusLabels[playback.state.status]}</span></div>
-        <button className="control-button" type="button" aria-label="下一场景" disabled={sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span> →</button>
+        <button className="control-button" type="button" aria-label="上一场景" disabled={sceneIndex === 0} onClick={() => moveTo(sceneIndex - 1)}><ChevronLeft aria-hidden="true" /><span>上一场景</span></button>
+        <div className="control-center">
+          <span className="control-index">{pad(scene.order)}<small> / {pad(course.requestedSceneCount)}</small></span>
+          <span className="control-title" title={scene.title}>{scene.title}</span>
+          <span className="control-divider" />
+          <span className="control-state">{statusLabels[playback.state.status]}</span>
+        </div>
+        <button className="control-button control-button--next" type="button" aria-label="下一场景" disabled={sceneIndex === course.scenes.length - 1} onClick={() => moveTo(sceneIndex + 1)}><span>下一场景</span><ChevronRight aria-hidden="true" /></button>
       </footer>
     </main>
   );

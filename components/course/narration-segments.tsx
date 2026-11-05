@@ -31,7 +31,7 @@ export function NarrationSegments({ actions, actionIndex, status, onSelect }: Na
     }
   }, [actionIndex, actions]);
 
-  if (segments.length === 0) return <p>当前场景没有讲解段落。</p>;
+  if (segments.length === 0) return <p className="narration-empty">当前场景没有讲解段落。</p>;
 
   return (
     <section className="narration-segments" aria-label="分段讲稿">

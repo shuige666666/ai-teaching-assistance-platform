@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { GenerationWorkspace } from "@/components/course/generation-workspace";
+import { StatePage } from "@/components/layout/state-page";
 import { getCourseRepository } from "@/lib/repository";
 import { mapRepositoryError } from "@/lib/repository/error-response";
 
@@ -15,27 +16,28 @@ export default async function GenerationPage({ params }: { params: Promise<{ cou
   } catch (error) {
     const message = mapRepositoryError(error).body.error.message;
     return (
-      <main className="missing-state">
-        <p className="eyebrow">DATABASE UNAVAILABLE</p>
-        <h1>暂时无法读取课程</h1>
-        <p>{message}</p>
-        <Link className="button button--dark" href="/">
-          返回首页
-        </Link>
-      </main>
+      <StatePage
+        kind="database"
+        eyebrow="数据库暂不可用"
+        title="暂时无法读取课程"
+        description={message}
+        actions={<>
+          <Link className="btn btn--primary" href={`/generation/${courseId}`}>重新加载</Link>
+          <Link className="btn btn--secondary" href="/">返回课程库</Link>
+        </>}
+      />
     );
   }
 
   if (!course) {
     return (
-      <main className="missing-state">
-        <p className="eyebrow">COURSE NOT FOUND</p>
-        <h1>这门课程不存在</h1>
-        <p>它可能已被删除。返回首页可以创建一门新课程。</p>
-        <Link className="button button--dark" href="/">
-          返回首页
-        </Link>
-      </main>
+      <StatePage
+        kind="not-found"
+        eyebrow="课程不存在"
+        title="没有找到这门课程"
+        description="它可能已被删除，或链接不完整。回到课程库可以查看现有课程，或创建一门新课程。"
+        actions={<Link className="btn btn--primary" href="/">返回课程库</Link>}
+      />
     );
   }
 

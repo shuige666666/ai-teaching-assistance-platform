@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { X } from "lucide-react";
 import type { EditableQuizQuestion } from "@/lib/domain/quiz-edit";
 import type { Scene } from "@/lib/domain/schemas";
 
@@ -75,17 +76,17 @@ export function QuizEditDialog({ scene, onClose, onSave }: {
 
   return (
     <div className="scene-regeneration-backdrop" role="presentation">
-      <section className="quiz-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="quiz-editor-title">
-        <header><div><p className="eyebrow">QUIZ WORKBENCH · MANUAL</p><h2 id="quiz-editor-title">手动调整题目</h2></div><button type="button" aria-label="关闭题目编辑器" disabled={saving} onClick={onClose}>×</button></header>
+      <section className="quiz-editor-dialog dialog" role="dialog" aria-modal="true" aria-labelledby="quiz-editor-title">
+        <header className="dialog-head"><div><p className="eyebrow">测验编辑 · 不调用模型</p><h2 id="quiz-editor-title">手动调整题目</h2></div><button className="icon-btn" type="button" aria-label="关闭题目编辑器" disabled={saving} onClick={onClose}><X aria-hidden="true" /></button></header>
         <p className="quiz-editor-intro">直接编辑题干、选项、答案和解析，不调用模型。保存后旧作答会失效。</p>
         <form onSubmit={submit}>
           <div className="quiz-editor-list">
             {questions.map((question, questionIndex) => (
               <fieldset className="quiz-editor-card" key={questionIndex}>
-                <legend>QUESTION {String(questionIndex + 1).padStart(2, "0")}</legend>
+                <legend>第 {questionIndex + 1} 题</legend>
                 <div className="quiz-editor-card-head">
                   <label>题型<select value={question.type} disabled={saving} onChange={(event) => updateQuestion(questionIndex, (current) => ({ ...current, type: event.target.value as EditableQuizQuestion["type"], correctOptionIndexes: [current.correctOptionIndexes[0] ?? 0] }))}><option value="single_choice">单选题</option><option value="multiple_choice">多选题</option></select></label>
-                  {questions.length > 1 ? <button type="button" disabled={saving} onClick={() => setQuestions((current) => current.filter((_, index) => index !== questionIndex))}>删除本题</button> : null}
+                  {questions.length > 1 ? <button className="btn btn--ghost btn--sm quiz-editor-remove" type="button" disabled={saving} onClick={() => setQuestions((current) => current.filter((_, index) => index !== questionIndex))}>删除本题</button> : null}
                 </div>
                 <label>题干<textarea maxLength={300} value={question.prompt} disabled={saving} onChange={(event) => updateQuestion(questionIndex, (current) => ({ ...current, prompt: event.target.value }))} /></label>
                 <div className="quiz-editor-options">
@@ -105,9 +106,9 @@ export function QuizEditDialog({ scene, onClose, onSave }: {
             ))}
           </div>
           {questions.length < 3 ? <button className="quiz-editor-add-question" type="button" disabled={saving} onClick={() => setQuestions((current) => [...current, emptyQuestion()])}>＋ 新增一道题</button> : null}
-          <label className="scene-regeneration-confirm"><input type="checkbox" checked={confirmed} disabled={saving} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>确认清理本场旧作答记录</strong><small>题目与选项会使用新的 ID，旧答案无法继续对应。</small></span></label>
-          {error ? <p className="scene-regeneration-error" role="alert">{error}</p> : null}
-          <footer><button type="button" disabled={saving} onClick={onClose}>取消修改</button><button type="submit" disabled={saving || !confirmed || !valid}>{saving ? "正在保存…" : "保存题目"}</button></footer>
+          <label className="confirm-check"><input type="checkbox" checked={confirmed} disabled={saving} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>确认清理本场旧作答记录</strong><small>题目与选项会使用新的 ID，旧答案无法继续对应。</small></span></label>
+          {error ? <p className="notice notice--danger" role="alert">{error}</p> : null}
+          <footer className="dialog-foot"><button className="btn btn--ghost" type="button" disabled={saving} onClick={onClose}>取消修改</button><button className="btn btn--primary" type="submit" disabled={saving || !confirmed || !valid}>{saving ? "正在保存…" : "保存题目"}</button></footer>
         </form>
       </section>
     </div>

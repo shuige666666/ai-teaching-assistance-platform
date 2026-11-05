@@ -2,12 +2,12 @@
   position: relative;
   margin: auto;
   overflow: hidden;
-  border: 1px solid rgba(20, 63, 89, 0.18);
-  border-radius: 3px;
+  border: 1px solid var(--border, rgba(20, 63, 89, 0.18));
+  border-radius: 12px;
   background: var(--white);
   box-shadow:
-    0 24px 60px rgba(20, 63, 89, 0.14),
-    0 4px 14px rgba(20, 63, 89, 0.08);
+    0 24px 48px -16px rgba(23, 32, 54, 0.22),
+    0 4px 12px rgba(23, 32, 54, 0.06);
 }
 
 .viewport {

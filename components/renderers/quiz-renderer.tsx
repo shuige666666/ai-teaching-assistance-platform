@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CircleCheck, Lightbulb } from "lucide-react";
 import type { QuizContent } from "@/lib/domain/schemas";
 
 type QuizRendererProps = {
@@ -51,7 +52,7 @@ export function QuizRenderer({ content, onSubmit, onCompleted }: QuizRendererPro
         return (
           <section className="quiz-card" key={question.id}>
             <div className="quiz-meta">
-              <p className="quiz-number">CHECK {String(questionIndex + 1).padStart(2, "0")}</p>
+              <p className="quiz-number">第 {questionIndex + 1} 题</p>
               <span className="quiz-type-label">{question.type === "multiple_choice" ? "多选题" : "单选题"}</span>
             </div>
             <h3>{question.prompt}</h3>
@@ -82,14 +83,14 @@ export function QuizRenderer({ content, onSubmit, onCompleted }: QuizRendererPro
             </div>
             {!isSubmitted ? (
               <button
-                className="button button--dark quiz-submit"
+                className="btn btn--primary quiz-submit"
                 type="button"
                 disabled={selectedIds.length === 0 || isPending}
                 onClick={() => selectedIds.length > 0 && void submit(question.id, selectedIds, question.correctOptionIds)}
-              >{isPending ? "正在保存…" : "提交答案"}</button>
+              >{isPending ? <span className="spinner" aria-hidden="true" /> : null}{isPending ? "正在保存…" : "提交答案"}</button>
             ) : (
               <div className={`quiz-result ${isCorrect ? "is-correct" : "is-wrong"}`} role="status">
-                <strong>{isCorrect ? "回答正确" : "再想一步"}</strong>
+                <strong>{isCorrect ? <CircleCheck aria-hidden="true" /> : <Lightbulb aria-hidden="true" />}{isCorrect ? "回答正确" : "再想一步"}</strong>
                 <p>{question.explanation}</p>
               </div>
             )}

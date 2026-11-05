@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ClassroomWorkspace } from "@/components/course/classroom-workspace";
+import { StatePage } from "@/components/layout/state-page";
 import { getCourseRepository } from "@/lib/repository";
 import { mapRepositoryError } from "@/lib/repository/error-response";
 
@@ -12,15 +13,42 @@ export default async function ClassroomPage({ params }: { params: Promise<{ cour
     course = await getCourseRepository().get(courseId);
   } catch (error) {
     const message = mapRepositoryError(error).body.error.message;
-    return <main className="missing-state"><p className="eyebrow">DATABASE UNAVAILABLE</p><h1>暂时无法加载课堂</h1><p>{message}</p><Link className="button button--dark" href="/">返回首页</Link></main>;
+    return (
+      <StatePage
+        kind="database"
+        eyebrow="数据库暂不可用"
+        title="暂时无法加载课堂"
+        description={message}
+        actions={<>
+          <Link className="btn btn--primary" href={`/classroom/${courseId}`}>重新加载</Link>
+          <Link className="btn btn--secondary" href="/">返回课程库</Link>
+        </>}
+      />
+    );
   }
 
   if (!course) {
-    return <main className="missing-state"><p className="eyebrow">COURSE NOT FOUND</p><h1>无法加载课堂</h1><p>课程不存在或已经被删除。</p><Link className="button button--dark" href="/">返回首页</Link></main>;
+    return (
+      <StatePage
+        kind="not-found"
+        eyebrow="课程不存在"
+        title="无法加载课堂"
+        description="课程不存在或已经被删除。"
+        actions={<Link className="btn btn--primary" href="/">返回课程库</Link>}
+      />
+    );
   }
   // 至少一个场景成功保存后即可增量预览；ready 仍只表示整门课程全部生成完成。
   if (course.scenes.length === 0) {
-    return <main className="missing-state"><p className="eyebrow">COURSE NOT READY</p><h1>场景还没有生成完成</h1><p>请返回生成页继续处理待生成场景，或重试失败场景。</p><Link className="button button--dark" href={`/generation/${course.id}`}>返回生成页</Link></main>;
+    return (
+      <StatePage
+        kind="pending"
+        eyebrow="课堂尚未就绪"
+        title="场景还没有生成完成"
+        description="至少生成一个场景后才能进入课堂。请返回制作页继续生成待处理场景，或重试失败场景。"
+        actions={<Link className="btn btn--primary" href={`/generation/${course.id}`}>返回制作页</Link>}
+      />
+    );
   }
 
   return <ClassroomWorkspace course={course} />;

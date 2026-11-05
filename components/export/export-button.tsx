@@ -1,5 +1,6 @@
 "use client";
 
+import { Download } from "lucide-react";
 import type { Course } from "@/lib/domain/schemas";
 import { useExportZip } from "@/lib/export/use-export-zip";
 
@@ -13,13 +14,14 @@ export function ExportButton({ course }: { course: Course }) {
     <div className="export-zone" data-testid="export-zone" data-export-state={state.status}>
       <button
         type="button"
-        className="export-button"
+        className="toolbar-button export-button"
         data-testid="export-button"
         disabled={disabled}
         title={exportable ? "导出课程 PPTX 与互动 HTML 资源包" : "课程尚未生成场景，无法导出"}
         onClick={() => void exportCourse(course)}
       >
-        {state.status === "working" ? "导出中…" : "⤓ 导出课程"}
+        {state.status === "working" ? <span className="spinner" aria-hidden="true" /> : <Download aria-hidden="true" />}
+        <span className="toolbar-button__label">{state.status === "working" ? "导出中…" : "导出课程"}</span>
       </button>
       {state.message && (
         <small

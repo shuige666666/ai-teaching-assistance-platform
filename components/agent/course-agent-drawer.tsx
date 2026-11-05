@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Bot, ChevronDown, Ellipsis, MapPin, MessagesSquare, Plus, SendHorizontal, Square, X } from "lucide-react";
 import type { AgentContentBlock, AgentContextInfo, AgentCourseUpdate, AgentMessage, AgentRun, AgentSession, AgentSseEvent, AgentToolBlock } from "@/lib/agent/contracts";
 import type { Scene } from "@/lib/domain/schemas";
 
@@ -32,6 +33,8 @@ const toolStatus = {
   not_executed: "未执行",
   cancelled: "已取消",
 } as const;
+
+const agentSuggestions = ["这一页的讲解太难了，帮我改得更通俗", "给当前页补充一个生活化的案例", "检查整门课有几页，先不要修改"];
 
 const sessionStatus = {
   idle: "可继续",
@@ -625,13 +628,13 @@ export function CourseAgentDrawer(props: Props) {
         />
         <header className="agent-drawer__head">
           <div className="agent-drawer__head-content">
-            <span>COURSE REVISION AGENT</span><h2>对话式修订</h2>
+            <div className="agent-drawer__title"><span className="agent-drawer__avatar" aria-hidden="true"><Bot /></span><div><h2>对话式修订</h2><small>AI 课程助手 · 先读取课程，再按你的意见修改</small></div></div>
             <div className="agent-session-area">
               <div className="agent-session-controls">
                 <button ref={sessionPickerRef} type="button" className="agent-session-picker" disabled={!session || sessionActionPending} onClick={() => { setSessionMenuOpen((open) => !open); setSessionActionsId(null); setSessionDeleteTarget(null); }}>
-                  <span>{session?.title ?? "正在加载会话"}</span><em>{session ? sessionStatus[session.status] : ""}⌄</em>
+                  <span>{session?.title ?? "正在加载会话"}</span><em>{session ? sessionStatus[session.status] : ""}<ChevronDown aria-hidden="true" /></em>
                 </button>
-                <button type="button" className="agent-session-new" disabled={sessionLocked || sessionActionPending} onClick={createSession}>新建对话</button>
+                <button type="button" className="agent-session-new" disabled={sessionLocked || sessionActionPending} onClick={createSession}><Plus aria-hidden="true" />新建对话</button>
               </div>
               {sessionMenuOpen ? (
                 <div className="agent-session-menu" role="list" aria-label="历史对话">
@@ -653,7 +656,7 @@ export function CourseAgentDrawer(props: Props) {
                             <button type="button" className="agent-session-select" aria-current={item.id === session?.id ? "true" : undefined} disabled={sessionLocked || sessionActionPending} onClick={() => void switchSession(item)}>
                               <span>{item.title}</span><small>{sessionStatus[item.status]} · {formatSessionTime(item.updatedAt)}</small>
                             </button>
-                            <button ref={(node) => { sessionActionRefs.current[item.id] = node; }} type="button" className="agent-session-actions" aria-label={`管理会话：${item.title}`} aria-expanded={sessionActionsId === item.id} onClick={() => toggleSessionActions(item)}>•••</button>
+                            <button ref={(node) => { sessionActionRefs.current[item.id] = node; }} type="button" className="agent-session-actions" aria-label={`管理会话：${item.title}`} aria-expanded={sessionActionsId === item.id} onClick={() => toggleSessionActions(item)}><Ellipsis aria-hidden="true" /></button>
                             {sessionActionsId === item.id ? (
                               <div className="agent-session-actions-menu" role="menu">
                                 <button type="button" role="menuitem" onClick={() => beginSessionRename(item)}>重命名</button>
@@ -670,18 +673,18 @@ export function CourseAgentDrawer(props: Props) {
               ) : null}
             </div>
           </div>
-          <button type="button" aria-label="关闭" onClick={props.onClose}>×</button>
+          <button className="agent-drawer__close" type="button" aria-label="关闭" onClick={props.onClose}><X aria-hidden="true" /></button>
         </header>
         <div className="agent-drawer__messages" ref={scrollRef} onScroll={(event) => {
           const target = event.currentTarget;
           followTail.current = target.scrollHeight - target.scrollTop - target.clientHeight <= 56;
         }}>
-          {loading ? <p className="agent-empty">正在恢复课程对话…</p> : null}
+          {loading ? <p className="agent-loading" role="status"><span className="spinner" aria-hidden="true" />正在恢复课程对话…</p> : null}
           {!loading && session?.status === "running" && !running ? <p className="agent-session-notice" role="status">上一轮请求仍在服务端执行；刷新不会自动续跑，请等待它结束后再继续。</p> : null}
           {!loading && latestRun?.status === "interrupted" ? <p className="agent-session-notice" role="status">上一轮请求已中断，历史消息仍保留；可以从当前课程状态继续讨论。</p> : null}
           {!loading && contextInfo && contextInfo.omittedMessageCount > 0 ? <p className="agent-context-notice" role="status">较早的 {contextInfo.omittedMessageCount} 轮对话本次未发送给模型，数据库历史仍保留。</p> : null}
           {!loading && latestRun && runSummary(latestRun) ? <p className="agent-run-summary">最近运行 · {runSummary(latestRun)} · {latestRun.metrics?.totalDurationMs ? `${(latestRun.metrics.totalDurationMs / 1000).toFixed(1)}s` : "耗时未知"}</p> : null}
-          {!loading && messages.length === 0 && liveBlocks.length === 0 ? <div className="agent-empty"><strong>从课程本身开始讨论</strong><p>可以询问内容，也可以要求对当前页做精确修改。Agent 会先读取真实课程，再决定是否调用工具。</p></div> : null}
+          {!loading && messages.length === 0 && liveBlocks.length === 0 ? <div className="agent-empty"><span className="agent-empty__icon" aria-hidden="true"><MessagesSquare /></span><strong>从课程本身开始讨论</strong><p>可以询问内容，也可以要求对当前页做精确修改。助手会先读取真实课程，再决定是否调用工具。</p><div className="agent-suggestions">{agentSuggestions.map((item) => <button type="button" key={item} disabled={!session || session.status !== "idle"} onClick={() => props.onDraftChange(item)}>{item}</button>)}</div></div> : null}
           {messages.map((message) => {
             if (message.role === "user" && "text" in message.content) {
               const userContent = message.content as Extract<AgentMessage["content"], { text: string }>;
@@ -690,7 +693,7 @@ export function CourseAgentDrawer(props: Props) {
                 <div className="agent-user" key={message.id}>
                   {userContent.currentSceneId ? (
                     <button type="button" className="agent-user__scene" disabled={!anchor} onClick={() => anchor && props.onSceneSelect(anchor.id)}>
-                      <span>⌁</span>{anchor ? `第 ${anchor.order} 页 · ${anchor.title}` : "原场景已删除"}
+                      <MapPin aria-hidden="true" />{anchor ? `第 ${anchor.order} 页 · ${anchor.title}` : "原场景已删除"}
                     </button>
                   ) : null}
                   <div>{userContent.text}</div>
@@ -705,7 +708,7 @@ export function CourseAgentDrawer(props: Props) {
         </div>
         <form className="agent-composer" onSubmit={send}>
           <textarea value={draft} maxLength={4000} disabled={running || !session || session.status !== "idle"} onChange={(event) => props.onDraftChange(event.target.value)} placeholder={session?.status === "running" ? "上一轮请求仍在服务端执行…" : session?.status === "waiting_confirmation" ? "请先处理上方确认…" : "继续讨论，或描述要修改的页面内容…"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
-          <div><small>REV.{props.courseRevision} · Shift+Enter 换行</small>{running ? <button type="button" onClick={() => { stoppedByUser.current = true; request.current?.abort(); }}>停止</button> : <button type="submit" disabled={!session || session.status !== "idle" || !draft.trim()}>发送 ↗</button>}</div>
+          <div><small>REV.{props.courseRevision} · Enter 发送，Shift+Enter 换行</small>{running ? <button className="agent-composer__stop" type="button" onClick={() => { stoppedByUser.current = true; request.current?.abort(); }}><Square aria-hidden="true" />停止</button> : <button type="submit" disabled={!session || session.status !== "idle" || !draft.trim()}><SendHorizontal aria-hidden="true" />发送</button>}</div>
         </form>
       </aside>
     </div>

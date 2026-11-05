@@ -1,10 +1,16 @@
 "use client";
 
 import { CourseMaterialsPanel } from "./course-materials-panel";
+import { LineListTextarea } from "./line-list-textarea";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft, Check, ChevronDown, CircleAlert, CircleCheck, CircleStop, Cpu, Eye, Info, Lightbulb, ListChecks, ListTree, Lock,
+  MousePointerClick, Pencil, Play, Presentation, Puzzle, RotateCcw, Save, Sparkles, Target, TriangleAlert, WandSparkles, X,
+} from "lucide-react";
+import { AppHeader, Stepper, type StepState } from "@/components/layout/app-header";
 import type { Course, CourseBrief, CourseBriefField, SceneOutline } from "@/lib/domain/schemas";
 
 type ErrorIssue = { path: string; message: string };
@@ -114,6 +120,61 @@ const validationKindLabels: Record<string, string> = {
   semantic: "课程语义校验",
 };
 
+type Tone = "neutral" | "info" | "progress" | "success" | "warning" | "danger";
+
+const courseStatusView: Record<Course["status"], { label: string; tone: Tone }> = {
+  draft: { label: "草稿", tone: "neutral" },
+  outlining: { label: "正在生成大纲", tone: "progress" },
+  outline_ready: { label: "待审核大纲", tone: "info" },
+  generating: { label: "正在生成场景", tone: "progress" },
+  partial_failed: { label: "部分场景失败", tone: "warning" },
+  ready: { label: "可以上课", tone: "success" },
+  failed: { label: "生成失败", tone: "danger" },
+};
+
+const sceneTypeView = {
+  slide: { label: "讲解", icon: Presentation },
+  quiz: { label: "测验", icon: ListChecks },
+  interactive: { label: "互动", icon: Puzzle },
+} as const;
+
+const roleLabels: Record<string, string> = {
+  hook: "导入",
+  concept: "概念",
+  mechanism: "机制",
+  worked_example: "例题",
+  practice: "练习",
+  summary: "总结",
+  assessment: "测评",
+};
+
+const warningLabels: Record<string, string> = {
+  SETTING_PROMPT_CONFLICT: "设置与描述存在冲突",
+  PROMPT_AMBIGUOUS: "课程描述不够明确",
+  SCOPE_TOO_BROAD: "主题范围偏大",
+};
+
+/** 侧栏用一句话告诉用户当前该做什么。 */
+function nextStepText(course: Course, materialsPending: boolean) {
+  if (materialsPending) return "先保存或移除待上传的教学材料，再继续生成。";
+  switch (course.status) {
+    case "draft":
+      return course.outlines.length === 0 ? "选择是否需要互动场景，然后生成课程大纲。" : "生成课程大纲后即可人工审核。";
+    case "outlining":
+      return "AI 正在拟定大纲，请稍候。";
+    case "outline_ready":
+      return "检查并修改大纲，确认后会逐场生成讲解、互动和测验。";
+    case "generating":
+      return "场景正在逐个生成，已完成的部分可以先预览。";
+    case "partial_failed":
+      return "部分场景没有生成成功，可在大纲中逐个重试，已完成的场景不受影响。";
+    case "ready":
+      return "全部场景已生成，可以进入课堂开始讲解。";
+    case "failed":
+      return "大纲生成没有成功，查看下方原因后可以重试。";
+  }
+}
+
 function displayBriefValue(brief: CourseBrief, field: CourseBriefField) {
   const value = brief[field];
   if (Array.isArray(value)) return value.length > 0 ? value.join("；") : "无";
@@ -135,6 +196,7 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
   const [dirty, setDirty] = useState(false);
   const [materialsPending, setMaterialsPending] = useState(false);
   const [briefEditing, setBriefEditing] = useState(false);
+  const [briefExpanded, setBriefExpanded] = useState(initialCourse.scenes.length === 0);
   const [briefDraft, setBriefDraft] = useState<CourseBrief>(() => structuredClone(initialCourse.brief));
   const [leaseClock, setLeaseClock] = useState(initialCourse.updatedAt);
   const activeRequests = useRef(new Set<AbortController>());
@@ -523,305 +585,429 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
   }
 
   const readyCount = course.sceneProgress.filter((item) => item.status === "ready").length;
+  const failedCount = course.sceneProgress.filter((item) => item.status === "failed").length;
   const editable = course.status === "outline_ready";
   const metadata = course.outlineGeneration;
   const pendingCount = course.sceneProgress.filter((item) => item.status === "pending").length;
   const briefEditable = course.scenes.length === 0 && ["draft", "failed", "outline_ready"].includes(course.status);
+  const stage = course.status === "ready" ? 3 : ["generating", "partial_failed"].includes(course.status) ? 2 : 1;
+  const steps: Array<{ label: string; state: StepState }> = [
+    { label: "主题", state: "done" },
+    { label: "大纲", state: stage > 1 ? "done" : "current" },
+    { label: "场景", state: stage > 2 ? "done" : stage === 2 ? "current" : "todo" },
+    { label: "课堂", state: stage === 3 ? "current" : "todo" },
+  ];
+  const progressPercent = course.requestedSceneCount ? (readyCount / course.requestedSceneCount) * 100 : 0;
 
   return (
-    <main className="workspace-shell">
-      <header className="site-header site-header--compact">
-        <Link className="brand" href="/">
-          <span className="brand-mark">课</span>
-          <span>
-            <strong>课序</strong>
-            <small>COURSE COMPOSER</small>
-          </span>
-        </Link>
-        <div className="step-nav">
-          <span className="is-done">01 主题</span>
-          <span className="is-active">02 大纲</span>
-          <span>03 课堂</span>
-        </div>
-      </header>
-
-      <section className="workspace-title reveal reveal--one">
-        <div>
-          <p className="eyebrow">OUTLINE STUDIO / REV.{course.revision}</p>
+    <div className="page">
+      <AppHeader>
+        <Stepper steps={steps} />
+      </AppHeader>
+      <main className="page-main generation">
+        <Link className="back-link" href="/"><ArrowLeft aria-hidden="true" />课程库</Link>
+        <section className="course-hero reveal">
+          <div className="course-hero__badges">
+            <span className={`badge badge--dot badge--${courseStatusView[course.status].tone}`}>{courseStatusView[course.status].label}</span>
+            <span className="meta-chip">REV.{course.revision}</span>
+            {metadata ? <span className="meta-chip"><Cpu aria-hidden="true" />{metadata.provider} / {metadata.model}</span> : null}
+          </div>
           <h1>{course.title}</h1>
-          <p>
-            {course.topic} · {course.requestedSceneCount} 个教学场景 ·{" "}
-            {metadata ? `${metadata.provider} / ${metadata.model}` : "等待生成"}
-          </p>
-        </div>
-        <span className={`large-state large-state--${course.status}`}>
-          {course.status === "ready"
-            ? "READY"
-            : course.status === "partial_failed"
-              ? "REPAIR"
-              : course.status === "generating"
-                ? "BUILD"
-                : course.status === "draft" || course.status === "failed"
-                  ? "DRAFT"
-                  : "REVIEW"}
-        </span>
-      </section>
-
-      <CourseMaterialsPanel course={course} disabled={busy !== null} onPendingChange={setMaterialsPending}
-        onBusyChange={(saving) => setBusy(saving ? "materials" : null)}
-        onCourseChange={(saved) => { setCourse(saved); setDirty(false); setError(null); setOperationView(null); setSavedNotice("教学材料已更新，请重新生成大纲。"); router.refresh(); }} />
-      {materialsPending ? <p className="material-warning" role="status">有尚未保存的材料，请先解析并保存，或移除待上传文件，再开始生成。</p> : null}
-      <div className="generation-layout">
-        <section className="brief-panel reveal reveal--two">
-          <div className="brief-panel__head">
-            <div><span>COURSE BRIEF / {course.briefResolution.status.toUpperCase()}</span><h2>系统采用的课程要求</h2></div>
-            {briefEditable ? <button type="button" onClick={() => { if (!briefEditing) setBriefDraft(structuredClone(course.brief)); setBriefEditing(!briefEditing); }} disabled={busy !== null}>{briefEditing ? "取消修改" : "修改要求"}</button> : <small>场景生成后锁定</small>}
-          </div>
-          {briefEditing ? (
-            <div className="brief-editor">
-              <label><span>目标受众</span><input value={briefDraft.audience} maxLength={120} onChange={(event) => setBriefDraft({ ...briefDraft, audience: event.target.value })} /></label>
-              <label><span>学习水平</span><select value={briefDraft.learnerLevel} onChange={(event) => setBriefDraft({ ...briefDraft, learnerLevel: event.target.value as CourseBrief["learnerLevel"] })}><option value="beginner">入门</option><option value="intermediate">进阶</option><option value="advanced">高级</option></select></label>
-              <label className="brief-editor__wide"><span>学习目标</span><input value={briefDraft.learningGoal} maxLength={300} onChange={(event) => setBriefDraft({ ...briefDraft, learningGoal: event.target.value })} /></label>
-              <label><span>预计时长</span><select value={briefDraft.durationMinutes} onChange={(event) => setBriefDraft({ ...briefDraft, durationMinutes: Number(event.target.value) as 10 | 15 | 20 })}><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="20">20 分钟</option></select></label>
-              <label><span>教学风格</span><select value={briefDraft.teachingStyle} onChange={(event) => setBriefDraft({ ...briefDraft, teachingStyle: event.target.value as CourseBrief["teachingStyle"] })}><option value="structured">结构化讲解</option><option value="case_based">案例导向</option><option value="practice_oriented">练习导向</option></select></label>
-              <label><span>互动场景</span><select value={briefDraft.interactionMode === "required" ? "required" : "off"} onChange={(event) => setBriefDraft({ ...briefDraft, interactionMode: event.target.value as "off" | "required" })}><option value="off">不需要</option><option value="required">需要，由 AI 安排</option></select></label>
-              <label><span>先修知识（每行一项）</span><textarea value={briefDraft.prerequisites.join("\n")} onChange={(event) => setBriefDraft({ ...briefDraft, prerequisites: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) })} /></label>
-              <label><span>附加要求（每行一项）</span><textarea value={briefDraft.additionalRequirements.join("\n")} onChange={(event) => setBriefDraft({ ...briefDraft, additionalRequirements: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) })} /></label>
-              <div className="brief-editor__notice">保存后旧大纲会失效，但不会调用模型；重新生成大纲时才会产生一次 outline.v2 请求。</div>
-              <button className="button button--accent" type="button" onClick={saveBriefChanges} disabled={busy !== null}>保存要求并重置大纲 <span>→</span></button>
-            </div>
-          ) : (
-            <div className="brief-facts">
-              {briefFieldLabels.map(({ field, label }) => <div key={field}><span>{label}</span><strong>{displayBriefValue(course.brief, field)}</strong><small>{sourceLabels[course.briefResolution.sources[field]]}</small></div>)}
-            </div>
-          )}
-          {course.briefResolution.warnings.length > 0 ? <div className="brief-warnings">{course.briefResolution.warnings.map((warning, index) => <p key={`${warning.code}-${index}`}><strong>{warning.code}</strong>{warning.message}</p>)}</div> : null}
+          <p>{course.topic} · 计划 {course.requestedSceneCount} 个教学场景</p>
         </section>
-        <section className="outline-panel reveal reveal--two">
-          <div className="panel-heading">
-            <div>
-              <span>COURSE MAP</span>
-              <h2>{editable ? "审核课程大纲" : "课程大纲"}</h2>
-            </div>
-            <p>
-              {editable
-                ? "修改标题、教学目标和关键点；保存时服务端会再次校验。"
-                : "模型输出必须先通过不可信边界，才能进入这里。"}
-            </p>
-          </div>
 
-          {course.outlines.length === 0 ? (
-            <div className="outline-empty outline-empty--interactive">
-              <span>00</span>
-              <div>
-                <h3>先选择这门课是否需要互动</h3>
-                <p>开启后，4 场景安排 1 个，5～6 场景安排 1～2 个，7～8 场景安排 1～3 个互动。按内容设计关系探索、模拟、挑战或编程实验。</p>
-                <div className="interaction-choice" role="group" aria-label="互动场景选择">
-                  <button type="button" className={course.brief.interactionMode === "off" ? "is-active" : ""} disabled={busy !== null} onClick={() => chooseInteractionMode("off")}><strong>不需要</strong><small>使用 slide 与 quiz</small></button>
-                  <button type="button" className={course.brief.interactionMode === "required" ? "is-active" : ""} disabled={busy !== null} onClick={() => chooseInteractionMode("required")}><strong>需要互动</strong><small>AI 按教学目标设计玩法</small></button>
+        <div className="generation-layout">
+          <div className="generation-main">
+            <section className="panel brief-panel reveal reveal--two" aria-labelledby="brief-title">
+              <header className="panel__head">
+                <div className="panel__title">
+                  <span className="panel__icon" aria-hidden="true"><Target /></span>
+                  <div>
+                    <h2 id="brief-title">系统采用的课程要求</h2>
+                    <p>{course.briefResolution.status === "resolved" ? "已结合课程描述与设置确定" : "初步推断，生成大纲时会进一步确定"}</p>
+                  </div>
                 </div>
+                <div className="panel__actions">
+                  {briefEditable ? (
+                    <button className="btn btn--secondary btn--sm" type="button" onClick={() => { if (!briefEditing) setBriefDraft(structuredClone(course.brief)); setBriefEditing(!briefEditing); setBriefExpanded(true); }} disabled={busy !== null}>
+                      {briefEditing ? <><X aria-hidden="true" />取消修改</> : <><Pencil aria-hidden="true" />修改要求</>}
+                    </button>
+                  ) : <span className="meta-chip"><Lock aria-hidden="true" />场景生成后锁定</span>}
+                  {!briefEditing ? (
+                    <button className="icon-btn" type="button" aria-expanded={briefExpanded} aria-controls="brief-body" aria-label={briefExpanded ? "收起课程要求" : "展开课程要求"} onClick={() => setBriefExpanded(!briefExpanded)}>
+                      <ChevronDown className={briefExpanded ? "is-flipped" : undefined} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+              </header>
+              <div id="brief-body" hidden={!briefExpanded && !briefEditing}>
+                {briefEditing ? (
+                  <div className="brief-editor form-grid">
+                    <label className="field"><span>目标受众</span><input value={briefDraft.audience} maxLength={120} onChange={(event) => setBriefDraft({ ...briefDraft, audience: event.target.value })} /></label>
+                    <label className="field"><span>学习水平</span><select value={briefDraft.learnerLevel} onChange={(event) => setBriefDraft({ ...briefDraft, learnerLevel: event.target.value as CourseBrief["learnerLevel"] })}><option value="beginner">入门</option><option value="intermediate">进阶</option><option value="advanced">高级</option></select></label>
+                    <label className="field span-2"><span>学习目标</span><input value={briefDraft.learningGoal} maxLength={300} onChange={(event) => setBriefDraft({ ...briefDraft, learningGoal: event.target.value })} /></label>
+                    <label className="field"><span>预计时长</span><select value={briefDraft.durationMinutes} onChange={(event) => setBriefDraft({ ...briefDraft, durationMinutes: Number(event.target.value) as 10 | 15 | 20 })}><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="20">20 分钟</option></select></label>
+                    <label className="field"><span>教学风格</span><select value={briefDraft.teachingStyle} onChange={(event) => setBriefDraft({ ...briefDraft, teachingStyle: event.target.value as CourseBrief["teachingStyle"] })}><option value="structured">结构化讲解</option><option value="case_based">案例导向</option><option value="practice_oriented">练习导向</option></select></label>
+                    <label className="field"><span>互动场景</span><select value={briefDraft.interactionMode === "required" ? "required" : "off"} onChange={(event) => setBriefDraft({ ...briefDraft, interactionMode: event.target.value as "off" | "required" })}><option value="off">不需要</option><option value="required">需要，由 AI 安排</option></select></label>
+                    <span className="form-grid__spacer" aria-hidden="true" />
+                    <label className="field"><span>先修知识（每行一项）</span><LineListTextarea value={briefDraft.prerequisites} onChange={(prerequisites) => setBriefDraft((current) => ({ ...current, prerequisites }))} /></label>
+                    <label className="field"><span>附加要求（每行一项）</span><LineListTextarea value={briefDraft.additionalRequirements} onChange={(additionalRequirements) => setBriefDraft((current) => ({ ...current, additionalRequirements }))} /></label>
+                    <div className="brief-editor__footer span-2">
+                      <p className="form-note"><Info aria-hidden="true" />保存后旧大纲会失效，但不会调用模型；重新生成大纲时才会产生一次模型请求。</p>
+                      <button className="btn btn--primary" type="button" onClick={saveBriefChanges} disabled={busy !== null}>
+                        {busy === "brief" ? <span className="spinner" aria-hidden="true" /> : <Check aria-hidden="true" />}保存要求并重置大纲
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <dl className="brief-facts">
+                    {briefFieldLabels.map(({ field, label }) => (
+                      <div className="brief-fact" key={field}>
+                        <dt>{label}</dt>
+                        <dd><strong>{displayBriefValue(course.brief, field)}</strong><small className={`source-tag source-tag--${course.briefResolution.sources[field]}`}>{sourceLabels[course.briefResolution.sources[field]]}</small></dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {course.briefResolution.warnings.length > 0 ? (
+                  <div className="brief-warnings">
+                    {course.briefResolution.warnings.map((warning, index) => (
+                      <div className="notice notice--warning" key={`${warning.code}-${index}`}>
+                        <TriangleAlert aria-hidden="true" />
+                        <div className="notice__body"><strong>{warningLabels[warning.code] ?? warning.code}</strong><p>{warning.message}</p></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ) : (
-            <>
-              <label className="course-title-editor">
-                <span>课程标题</span>
-                <input
-                  value={course.title}
-                  disabled={!editable || busy !== null}
-                  onChange={(event) => {
-                    setCourse((current) => ({
-                      ...current,
-                      title: event.target.value,
-                    }));
-                    setDirty(true);
-                    setSavedNotice(null);
-                  }}
-                />
-              </label>
-              <ol className="outline-list">
-                {course.outlines.map((outline, index) => {
-                  const progress = course.sceneProgress.find((item) => item.outlineId === outline.id);
-                  const recoverable =
-                    progress?.status === "generating" &&
-                    course.activeOperation?.outlineId === outline.id &&
-                    course.activeOperation.expiresAt <= leaseClock;
-                  const canRetry = progress?.status === "failed" && canRetryGeneration(progress.lastError);
-                  return (
-                    <li key={outline.id}>
-                      <span className="outline-order">{String(outline.order).padStart(2, "0")}</span>
-                      <div className="outline-content outline-content--editable">
-                        <div>
-                          <span className={`type-chip type-chip--${outline.type}`}>{outline.type}</span>
-                          <span className="role-chip">{outline.role}</span>
-                          <input
-                            className="outline-title-input"
-                            aria-label={`第 ${outline.order} 场标题`}
-                            value={outline.title}
-                            disabled={!editable || busy !== null}
-                            onChange={(event) =>
-                              updateOutline(index, {
-                                title: event.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                        <textarea
-                          aria-label={`第 ${outline.order} 场教学目标`}
-                          value={outline.teachingObjective}
-                          disabled={!editable || busy !== null}
-                          onChange={(event) =>
-                            updateOutline(index, {
-                              teachingObjective: event.target.value,
-                            })
-                          }
-                        />
-                        <label>
-                          <span>关键点（每行一项）</span>
-                          <textarea
-                            value={outline.keyPoints.join("\n")}
-                            disabled={!editable || busy !== null}
-                            onChange={(event) =>
-                              updateOutline(index, {
-                                keyPoints: event.target.value
-                                  .split(/\r?\n/)
-                                  .map((point) => point.trim())
-                                  .filter(Boolean),
-                              })
-                            }
-                          />
-                        </label>
-                        {outline.type === "interactive" ? (
-                          <label>
-                            <span>互动设计 · {outline.widgetType}</span>
-                            <select aria-label={`第 ${outline.order} 场互动类型`} value={outline.widgetType} disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetType: event.target.value as SceneOutline["widgetType"] })}>
-                              <option value="diagram">关系探索</option><option value="simulation">过程模拟</option><option value="game">互动挑战</option><option value="code">编程实验</option>
-                            </select>
-                            <textarea aria-label={`第 ${outline.order} 场互动设计`} value={outline.widgetOutline?.designIdea ?? ""} placeholder="学生做什么，操作如何改变结果，如何反馈与完成" disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetOutline: event.target.value.trim() ? { ...outline.widgetOutline, designIdea: event.target.value } : undefined })} />
-                            {outline.widgetType === "code" ? <select aria-label={`第 ${outline.order} 场编程语言`} value={outline.widgetOutline?.language ?? "python"} disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetOutline: { designIdea: outline.widgetOutline?.designIdea ?? "编写代码、运行并通过测试", language: event.target.value as "python" | "javascript" } })}><option value="python">Python</option><option value="javascript">JavaScript</option></select> : null}
-                          </label>
-                        ) : null}
-                        {progress?.lastError ? (
-                          <p className="scene-error-inline">
-                            {progress.lastError.code} · {progress.lastError.message}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="scene-progress-cell">
-                        <span className={`progress-mark progress-mark--${progress?.status}`}>
-                          {progress?.status === "ready"
-                            ? "✓"
-                            : progress?.status === "failed"
-                              ? "!"
-                              : progress?.status === "generating"
-                                ? "…"
-                                : "○"}
-                        </span>
-                        <small>
-                          {progress?.status === "ready"
-                            ? "完成"
-                            : progress?.status === "failed"
-                              ? "失败"
-                              : recoverable
-                                ? "可恢复"
-                                : progress?.status === "generating"
-                                  ? "生成中"
-                                  : "待生成"}
-                        </small>
-                        {canRetry || recoverable ? (
-                          <button
-                            type="button"
-                            onClick={() => retryScene(outline.id)}
-                            disabled={busy !== null}
-                          >
-                            {busy === `scene:${outline.id}` ? "处理中" : recoverable ? "恢复" : "重试"}
-                          </button>
-                        ) : null}
-                        {progress?.status === "failed" && !canRetry ? (
-                          <em>
-                            {requiresServerConfiguration(progress.lastError) ? "需修正配置" : "需人工处理"}
-                          </em>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            </>
-          )}
-        </section>
+            </section>
 
-        <aside className="generation-aside reveal reveal--three">
-          <div className="metric-card">
-            <p>SCENE PROGRESS</p>
-            <strong>
-              {String(readyCount).padStart(2, "0")}
-              <span> / {String(course.requestedSceneCount).padStart(2, "0")}</span>
-            </strong>
-            <div className="progress-track">
-              <i
-                style={{
-                  width: `${(readyCount / course.requestedSceneCount) * 100}%`,
-                }}
-              />
-            </div>
+            <CourseMaterialsPanel course={course} disabled={busy !== null} onPendingChange={setMaterialsPending}
+              onBusyChange={(saving) => setBusy(saving ? "materials" : null)}
+              onCourseChange={(saved) => { setCourse(saved); setDirty(false); setError(null); setOperationView(null); setSavedNotice("教学材料已更新，请重新生成大纲。"); router.refresh(); }} />
+            {materialsPending ? (
+              <div className="notice notice--warning" role="status">
+                <TriangleAlert aria-hidden="true" />
+                <p>有尚未保存的材料。请先解析并保存，或移除待上传文件，再开始生成。</p>
+              </div>
+            ) : null}
+
+            <section className="panel outline-panel reveal reveal--two" aria-labelledby="outline-title">
+              <header className="panel__head">
+                <div className="panel__title">
+                  <span className="panel__icon panel__icon--violet" aria-hidden="true"><ListTree /></span>
+                  <div>
+                    <h2 id="outline-title">{editable ? "审核课程大纲" : "课程大纲"}</h2>
+                    <p>
+                      {course.outlines.length === 0
+                        ? "大纲生成后会显示在这里"
+                        : editable
+                          ? "可直接修改标题、教学目标和关键点，保存时服务端会再次校验"
+                          : `${course.outlines.length} 个场景 · 已完成 ${readyCount} 个`}
+                    </p>
+                  </div>
+                </div>
+                {editable && dirty ? <span className="badge badge--warning">有未保存的修改</span> : null}
+              </header>
+
+              {course.outlines.length === 0 ? (
+                <div className="outline-empty">
+                  <h3>先选择这门课是否需要互动场景</h3>
+                  <p>开启后，4 场景安排 1 个，5～6 场景安排 1～2 个，7～8 场景安排 1～3 个互动，AI 会按内容设计关系探索、过程模拟、互动挑战或编程实验。</p>
+                  <div className="interaction-choice" role="group" aria-label="互动场景选择">
+                    <button type="button" className={`choice-card${course.brief.interactionMode === "off" ? " is-active" : ""}`} aria-pressed={course.brief.interactionMode === "off"} disabled={busy !== null} onClick={() => chooseInteractionMode("off")}>
+                      <span className="choice-card__icon" aria-hidden="true"><Presentation /></span>
+                      <span><strong>不需要</strong><small>仅使用讲解课件与测验</small></span>
+                      <CircleCheck className="choice-card__check" aria-hidden="true" />
+                    </button>
+                    <button type="button" className={`choice-card${course.brief.interactionMode === "required" ? " is-active" : ""}`} aria-pressed={course.brief.interactionMode === "required"} disabled={busy !== null} onClick={() => chooseInteractionMode("required")}>
+                      <span className="choice-card__icon choice-card__icon--green" aria-hidden="true"><MousePointerClick /></span>
+                      <span><strong>需要互动</strong><small>AI 按教学目标设计玩法</small></span>
+                      <CircleCheck className="choice-card__check" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="outline-body">
+                  <label className="field course-title-editor">
+                    <span>课程标题</span>
+                    <input
+                      value={course.title}
+                      disabled={!editable || busy !== null}
+                      onChange={(event) => {
+                        setCourse((current) => ({
+                          ...current,
+                          title: event.target.value,
+                        }));
+                        setDirty(true);
+                        setSavedNotice(null);
+                      }}
+                    />
+                  </label>
+                  <ol className="outline-list">
+                    {course.outlines.map((outline, index) => {
+                      const progress = course.sceneProgress.find((item) => item.outlineId === outline.id);
+                      const recoverable =
+                        progress?.status === "generating" &&
+                        course.activeOperation?.outlineId === outline.id &&
+                        course.activeOperation.expiresAt <= leaseClock;
+                      const canRetry = progress?.status === "failed" && canRetryGeneration(progress.lastError);
+                      const status = progress?.status === "ready"
+                        ? { tone: "success", label: "完成" }
+                        : progress?.status === "failed"
+                          ? { tone: "danger", label: "失败" }
+                          : recoverable
+                            ? { tone: "warning", label: "可恢复" }
+                            : progress?.status === "generating"
+                              ? { tone: "progress", label: "生成中" }
+                              : { tone: "neutral", label: "待生成" };
+                      const TypeIcon = sceneTypeView[outline.type].icon;
+                      return (
+                        <li key={outline.id} className={`outline-item outline-item--${progress?.status ?? "pending"}`}>
+                          <span className="outline-order" aria-hidden="true">
+                            {progress?.status === "ready" ? <Check /> : progress?.status === "generating" && !recoverable ? <span className="spinner" /> : String(outline.order).padStart(2, "0")}
+                          </span>
+                          <div className="outline-content outline-content--editable">
+                            <div className="outline-item__head">
+                              <span className={`type-chip type-chip--${outline.type}`}><TypeIcon aria-hidden="true" />{sceneTypeView[outline.type].label}</span>
+                              <span className="role-chip">{roleLabels[outline.role] ?? outline.role}</span>
+                              <span className="outline-item__status">
+                                <span className={`badge badge--dot badge--${status.tone}`}>{status.label}</span>
+                                {canRetry || recoverable ? (
+                                  <button
+                                    className="btn btn--soft btn--sm"
+                                    type="button"
+                                    onClick={() => retryScene(outline.id)}
+                                    disabled={busy !== null}
+                                  >
+                                    {busy === `scene:${outline.id}` ? <span className="spinner" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />}
+                                    {busy === `scene:${outline.id}` ? "处理中" : recoverable ? "恢复" : "重试"}
+                                  </button>
+                                ) : null}
+                                {progress?.status === "failed" && !canRetry ? (
+                                  <em className="outline-item__hint">
+                                    {requiresServerConfiguration(progress.lastError) ? "需修正配置" : "需人工处理"}
+                                  </em>
+                                ) : null}
+                              </span>
+                            </div>
+                            <input
+                              className="outline-title-input"
+                              aria-label={`第 ${outline.order} 场标题`}
+                              value={outline.title}
+                              disabled={!editable || busy !== null}
+                              onChange={(event) =>
+                                updateOutline(index, {
+                                  title: event.target.value,
+                                })
+                              }
+                            />
+                            <label className="outline-field">
+                              <span>教学目标</span>
+                              <textarea
+                                aria-label={`第 ${outline.order} 场教学目标`}
+                                value={outline.teachingObjective}
+                                disabled={!editable || busy !== null}
+                                onChange={(event) =>
+                                  updateOutline(index, {
+                                    teachingObjective: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="outline-field">
+                              <span>{editable ? "关键点（每行一项）" : "关键点"}</span>
+                              <LineListTextarea
+                                value={outline.keyPoints}
+                                disabled={!editable || busy !== null}
+                                onChange={(keyPoints) => updateOutline(index, { keyPoints })}
+                              />
+                            </label>
+                            {outline.type === "interactive" ? (
+                              <div className="outline-field outline-field--widget">
+                                <span>互动设计</span>
+                                <div className="outline-widget-row">
+                                  <select aria-label={`第 ${outline.order} 场互动类型`} value={outline.widgetType} disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetType: event.target.value as SceneOutline["widgetType"] })}>
+                                    <option value="diagram">关系探索</option><option value="simulation">过程模拟</option><option value="game">互动挑战</option><option value="code">编程实验</option>
+                                  </select>
+                                  {outline.widgetType === "code" ? <select aria-label={`第 ${outline.order} 场编程语言`} value={outline.widgetOutline?.language ?? "python"} disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetOutline: { designIdea: outline.widgetOutline?.designIdea ?? "编写代码、运行并通过测试", language: event.target.value as "python" | "javascript" } })}><option value="python">Python</option><option value="javascript">JavaScript</option></select> : null}
+                                </div>
+                                <textarea aria-label={`第 ${outline.order} 场互动设计`} value={outline.widgetOutline?.designIdea ?? ""} placeholder="学生做什么，操作如何改变结果，如何反馈与完成" disabled={!editable || busy !== null} onChange={(event) => updateOutline(index, { widgetOutline: event.target.value.trim() ? { ...outline.widgetOutline, designIdea: event.target.value } : undefined })} />
+                              </div>
+                            ) : null}
+                            {progress?.lastError ? (
+                              <p className="scene-error-inline">
+                                <CircleAlert aria-hidden="true" />
+                                <span><code>{progress.lastError.code}</code>{progress.lastError.message}</span>
+                              </p>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+            </section>
           </div>
-          <div className="boundary-card">
-            <span>M7.1 BRIEF-AWARE PIPELINE</span>
-            <h3>
-              {readyCount > 0
-                ? `${String(readyCount).padStart(2, "0")} 个场景已独立提交`
-                : metadata
-                  ? `${metadata.provider.toUpperCase()} · 大纲已就绪`
-                  : "先登记，再调用，后提交"}
-            </h3>
-            <p>
-              {course.status === "partial_failed"
-                ? "已完成场景仍安全保留。模型输出不合约可重新采样；认证或配置错误需要先修正服务端环境。"
-                : "每个 slide / quiz 都独立经过解析、Schema、语义门和短事务；离开页面会取消浏览器请求，服务端事实仍可刷新恢复。"}
-            </p>
-          </div>
-          {operationView ? (
-            <div
-              className={`operation-console operation-console--${operationView.status}`}
-              role="status"
-              aria-live="polite"
-            >
-              <div>
-                <span>LIVE OPERATION</span>
-                <strong>
+
+          <aside className="generation-aside reveal reveal--three" aria-label="生成进度与操作">
+            <section className="panel progress-panel">
+              <div className="progress-panel__label">场景进度</div>
+              <strong className="progress-count">
+                {String(readyCount).padStart(2, "0")}
+                <span> / {String(course.requestedSceneCount).padStart(2, "0")}</span>
+              </strong>
+              <span className={`meter meter--lg${course.status === "ready" ? " meter--success" : ""}`} aria-hidden="true"><i style={{ width: `${progressPercent}%` }} /></span>
+              <ul className="progress-legend">
+                <li><i className="dot dot--success" />完成 {readyCount}</li>
+                {failedCount ? <li><i className="dot dot--danger" />失败 {failedCount}</li> : null}
+                <li><i className="dot dot--neutral" />待生成 {pendingCount}</li>
+              </ul>
+              <p className="next-step"><Lightbulb aria-hidden="true" /><span>{nextStepText(course, materialsPending)}</span></p>
+
+              <div className="aside-actions">
+                {course.status === "ready" ? (
+                  <Link className="btn btn--primary btn--lg btn--block" href={`/classroom/${course.id}`}>
+                    <Presentation aria-hidden="true" />进入课堂
+                  </Link>
+                ) : editable ? (
+                  <>
+                    <button
+                      className="btn btn--primary btn--lg btn--block"
+                      type="button"
+                      onClick={confirmAndGenerateScenes}
+                      disabled={busy !== null || materialsPending}
+                    >
+                      {busy === "scenes" ? <span className="spinner" aria-hidden="true" /> : <WandSparkles aria-hidden="true" />}
+                      {busy === "scenes"
+                        ? `正在生成 ${readyCount + 1} / ${course.requestedSceneCount}…`
+                        : "确认大纲并生成场景"}
+                    </button>
+                    <button
+                      className="btn btn--secondary btn--block"
+                      type="button"
+                      onClick={saveOutline}
+                      disabled={busy !== null || !dirty}
+                    >
+                      {busy === "save" ? <span className="spinner" aria-hidden="true" /> : <Save aria-hidden="true" />}
+                      {busy === "save" ? "正在校验保存…" : dirty ? "保存修订" : "修订已保存"}
+                    </button>
+                  </>
+                ) : ["generating", "partial_failed"].includes(course.status) ? (
+                  course.activeOperation ? (
+                    <p className="aside-hint">存在登记中的场景操作。租约到期后，可在对应场景右侧点击“恢复”。</p>
+                  ) : pendingCount > 0 ? (
+                    <button
+                      className="btn btn--primary btn--lg btn--block"
+                      type="button"
+                      onClick={continuePendingScenes}
+                      disabled={busy !== null}
+                    >
+                      {busy === "scenes" ? <span className="spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}
+                      {busy === "scenes"
+                        ? `正在生成 ${readyCount + 1} / ${course.requestedSceneCount}…`
+                        : `继续生成 ${pendingCount} 个待处理场景`}
+                    </button>
+                  ) : (
+                    <p className="aside-hint">没有待生成项，请在失败场景右侧点击“重试”。</p>
+                  )
+                ) : (
+                  <button
+                    className="btn btn--primary btn--lg btn--block"
+                    type="button"
+                    onClick={generateCourseOutline}
+                    disabled={
+                      busy !== null || materialsPending ||
+                      course.status === "outlining" ||
+                      Boolean(course.lastError && !canRetryGeneration(course.lastError))
+                    }
+                  >
+                    {busy === "outline" || course.status === "outlining" ? <span className="spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+                    {busy === "outline" || course.status === "outlining"
+                      ? "正在生成并校验…"
+                      : course.lastError && !canRetryGeneration(course.lastError)
+                        ? requiresServerConfiguration(course.lastError)
+                          ? "请先修正服务端配置"
+                          : "当前错误需要人工处理"
+                        : course.status === "failed"
+                          ? "重试大纲生成"
+                          : "生成课程大纲"}
+                  </button>
+                )}
+                {course.status !== "ready" && readyCount > 0 && busy === null ? (
+                  <Link className="btn btn--secondary btn--block" href={`/classroom/${course.id}`}>
+                    <Eye aria-hidden="true" />预览已生成的 {readyCount} 个场景
+                  </Link>
+                ) : null}
+                {busy && busy !== "materials" ? (
+                  <button className="btn btn--ghost btn--block" type="button" onClick={cancelCurrentRequests}>
+                    <CircleStop aria-hidden="true" />取消当前请求
+                  </button>
+                ) : null}
+              </div>
+            </section>
+
+            {operationView ? (
+              <div
+                className={`operation operation--${operationView.status}`}
+                role="status"
+                aria-live="polite"
+              >
+                <div className="operation__head">
+                  {operationView.status === "running" ? <span className="spinner" aria-hidden="true" /> : operationView.status === "succeeded" ? <CircleCheck aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}
+                  <span>{operationStatusLabels[operationView.status]}</span>
+                  <span className="operation__time">
+                    {operationView.status === "running" ? `${(operationElapsedMs / 1000).toFixed(1)}s` : null}
+                  </span>
+                </div>
+                <p>{operationView.label}</p>
+                <small>
                   {operationView.status === "running"
-                    ? `${(operationElapsedMs / 1000).toFixed(1)}s`
-                    : operationView.status.toUpperCase()}
-                </strong>
+                    ? "模型生成通常需要几十秒；临时远端异常会在 4 次总预算内自动重试。"
+                    : "可用下方 requestId 对照终端中的结束日志。"}
+                </small>
+                <code className="request-id">requestId: {operationView.requestId}</code>
               </div>
-              <p>{operationView.label}</p>
-              <code>requestId: {operationView.requestId}</code>
-              <small>
-                {operationView.status === "running"
-                  ? "终端每 10 秒输出 running 心跳；临时远端异常会在 4 次总预算内自动重试"
-                  : "可用 requestId 对照终端中的结束日志"}
-              </small>
-            </div>
-          ) : null}
-          {savedNotice ? (
-            <p className="form-success" role="status">
-              {savedNotice}
-            </p>
-          ) : null}
-          {error ? (
-            <div className="form-error error-notice" role="alert">
-              <span>
-                {error.code} · {requiresServerConfiguration(error) ? "需修正配置" : error.retryable ? "可手动重试" : "需人工处理"}
-              </span>
-              <p>{error.message}</p>
-              {error.requestId || error.upstreamCalls !== undefined || error.validationKind ? (
-                <div className="error-diagnostics">
-                  {error.requestId ? <code>requestId: {error.requestId}</code> : null}
-                  {error.upstreamCalls !== undefined ? <code>上游调用: {error.upstreamCalls}</code> : null}
-                  {error.validationKind ? <code>失败阶段: {validationKindLabels[error.validationKind] ?? error.validationKind}</code> : null}
-                </div>
-              ) : null}
+            ) : null}
+            {savedNotice ? (
+              <div className="notice notice--success" role="status">
+                <CircleCheck aria-hidden="true" />
+                <p>{savedNotice}</p>
+              </div>
+            ) : null}
+            {error ? <ErrorPanel error={error} /> : null}
+          </aside>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+const operationStatusLabels: Record<OperationView["status"], string> = {
+  running: "正在处理",
+  succeeded: "已完成",
+  failed: "未完成",
+  cancelled: "已取消",
+};
+
+/** 失败提示先给结论和下一步，技术诊断折叠在详情里供排查。 */
+function ErrorPanel({ error }: { error: ErrorNotice }) {
+  const hasDiagnostics = Boolean(error.requestId || error.upstreamCalls !== undefined || error.validationKind || error.issues?.length);
+  return (
+    <div className="notice notice--danger error-notice" role="alert">
+      <CircleAlert aria-hidden="true" />
+      <div className="notice__body">
+        <strong>{requiresServerConfiguration(error) ? "需要修正服务端配置" : error.retryable ? "操作没有完成，可以重试" : "操作失败，需要人工处理"}</strong>
+        <p className="notice__pre">{error.message}</p>
+        <small>{recoveryGuidance(error)}</small>
+        {hasDiagnostics ? (
+          <details className="tech-details">
+            <summary>技术详情 · {error.code}</summary>
+            <div className="tech-details__body">
+              {error.requestId ? <code>requestId: {error.requestId}</code> : null}
+              {error.upstreamCalls !== undefined ? <code>上游调用: {error.upstreamCalls}</code> : null}
+              {error.validationKind ? <code>失败阶段: {validationKindLabels[error.validationKind] ?? error.validationKind}</code> : null}
               {error.issues && error.issues.length > 0 ? (
                 <ul className="error-issues">
                   {error.issues.slice(0, 5).map((issue, index) => (
@@ -831,94 +1017,10 @@ export function GenerationWorkspace({ initialCourse }: { initialCourse: Course }
                   ))}
                 </ul>
               ) : null}
-              <small>{recoveryGuidance(error)}</small>
             </div>
-          ) : null}
-          {busy && busy !== "materials" ? (
-            <button className="cancel-request" type="button" onClick={cancelCurrentRequests}>
-              取消当前请求
-            </button>
-          ) : null}
-          {course.status !== "ready" && readyCount > 0 && busy === null ? (
-            <Link className="button button--dark button--wide" href={`/classroom/${course.id}`}>
-              预览已生成的 {readyCount} 个场景 <span>→</span>
-            </Link>
-          ) : null}
-          {course.status === "ready" ? (
-            <Link className="button button--accent button--wide" href={`/classroom/${course.id}`}>
-              进入课堂 <span>→</span>
-            </Link>
-          ) : editable ? (
-            <>
-              <button
-                className="button button--dark button--wide"
-                type="button"
-                onClick={saveOutline}
-                disabled={busy !== null || !dirty}
-              >
-                {busy === "save" ? "正在校验保存…" : dirty ? "保存修订" : "修订已保存"}
-                <span>↗</span>
-              </button>
-              <button
-                className="button button--accent button--wide"
-                type="button"
-                onClick={confirmAndGenerateScenes}
-                disabled={busy !== null || materialsPending}
-              >
-                {busy === "scenes"
-                  ? `正在生成 ${readyCount + 1} / ${course.requestedSceneCount}…`
-                  : "确认大纲并生成场景"}
-                <span>→</span>
-              </button>
-            </>
-          ) : ["generating", "partial_failed"].includes(course.status) ? (
-            course.activeOperation ? (
-              <p className="generation-hint">
-                存在登记中的场景操作。租约到期后，可在对应场景右侧点击“恢复”。
-              </p>
-            ) : pendingCount > 0 ? (
-              <button
-                className="button button--accent button--wide"
-                type="button"
-                onClick={continuePendingScenes}
-                disabled={busy !== null}
-              >
-                {busy === "scenes"
-                  ? `正在生成 ${readyCount + 1} / ${course.requestedSceneCount}…`
-                  : `继续生成 ${pendingCount} 个待处理场景`}
-                <span>→</span>
-              </button>
-            ) : (
-              <p className="generation-hint">没有待生成项，请在失败场景右侧点击“重试”。</p>
-            )
-          ) : (
-            <button
-              className="button button--accent button--wide"
-              type="button"
-              onClick={generateCourseOutline}
-              disabled={
-                busy !== null || materialsPending ||
-                course.status === "outlining" ||
-                Boolean(course.lastError && !canRetryGeneration(course.lastError))
-              }
-            >
-              {busy === "outline" || course.status === "outlining"
-                ? "正在生成并校验…"
-                : course.lastError && !canRetryGeneration(course.lastError)
-                  ? requiresServerConfiguration(course.lastError)
-                    ? "请先修正服务端配置"
-                    : "当前错误需要人工处理"
-                  : course.status === "failed"
-                    ? "重试大纲生成"
-                    : "生成课程大纲"}
-              <span>→</span>
-            </button>
-          )}
-          <Link className="text-link" href="/">
-            ← 返回课程首页
-          </Link>
-        </aside>
+          </details>
+        ) : <small className="error-code">{error.code}</small>}
       </div>
-    </main>
+    </div>
   );
 }

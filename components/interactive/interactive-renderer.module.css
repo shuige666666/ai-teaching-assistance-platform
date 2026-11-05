@@ -12,9 +12,14 @@
   position: relative;
   overflow: hidden;
   border: 1px solid transparent;
+  border-radius: 14px;
+  background: var(--surface);
 }
 
-.viewportReady { border-color: var(--line); }
+.viewportReady {
+  border-color: var(--border);
+  box-shadow: var(--shadow-lg);
+}
 
 .frame {
   display: block;
@@ -22,7 +27,7 @@
   height: 100%;
   min-height: 0;
   border: 0;
-  background: var(--white);
+  background: #fff;
   /* 初始化时保留动画帧，等待脚本主动报告就绪。 */
   opacity: 0;
   pointer-events: none;
@@ -37,44 +42,52 @@
   inset: 0;
   display: grid;
   place-items: center;
-  color: var(--muted);
+  align-content: center;
+  gap: 12px;
+  color: var(--text-3);
   font-size: 13px;
   visibility: hidden;
   animation: showLoading 0s 250ms forwards;
+}
+
+.loading::before {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--primary-100);
+  border-top-color: var(--primary);
+  animation: spin .8s linear infinite;
 }
 
 @keyframes showLoading {
   to { visibility: visible; }
 }
 
-.regenerationNote { display: block; margin-top: 12px; color: var(--muted); line-height: 1.6; }
-.fallback button:disabled { opacity: .5; cursor: wait; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.regenerationNote { display: block; margin-top: 12px; color: var(--text-3); font-size: 12px; line-height: 1.6; }
 
 .resetButton {
-  min-height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  background: var(--white);
-  color: var(--ink);
-  font: 600 11px/1 var(--font-body);
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font: 600 12px/1 var(--font-body);
   white-space: nowrap;
   cursor: pointer;
+  transition: border-color .15s, color .15s;
 }
 
 /* 初始化时预留按钮宽度，场景编号在脚本就绪时不跳动。 */
 .resetButton:disabled { visibility: hidden; }
-.resetButton:hover, .resetButton:focus-visible { border-color: var(--accent); }
-
-.fallback button {
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: #fff;
-  padding: 8px 13px;
-  font: 12px/1 "Microsoft YaHei", sans-serif;
-  cursor: pointer;
-}
-
-.fallback button:hover { background: var(--accent); border-color: var(--accent); }
+.resetButton:hover, .resetButton:focus-visible { border-color: var(--primary); color: var(--primary-700); }
 
 .fallback {
   position: absolute;
@@ -82,56 +95,98 @@
   z-index: 1;
   overflow: auto;
   display: grid;
-  grid-template-columns: minmax(220px, .7fr) minmax(360px, 1.3fr);
-  gap: 42px;
+  grid-template-columns: minmax(220px, .8fr) minmax(320px, 1.2fr);
+  gap: 40px;
   align-items: center;
-  padding: 58px 66px;
+  padding: 48px 56px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
   background:
-    linear-gradient(rgba(73, 139, 166, .08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(73, 139, 166, .08) 1px, transparent 1px),
-    var(--paper);
-  background-size: 36px 36px;
+    radial-gradient(600px 300px at 0% 0%, rgba(245, 159, 11, .10), transparent 70%),
+    var(--surface);
 }
 
 .fallbackMark {
-  display: block;
-  color: var(--brand);
-  font: 11px/1.2 "SFMono-Regular", Consolas, monospace;
-  letter-spacing: .18em;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--warning-50);
+  color: var(--warning-700);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
   text-transform: uppercase;
 }
 
 .fallback h2 {
-  margin: 18px 0 12px;
-  color: var(--ink);
-  font: 700 clamp(28px, 3vw, 46px)/1.08 Georgia, "Noto Serif SC", serif;
+  margin: 16px 0 10px;
+  color: var(--text);
+  font-size: clamp(22px, 2.4vw, 32px);
+  font-weight: 800;
+  line-height: 1.25;
 }
 
-.fallback p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.8; }
+.fallback p { margin: 0 0 8px; color: var(--text-2); font-size: 14px; line-height: 1.75; }
+
+.fallbackActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+
+.fallbackActions button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font: 600 13px/1 var(--font-body);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.fallbackActions button:first-child { border-color: var(--primary); background: var(--primary); color: #fff; }
+.fallbackActions button:hover:not(:disabled) { border-color: var(--text-3); }
+.fallbackActions button:first-child:hover:not(:disabled) { background: var(--primary-600); }
+.fallbackActions button:disabled { opacity: .5; cursor: wait; }
 
 .fallback ol {
   margin: 0;
   padding: 0;
   list-style: none;
   counter-reset: steps;
-  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
 }
 
 .fallback li {
   counter-increment: steps;
   display: grid;
-  grid-template-columns: 52px 1fr;
+  grid-template-columns: 32px 1fr;
   gap: 12px;
-  padding: 15px 4px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink);
-  line-height: 1.5;
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  line-height: 1.6;
 }
 
-.fallback li::before { content: "0" counter(steps); color: var(--brand); font: 13px/1.5 "SFMono-Regular", Consolas, monospace; }
-.fallbackActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-.fallbackActions button:last-child { background: transparent; color: var(--ink); }
+.fallback li::before {
+  content: counter(steps);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--primary-50);
+  color: var(--primary-700);
+  font-size: 13px;
+  font-weight: 700;
+}
 
 @media (max-width: 980px) {
-  .fallback { grid-template-columns: 1fr; gap: 22px; padding: 42px; }
+  .fallback { grid-template-columns: 1fr; gap: 22px; padding: 28px; }
 }
